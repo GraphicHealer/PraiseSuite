@@ -51,7 +51,7 @@ export function LibraryPage({ onOpenSong }: { onOpenSong: (id: string) => void }
         ))}
       </aside>
       <div className="min-w-0 flex-1">
-        {printUrl && <PrintPreview url={printUrl} onClose={() => setPrintUrl(null)} />}
+        {printUrl && <PrintPreview url={printUrl} filename="songbook.pdf" onClose={() => setPrintUrl(null)} />}
         <div className="mb-3 flex gap-2">
           <input
             value={query}

@@ -1,5 +1,6 @@
-import { app, BrowserWindow, screen } from "electron";
+import { app, BrowserWindow, screen, ipcMain, dialog } from "electron";
 import { spawn } from "node:child_process";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -65,11 +66,47 @@ function openControlWindow() {
     width: 1280,
     height: 800,
     autoHideMenuBar: true,
-    webPreferences: { contextIsolation: true },
+    webPreferences: { contextIsolation: true, preload: path.join(dir, "preload.mjs") },
   });
   controlWindow.loadURL(`${BASE}/`);
   controlWindow.on("closed", () => (controlWindow = null));
 }
+
+/**
+ * Native printing: render a print URL offscreen, then either show the OS
+ * print dialog (webContents.print) or emit a PDF directly (printToPDF).
+ * The renderer reaches these through window.ps (see preload.mjs).
+ */
+async function hiddenPrintWindow(url) {
+  const win = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true } });
+  await win.loadURL(url);
+  return win;
+}
+
+ipcMain.handle("ps:print", async (_e, url) => {
+  const win = await hiddenPrintWindow(url);
+  await new Promise((resolve, reject) =>
+    win.webContents.print({ printBackground: true }, (ok, reason) => {
+      win.destroy();
+      if (ok) resolve();
+      else reject(new Error(reason));
+    }),
+  );
+});
+
+ipcMain.handle("ps:print-pdf", async (e, { url, filename }) => {
+  const win = await hiddenPrintWindow(url);
+  const pdf = await win.webContents.printToPDF({ printBackground: true });
+  win.destroy();
+  const { canceled, filePath } = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender), {
+    title: "Save as PDF",
+    defaultPath: filename ?? "document.pdf",
+    filters: [{ name: "PDF document", extensions: ["pdf"] }],
+  });
+  if (canceled || !filePath) return null;
+  await writeFile(filePath, pdf);
+  return filePath;
+});
 
 /**
  * Presentation output: fullscreen borderless window on the first

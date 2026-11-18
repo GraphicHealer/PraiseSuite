@@ -286,7 +286,7 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
         <button onClick={ins.multiVerse} className={btn}>Multi-Verse</button>
         <button onClick={ins.section} className={btn}>Section</button>
       </div>
-      {printUrl && <PrintPreview url={printUrl} onClose={() => setPrintUrl(null)} />}
+      {printUrl && <PrintPreview url={printUrl} filename={`${song?.title ?? "song"}.pdf`} onClose={() => setPrintUrl(null)} />}
       <div className="min-h-0 flex-1 overflow-hidden rounded border border-zinc-300 dark:border-zinc-700">
         <CodeMirror
           value={source}

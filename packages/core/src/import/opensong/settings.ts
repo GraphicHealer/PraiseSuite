@@ -112,12 +112,69 @@ export function parsePresentSettings(xml: string): PresentSettingsResult {
 
 /** Per-role print styles (PrintSettings), for the M8 print engine. */
 export function parsePrintSettings(xml: string): Record<string, TextStyle> {
+  return parsePrintConfig(xml).roles;
+}
+
+/** Full print configuration: roles + layout spacing + style flags + page. */
+export interface PrintConfig {
+  roles: Record<string, TextStyle>;
+  /** layout/<role>/@space_before|@space_after (pt). */
+  spacing: Record<string, { before: number; after: number }>;
+  capsSongTitle: boolean;
+  highlightChorus: boolean;
+  headerAdornment: boolean;
+  borderThickness: number;
+  /** Page box in points (OpenSong default: 612x792 letter, 72pt margins). */
+  page: { width: number; height: number; margin: number };
+}
+
+export const DEFAULT_PRINT_CONFIG: PrintConfig = {
+  roles: {},
+  spacing: {},
+  capsSongTitle: false,
+  highlightChorus: false,
+  headerAdornment: false,
+  borderThickness: 1,
+  page: { width: 612, height: 792, margin: 72 },
+};
+
+export function parsePrintConfig(xml: string): PrintConfig {
   const doc = parseXml(xml);
   const root = asRecord(asRecord(doc)["print_settings"]);
-  const out: Record<string, TextStyle> = {};
+  const cfg = structuredClone(DEFAULT_PRINT_CONFIG);
+  // Print roles are left-aligned by default (slice positions, not centered slides).
+  const printBase: TextStyle = { ...defaultSlideStyle().body, align: "left" };
   for (const role of ["title", "author", "heading", "chords", "capo_chords", "lyrics", "lyrics_language2", "copyright"]) {
     const el = root[role];
-    if (el !== undefined) out[role] = textStyle(el, defaultSlideStyle().body);
+    if (el !== undefined) cfg.roles[role] = textStyle(el, printBase);
   }
-  return out;
+  const style = asRecord(root["style"]);
+  const attr = (k: string) => asString(style[`@_${k}`]);
+  if (attr("caps_song_title") !== "") cfg.capsSongTitle = bool(attr("caps_song_title"));
+  if (attr("highlight_chorus") !== "") cfg.highlightChorus = bool(attr("highlight_chorus"));
+  if (attr("header_adornment") !== "") cfg.headerAdornment = bool(attr("header_adornment"));
+  const bt = Number.parseFloat(attr("border_thickness"));
+  if (Number.isFinite(bt)) cfg.borderThickness = bt;
+  const layout = asRecord(root["layout"]);
+  for (const [k, v] of Object.entries(layout)) {
+    const el = asRecord(v);
+    const before = Number.parseFloat(asString(el["@_space_before"]));
+    const after = Number.parseFloat(asString(el["@_space_after"]));
+    cfg.spacing[k] = {
+      before: Number.isFinite(before) ? before : 0,
+      after: Number.isFinite(after) ? after : 0,
+    };
+  }
+  const page = asRecord(root["page"]);
+  const pw = Number.parseFloat(asString(page["@_width"]));
+  const ph = Number.parseFloat(asString(page["@_height"]));
+  const pl = Number.parseFloat(asString(page["@_left"]));
+  if (Number.isFinite(pw) && Number.isFinite(ph)) {
+    cfg.page = {
+      width: pw,
+      height: ph,
+      margin: Number.isFinite(pl) ? pl : 72,
+    };
+  }
+  return cfg;
 }

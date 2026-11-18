@@ -129,7 +129,7 @@ export function ServicesPage({ onOpenSong }: { onOpenSong: (id: string) => void 
 
   return (
     <div className="mx-auto max-w-3xl p-4">
-      {printUrl && <PrintPreview url={printUrl} onClose={() => setPrintUrl(null)} />}
+      {printUrl && <PrintPreview url={printUrl} filename="set-list.pdf" onClose={() => setPrintUrl(null)} />}
       <div className="mb-3 flex items-center gap-2">
         <button onClick={() => { setCurrent(null); setDirty(false); }} className={btn}>← Services</button>
         <input className={`${input} text-lg font-semibold`} value={current.name} onChange={(e) => patch({ name: e.target.value })} />

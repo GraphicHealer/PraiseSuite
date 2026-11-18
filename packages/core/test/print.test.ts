@@ -5,6 +5,8 @@ import {
   setListHtml,
   songbookHtml,
   parseChord,
+  parsePrintConfig,
+  parseOpenSongLyrics,
   type Service,
   type Song,
 } from "../src/index.js";
@@ -53,35 +55,100 @@ function song(): Song {
   };
 }
 
-describe("chordSheetHtml", () => {
+describe("chordSheetHtml (SongML slice model)", () => {
   const html = chordSheetHtml(song());
 
-  it("has title, authors, section heading and lyrics", () => {
+  it("has title, authors and the localized heading name", () => {
     expect(html).toContain("Test Hymn");
     expect(html).toContain("Writer One; Writer Two");
-    expect(html).toContain(">V1<");
-    expect(html).toContain("choo___sing");
+    expect(html).toContain("Verse 1"); // [V1] -> "Verse 1"
   });
 
-  it("keeps _ padding on chord sheets and places chords at offsets", () => {
-    expect(html).toContain("choo___sing  a mighty fort_re__ss");
-    const chordLine = html.split("\n").find((l) => l.includes("ps-line") && l.includes("bold"));
-    expect(chordLine).toBeTruthy();
-    // G at col1, C at offset 15, D at offset 26 in the written line
-    expect(chordLine).toMatch(/>\s*G\s+C\s+D/);
+  it("renders lyric slices in a column table, underscores removed", () => {
+    expect(html).toContain('<table class="grp"');
+    expect(html).toContain("choosing");   // "_" stripped in print too
+    expect(html).not.toContain("choo___sing");
   });
 
-  it("shows capo fingering row from arrangement capo", () => {
+  it("places chords at slice boundaries in the chord row", () => {
+    const chordRow = html.split("\n").find((l) => l.includes('class="ch"'))!;
+    expect(chordRow).toContain(">G<");
+    expect(chordRow).toContain(">C<");
+    expect(chordRow).toContain(">D<");
+    expect(chordRow.indexOf(">G<")).toBeLessThan(chordRow.indexOf(">C<"));
+    expect(chordRow.indexOf(">C<")).toBeLessThan(chordRow.indexOf(">D<"));
+  });
+
+  it("draws a continuation hyphen where a word splits at a chord boundary", () => {
+    // chord D at offset 25 lands inside "fort_re__ss" -> whole word pulls into
+    // the last cell with a left shift and a preceding ‑
+    expect(html).toContain("&#8208;fortress");
+    expect(html).toContain("margin-left:-3ch");
+  });
+
+  it("emits a capo fingering row from the arrangement capo", () => {
     expect(html).toContain("Capo 3");
-    // capo 3 fingering of G -> E; capo row is the non-bold monospace row
-    const capoRow = html.split("\n").find((l) => l.includes("ps-line") && l.includes("monospace") && !l.includes("bold"));
-    expect(capoRow).toMatch(/>\s*E/);
+    const capoRow = html.split("\n").find((l) => l.includes('class="capo"'))!;
+    expect(capoRow).toContain(">E<"); // G capo 3 -> E
   });
 
-  it("transposes chord rows", () => {
+  it("transposes the chord row (and the capo row follows)", () => {
     const up = chordSheetHtml(song(), { transpose: 2 });
-    const chordLine = up.split("\n").find((l) => l.includes("ps-line") && l.includes("bold"));
-    expect(chordLine).toMatch(/>\s*A/); // G +2 -> A
+    const chordRow = up.split("\n").find((l) => l.includes('class="ch"'))!;
+    expect(chordRow).toContain(">A<"); // G +2 -> A
+  });
+
+  it("uses role fonts and page size from PrintSettings", () => {
+    const cfg = parsePrintConfig(`<print_settings>
+      <lyrics font="Arial Narrow" size="12" bold="false" italic="false" color="#000000"/>
+      <chords font="Times New Roman" size="11" bold="true" italic="false" color="#000080"/>
+      <style caps_song_title="true" header_adornment="true" border_thickness="2"/>
+      <page width="612" height="792" left="72"/>
+      <layout><lyrics space_before="3" space_after="4"/></layout>
+    </print_settings>`);
+    const h = chordSheetHtml(song(), { print: cfg });
+    expect(h).toContain("TEST HYMN");                     // caps_song_title
+    expect(h).toContain("size: 612pt 792pt");             // page box
+    expect(h).toContain("border-radius:1em");             // header_adornment box
+    expect(h).toContain("padding:3pt 0 4pt 0");           // lyrics spacing
+    const chordRow = h.split("\n").find((l) => l.includes('class="ch"'))!;
+    expect(chordRow).toContain("#000080");                // chords role color
+    expect(chordRow).toContain("font-weight:bold");       // chords role weight
+  });
+
+  it("prints comments but hides ';;' hidden comments", () => {
+    const { sections } = parseOpenSongLyrics("[V]\n.A B\nline\n;visible note\n;;secret note\n");
+    const s = song();
+    const h = chordSheetHtml({ ...s, sections: sections.map((x, i) => ({ ...x, id: `sec${i}` as Song["sections"][0]["id"] })) });
+    expect(h).toContain("visible note");
+    expect(h).not.toContain("secret note");
+  });
+
+  it("renders -!! page breaks, -__ rules and --- column breaks", () => {
+    const { sections } = parseOpenSongLyrics("[V]\nline one\n-__\nline two\n-!!\nline three\n");
+    const s = song();
+    const h = chordSheetHtml({ ...s, sections: sections.map((x, i) => ({ ...x, id: `sec${i}` as Song["sections"][0]["id"] })) });
+    expect(h).toContain("<hr");
+    expect(h).toContain("break-before:page");
+  });
+
+  it("renders numbered-verse prefixes in a margin column", () => {
+    const { sections } = parseOpenSongLyrics("[V]\n.A B\n1 first verse line\n2 second verse line\n");
+    const s = song();
+    const h = chordSheetHtml({ ...s, sections: sections.map((x, i) => ({ ...x, id: `sec${i}` as Song["sections"][0]["id"] })) });
+    expect(h).toContain('class="pfx"');
+    expect(h).toContain(">1<");
+    expect(h).toContain(">2<");
+  });
+
+  it("maps heading labels: C->Chorus, P->Pre-chorus, B->Bridge, T->Tag", () => {
+    const { sections } = parseOpenSongLyrics("[C1]\nx\n[P]\ny\n[B2]\nz\n[T]\nw\n");
+    const s = song();
+    const h = chordSheetHtml({ ...s, sections: sections.map((x, i) => ({ ...x, id: `sec${i}` as Song["sections"][0]["id"] })) });
+    expect(h).toContain("Chorus 1");
+    expect(h).toContain("Pre-chorus");
+    expect(h).toContain("Bridge 2");
+    expect(h).toContain("Tag");
   });
 });
 
@@ -92,7 +159,7 @@ describe("lyricsSheetHtml", () => {
     expect(html).not.toContain("choo___sing");
   });
   it("has no chord row", () => {
-    expect(html).not.toContain("font-weight:bold\">G");
+    expect(html).not.toContain('class="ch"');
   });
 });
 

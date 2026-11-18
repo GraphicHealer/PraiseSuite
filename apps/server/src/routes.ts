@@ -28,7 +28,8 @@ import {
   navigate,
   parseOpenSongBible,
   parsePresentSettings,
-  parsePrintSettings,
+  parsePrintConfig,
+  DEFAULT_PRINT_CONFIG,
   parseReference,
   positionOfSlide,
   resolveSlideStyle,
@@ -423,9 +424,9 @@ export function buildRoutes(deps: AppDeps): Route[] {
         out.warnings.push(...parsed.warnings);
       }
       if (body.printSettings !== undefined) {
-        const roles = parsePrintSettings(body.printSettings);
-        deps.storage.setSetting("style.print", JSON.stringify(roles));
-        out.printRoles = Object.keys(roles);
+        const cfg = parsePrintConfig(body.printSettings);
+        deps.storage.setSetting("style.print", JSON.stringify(cfg));
+        out.printRoles = Object.keys(cfg.roles);
       }
       return out;
     }),
@@ -526,14 +527,14 @@ export function buildRoutes(deps: AppDeps): Route[] {
     r("GET", "/api/v1/print/song/:id", "admin", "Song sheet: ?mode=chord|lyrics, &transpose=N, &capo=N", async (ctx) => {
       const song = await deps.repos.songs.get(ctx.params["id"]! as SongId);
       if (!song) throw new ApiError(404, "not_found", "Song not found");
-      const roles = printRoles(deps.storage);
+      const print = printConfig(deps.storage);
       const mode = ctx.query.get("mode") ?? "chord";
       const tr = Number.parseInt(ctx.query.get("transpose") ?? "0", 10) || 0;
       const capoRaw = ctx.query.get("capo");
       const capo = capoRaw === null ? undefined : Number.parseInt(capoRaw, 10) || 0;
       const html = mode === "lyrics"
-        ? lyricsSheetHtml(song, { roles })
-        : chordSheetHtml(song, { roles, transpose: tr, capo });
+        ? lyricsSheetHtml(song, { print })
+        : chordSheetHtml(song, { print, transpose: tr, capo });
       ctx.res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       ctx.res.end(html);
       return undefined;
@@ -542,13 +543,13 @@ export function buildRoutes(deps: AppDeps): Route[] {
       const svc = await deps.repos.services.get(ctx.params["id"]! as Service["id"]);
       if (!svc) throw new ApiError(404, "not_found", "Service not found");
       ctx.res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      ctx.res.end(setListHtml(svc, printRoles(deps.storage)));
+      ctx.res.end(setListHtml(svc, printConfig(deps.storage).roles));
       return undefined;
     }),
     r("GET", "/api/v1/print/songbook", "admin", "Songbook / TOC grouped by theme", async (ctx) => {
       const songs = await deps.repos.songs.list();
       ctx.res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      ctx.res.end(songbookHtml(songs, printRoles(deps.storage)));
+      ctx.res.end(songbookHtml(songs, printConfig(deps.storage).roles));
       return undefined;
     }),
 
@@ -628,13 +629,12 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
   };
 }
 
-/** Installed translations index (settings key `bibles.index`). */
-/** Imported PrintSettings roles (style.print setting) for the print engine. */
-function printRoles(storage: SqliteStorage): Record<string, import("@praisesuite/core").TextStyle> {
+/** Imported PrintSettings config (style.print setting) for the print engine. */
+function printConfig(storage: SqliteStorage): import("@praisesuite/core").PrintConfig {
   try {
-    return JSON.parse(storage.getSetting("style.print") ?? "{}") as Record<string, import("@praisesuite/core").TextStyle>;
+    return { ...DEFAULT_PRINT_CONFIG, ...(JSON.parse(storage.getSetting("style.print") ?? "{}") as import("@praisesuite/core").PrintConfig) };
   } catch {
-    return {};
+    return DEFAULT_PRINT_CONFIG;
   }
 }
 
