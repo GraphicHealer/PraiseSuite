@@ -213,6 +213,17 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
     setPlan(null);
   }, []);
 
+  /** OpenSong Esc/close: END the presentation, not just detach. */
+  const endSession = useCallback(
+    async (id?: string) => {
+      const sid = id ?? session?.id;
+      if (sid) await api.endSession(sid).catch(() => {});
+      setSessions(await api.sessions().catch(() => sessions));
+      if (!id || sid === session?.id) leave();
+    },
+    [session, sessions, leave],
+  );
+
   useEffect(() => {
     if (!session || !controlling) return;
     const onKey = (e: KeyboardEvent) => {
@@ -224,7 +235,7 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
       else if (key === "ArrowUp" || key === "Backspace" || key === "PageUp") void doNavigate("prev");
       else if (key === "ArrowRight") jumpToItem(1);
       else if (key === "ArrowLeft") jumpToItem(-1);
-      else if (key === "Escape") leave();
+      else if (key === "Escape") void endSession();
       else if (/^F(\d|1[0-5])$/.test(key)) {
         const n = parseInt(key.slice(1), 10);
         const ids = [...new Set((plan?.slides ?? []).map((s) => s.itemId))];
@@ -256,7 +267,7 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [session, controlling, plan, doNavigate, jumpToItem, jumpToSection, setMode, toggleFullscreen, leave, openAdd]);
+  }, [session, controlling, plan, doNavigate, jumpToItem, jumpToSection, setMode, toggleFullscreen, leave, endSession, openAdd]);
 
   const takeControl = async () => {
     if (!session) return;
@@ -312,10 +323,16 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
               <h2 className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">Active sessions</h2>
               <ul className="divide-y divide-zinc-200 rounded border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
                 {sessions.map((s) => (
-                  <li key={s.id}>
-                    <button onClick={() => attach(s)} className="flex w-full items-baseline gap-3 px-3 py-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800">
+                  <li key={s.id} className="flex items-center">
+                    <button onClick={() => attach(s)} className="flex flex-1 items-baseline gap-3 px-3 py-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800">
                       <span className="font-medium">{s.name}</span>
                       <span className="text-xs text-zinc-500">{s.status}</span>
+                    </button>
+                    <button
+                      onClick={() => void endSession(s.id)}
+                      className="mr-2 rounded bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-500"
+                    >
+                      End
                     </button>
                   </li>
                 ))}
@@ -399,6 +416,12 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
           )}
           <button onClick={() => void makeReceiverUrl()} className={btn}>Receiver link</button>
           <a href="/stage" target="_blank" rel="noreferrer" className={btn}>Stage view</a>
+          <button
+            onClick={() => void endSession()}
+            className="rounded bg-red-600 px-3 py-1 text-xs text-white hover:bg-red-500"
+          >
+            End
+          </button>
         </div>
       </div>
       {receiverUrl && <p className="mb-1 break-all rounded bg-zinc-100 p-1 font-mono text-xs dark:bg-zinc-900">{receiverUrl}</p>}
@@ -545,7 +568,7 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
                 [S] Scripture
               </button>
               <button onClick={toggleFullscreen} className={btn}>[M] {fullscreen ? "Normal Screen" : "Full Screen"}</button>
-              <button onClick={leave} className={btn}>[Esc] Return</button>
+              <button onClick={() => void endSession()} className={btn}>[Esc] End</button>
             </div>
           </fieldset>
 

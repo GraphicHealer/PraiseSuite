@@ -76,6 +76,13 @@ export function StagePage(): ReactNode {
       </div>
     );
   }
+  if (state.status === "ended") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-black font-mono text-zinc-500">
+        Presentation ended
+      </div>
+    );
+  }
   const s = state.slide;
   return (
     <div className="flex min-h-screen flex-col bg-zinc-950 font-mono text-zinc-100">

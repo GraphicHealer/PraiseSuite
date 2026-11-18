@@ -91,7 +91,7 @@ export function ReceiverPage(): ReactNode {
     };
     ws.onmessage = (e) => {
       const msg = JSON.parse(e.data as string) as { type: string };
-      if (["position", "blank", "control", "mode", "alert"].includes(msg.type)) void refresh();
+      if (["position", "blank", "control", "mode", "alert", "session_ended"].includes(msg.type)) void refresh();
     };
     return () => ws.close();
   }, [sessionId, token]);
@@ -116,6 +116,13 @@ export function ReceiverPage(): ReactNode {
     return (
       <div className="flex min-h-screen items-center justify-center bg-black text-zinc-600">
         {waiting ? "Waiting for a live session…" : "Joining…"}
+      </div>
+    );
+  }
+  if (state?.status === "ended") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-black text-zinc-600">
+        Presentation ended
       </div>
     );
   }

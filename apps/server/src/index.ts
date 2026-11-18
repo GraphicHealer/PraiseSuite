@@ -9,6 +9,7 @@ const port = Number.parseInt(process.env["PORT"] ?? "8080", 10);
 const app = createApp({
   databasePath: join(dataDir, "praisesuite.sqlite"),
   ...(process.env["PRAISESUITE_WEB_ROOT"] ? { webRoot: process.env["PRAISESUITE_WEB_ROOT"] } : {}),
+  singleSession: process.env["PRAISESUITE_SINGLE_SESSION"] === "1",
 });
 
 const lanEnabled = app.storage.getSetting("server.lanEnabled") === "true";

@@ -44,6 +44,8 @@ export interface AppOptions {
   mediaDir?: string;
   /** Directory containing the built web UI to serve (optional). */
   webRoot?: string;
+  /** Single-user mode (desktop): only one live session at a time. */
+  singleSession?: boolean;
 }
 
 /** Bind host per the LAN toggle (TAS 15.3): localhost-only unless enabled. */
@@ -80,6 +82,7 @@ export function createApp(options: AppOptions): PraiseSuiteApp {
       storage.setSetting("server.lanEnabled", String(v));
     },
     getLanEnabled: () => lanEnabled,
+    ...(options.singleSession !== undefined ? { singleSession: options.singleSession } : {}),
     ...(webRoot !== null ? { webRoot } : {}),
   });
   // LAN off = localhost-only = trusted local user, no token needed.

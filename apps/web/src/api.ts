@@ -151,6 +151,8 @@ class Api {
   session = (id: string) => this.req<PresentationSession>(`/api/v1/sessions/${encodeURIComponent(id)}`);
   saveSession = (s: PresentationSession) =>
     this.req<PresentationSession>(`/api/v1/sessions/${encodeURIComponent(s.id)}`, { method: "PUT", body: s });
+  endSession = (id: string) =>
+    this.req<PresentationSession>(`/api/v1/sessions/${encodeURIComponent(id)}/end`, { method: "POST" });
   sessionSlide = (id: string) =>
     this.req<SlideResponse>(`/api/v1/sessions/${encodeURIComponent(id)}/slide`);
   sessionPlan = (id: string) =>

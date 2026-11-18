@@ -63,6 +63,8 @@ export interface AppDeps {
   broadcastToSession(sessionId: string, message: unknown): void;
   setLanEnabled(enabled: boolean): void;
   getLanEnabled(): boolean;
+  /** Single-user mode (desktop): starting a live session ends all others. */
+  singleSession?: boolean;
   /** Built web UI directory — used to inject bundled-font @font-face into print docs. */
   webRoot?: string | undefined;
 }
@@ -252,7 +254,24 @@ export function buildRoutes(deps: AppDeps): Route[] {
       const session = z.object({ id: z.string() }).loose().parse(await ctx.body()) as unknown as PresentationSession;
       session.id = ctx.params["id"]! as SessionId;
       await deps.repos.sessions.save(session);
+      // Single-user mode: a new live session supersedes every other session.
+      if (deps.singleSession && session.status === "live") {
+        for (const other of await deps.repos.sessions.listActive()) {
+          if (other.id === session.id || other.status === "ended") continue;
+          await deps.repos.sessions.save({ ...other, status: "ended", controlOwner: null });
+          deps.broadcastToSession(other.id, { type: "session_ended", sessionId: other.id });
+        }
+      }
       return session;
+    }),
+
+    r("POST", "/api/v1/sessions/:id/end", "admin", "End a session; receivers are notified", async (ctx) => {
+      const session = await deps.repos.sessions.get(ctx.params["id"]! as SessionId);
+      if (!session) throw new ApiError(404, "not_found", "Session not found");
+      const updated: PresentationSession = { ...session, status: "ended", controlOwner: null };
+      await deps.repos.sessions.save(updated);
+      deps.broadcastToSession(session.id, { type: "session_ended", sessionId: session.id });
+      return updated;
     }),
 
     r("POST", "/api/v1/sessions/:id/position", "admin", "Update musical position and broadcast to subscribers", async (ctx) => {

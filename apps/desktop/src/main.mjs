@@ -31,6 +31,8 @@ function startServer() {
     PORT: String(PORT),
     PRAISESUITE_DATA: path.join(app.getPath("userData"), "data"),
     PRAISESUITE_WEB_ROOT: path.join(ROOT, "apps", "web", "dist"),
+    // Desktop is single-user: only one live presentation session at a time.
+    PRAISESUITE_SINGLE_SESSION: "1",
   };
   if (runtime === "electron") env.ELECTRON_RUN_AS_NODE = "1";
   serverProc = spawn(cmd, [tsxCli, "src/index.ts"], {
