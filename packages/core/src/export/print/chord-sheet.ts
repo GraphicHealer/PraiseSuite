@@ -204,8 +204,10 @@ function blockHtml(
     const tds = lyricCells(wl.text, bounds)
       .map((c, ci) => {
         let t = esc(c.text);
-        // OpenSong draws the continuation hyphen mid-gap ("fa - i - ling").
-        if (c.text !== "" && c.dash) t = `&nbsp;&#8208;&nbsp;` + t;
+        // OpenSong draws the continuation hyphen mid-gap ("fa - i - ling") —
+        // hung 1ch left of the column so the lyric text itself stays aligned
+        // under the chord instead of starting after the dash.
+        if (c.text !== "" && c.dash) t = `<span style="margin-left:-1ch">&#8208;</span>` + t;
         let inner = t;
         if (c.shift) inner = `<span style="margin-left:-${c.shift}ch;display:inline-block">${inner}</span>`;
         if (c.indent) inner = `<span style="margin-left:1em">${inner}</span>`;
