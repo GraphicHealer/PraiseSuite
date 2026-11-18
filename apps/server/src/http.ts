@@ -64,6 +64,10 @@ function send(res: ServerResponse, status: number, data: unknown): void {
 }
 
 export function sendError(res: ServerResponse, status: number, code: string, message: string): void {
+  if (res.headersSent) {
+    res.end();
+    return;
+  }
   send(res, status, { error: { code, message } });
 }
 

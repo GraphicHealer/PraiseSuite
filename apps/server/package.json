@@ -12,6 +12,7 @@
     "@praisesuite/api-contracts": "workspace:*",
     "@praisesuite/core": "workspace:*",
     "@praisesuite/storage-sqlite": "workspace:*",
+    "fflate": "^0.8.3",
     "ws": "^8.18.0",
     "zod": "^4.0.0"
   },

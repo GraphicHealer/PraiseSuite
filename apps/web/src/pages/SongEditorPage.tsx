@@ -52,7 +52,13 @@ function presentationOf(song: Song): string {
  * source box edited in raw notation ([V1], .chord lines, | breaks, ;comments),
  * with Insert helpers and General/Advanced tabs (MainWindow parity).
  */
-export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void }): ReactNode {
+export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
+  id: string;
+  /** Optional — embedded in the main window (OpenSong-style) when provided along with the other callbacks; standalone page otherwise. */
+  onBack?: () => void;
+  onPresent?: (song: Song) => void;
+  onCopied?: (id: string) => void;
+}): ReactNode {
   const [song, setSong] = useState<Song | null>(null);
   const [tab, setTab] = useState<"general" | "advanced" | "backgrounds">("general");
   const [source, setSource] = useState("");
@@ -65,13 +71,18 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
   const viewRef = useRef<EditorView | null>(null);
   const dark = useDark();
 
-  useEffect(() => {
+  const reload = () =>
     api.song(id).then((s) => {
       setSong(s);
       setSource(serializeOpenSongLyrics(s));
       setPresentation(presentationOf(s));
       setCapo(s.arrangements[0]?.capo?.toString() ?? "");
+      setDirty(false);
+      setStatus("");
     });
+
+  useEffect(() => {
+    void reload();
     api.style().then((s) => setUserLabels(s.userFieldLabels ?? []));
   }, [id]);
 
@@ -154,7 +165,50 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
   const remove = async () => {
     if (!song || !confirm(`Delete "${song.title}"?`)) return;
     await api.deleteSong(song.id);
-    onBack();
+    onBack?.();
+  };
+
+  /** OpenSong "Selected Song" group actions. */
+  const rename = async () => {
+    if (!song) return;
+    const title = prompt("Rename song:", song.title);
+    if (title && title !== song.title) {
+      update({ title });
+      await save();
+    }
+  };
+  const move = async () => {
+    if (!song) return;
+    const folder = prompt("Move to folder (blank = library root):", song.folder ?? "");
+    if (folder === null) return;
+    update({ folder: folder.trim() || null });
+    await save();
+  };
+  const copy = async () => {
+    if (!song) return;
+    const clone = {
+      ...song,
+      id: crypto.randomUUID() as Song["id"],
+      title: `${song.title} (copy)`,
+      revision: {
+        id: crypto.randomUUID() as Song["revision"]["id"],
+        parentId: null,
+        origin: "web",
+        createdAt: new Date().toISOString(),
+      },
+    };
+    const created = await api.req<Song>("/api/v1/songs", { method: "POST", body: clone }).catch(() => null);
+    if (created) {
+      void api.logSongActivity(song.id, 8); // copied
+      onCopied?.(created.id);
+    }
+  };
+  const exportXml = () => {
+    if (!song) return;
+    const a = document.createElement("a");
+    a.href = api.printUrl(`/api/v1/export/song/${encodeURIComponent(song.id)}`);
+    a.download = `${song.title}.xml`;
+    a.click();
   };
 
   const transpose = (semitones: number) => {
@@ -222,10 +276,10 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
   if (!song) return <div className="p-6 text-sm text-zinc-500">Loading…</div>;
 
   return (
-    <div className="flex h-[calc(100vh-53px)] flex-col gap-2 p-3">
+    <div className="flex h-full min-h-0 flex-col gap-2 p-3">
       {/* Toolbar */}
       <div className="flex items-center gap-2">
-        <button onClick={onBack} className={btn}>←</button>
+        {onBack && <button onClick={onBack} className={btn}>←</button>}
         <button
           onClick={() => setTab("general")}
           className={`${btn} ${tab === "general" ? "bg-indigo-100 dark:bg-indigo-950" : ""}`}
@@ -245,6 +299,8 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
           Backgrounds
         </button>
         <div className="ml-auto flex items-center gap-2">
+          {dirty && <button onClick={() => void reload()} className={btn} title="Discard edits and reload">Revert</button>}
+          {onPresent && <button onClick={() => void save().then(() => onPresent(song))} className={btn}>Present</button>}
           <span className="text-xs text-zinc-500">Transpose</span>
           <button onClick={() => transpose(-1)} className={btn}>-♭</button>
           <button onClick={() => transpose(1)} className={btn}>+♯</button>
@@ -265,6 +321,10 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
           <button onClick={() => void save()} className="rounded bg-indigo-600 px-3 py-1 text-sm text-white hover:bg-indigo-500">
             {dirty ? "Save" : "Saved"}
           </button>
+          <button onClick={() => void rename()} className={btn} title="Rename song">Rename</button>
+          <button onClick={exportXml} className={btn} title="Export as OpenSong XML">Export</button>
+          <button onClick={() => void copy()} className={btn} title="Duplicate this song">Copy</button>
+          <button onClick={() => void move()} className={btn} title="Move to folder">Move</button>
           <button onClick={() => void remove()} className={`${btn} text-red-600`}>Delete</button>
         </div>
       </div>

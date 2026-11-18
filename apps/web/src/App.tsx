@@ -1,17 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
+import type { Service } from "@praisesuite/core";
 import { api, ApiError } from "./api.js";
-import { LibraryPage } from "./pages/LibraryPage.js";
+import { MainPage } from "./pages/MainPage.js";
 import { ImportPage } from "./pages/ImportPage.js";
-import { ServicesPage } from "./pages/ServicesPage.js";
-import { SongEditorPage } from "./pages/SongEditorPage.js";
 import { PresentPage } from "./pages/PresentPage.js";
 import { SettingsPage } from "./pages/SettingsPage.js";
 
-type Page = "library" | "import" | "services" | "song" | "present" | "settings";
+type Page = "main" | "import" | "present" | "settings";
 
 const NAV: { id: Page; label: string }[] = [
-  { id: "library", label: "Library" },
-  { id: "services", label: "Services" },
   { id: "import", label: "Import" },
   { id: "present", label: "Present" },
   { id: "settings", label: "Settings" },
@@ -64,8 +61,8 @@ function LoginGate({ onDone }: { onDone: () => void }) {
 export function App(): ReactNode {
   const [authed, setAuthed] = useState(api.isAuthed);
   const [authRequired, setAuthRequired] = useState(true);
-  const [page, setPage] = useState<Page>("library");
-  const [songId, setSongId] = useState<string | null>(null);
+  const [page, setPage] = useState<Page>("main");
+  const [presentReq, setPresentReq] = useState<{ service: Service; itemId: string | undefined } | null>(null);
   const [dark, setDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
 
   // Local mode (LAN off) needs no login — the server trusts localhost.
@@ -91,15 +88,20 @@ export function App(): ReactNode {
     );
   }
 
-  const openSong = (id: string) => {
-    setSongId(id);
-    setPage("song");
+  const present = (service: Service, itemId?: string) => {
+    setPresentReq({ service, itemId });
+    setPage("present");
   };
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <header className="flex items-center gap-4 border-b border-zinc-200 bg-white px-4 py-2 dark:border-zinc-800 dark:bg-zinc-900">
-        <span className="font-semibold tracking-tight">PraiseSuite</span>
+        <button
+          onClick={() => setPage("main")}
+          className={`font-semibold tracking-tight ${page === "main" ? "text-indigo-700 dark:text-indigo-300" : ""}`}
+        >
+          PraiseSuite
+        </button>
         <nav className="flex gap-1">
           {NAV.map((n) => (
             <button
@@ -133,12 +135,16 @@ export function App(): ReactNode {
         </div>
       </header>
       <main className="flex-1">
-        {page === "library" && <LibraryPage onOpenSong={openSong} />}
-        {page === "services" && <ServicesPage onOpenSong={openSong} />}
+        {page === "main" && <MainPage onPresentService={present} onImport={() => setPage("import")} />}
         {page === "import" && <ImportPage />}
-        {page === "present" && <PresentPage />}
+        {page === "present" && (
+          <PresentPage
+            key={presentReq ? `${presentReq.service.id}:${presentReq.itemId ?? ""}` : "pick"}
+            startService={presentReq?.service ?? null}
+            startItemId={presentReq?.itemId ?? null}
+          />
+        )}
         {page === "settings" && <SettingsPage />}
-        {page === "song" && songId && <SongEditorPage id={songId} onBack={() => setPage("library")} />}
       </main>
     </div>
   );

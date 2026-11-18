@@ -148,10 +148,15 @@ class Api {
     this.req<PresentationSession>(`/api/v1/sessions/${encodeURIComponent(s.id)}`, { method: "PUT", body: s });
   sessionSlide = (id: string) =>
     this.req<SlideResponse>(`/api/v1/sessions/${encodeURIComponent(id)}/slide`);
-  navigate = (id: string, action: "next" | "prev" | "first" | "last" | "jump", index?: number) =>
+  navigate = (
+    id: string,
+    action: "next" | "prev" | "first" | "last" | "jump" | "item",
+    index?: number,
+    itemId?: string,
+  ) =>
     this.req<{ position: PresentationSession["position"]; slide: number; total: number }>(
       `/api/v1/sessions/${encodeURIComponent(id)}/navigate`,
-      { method: "POST", body: { action, index } },
+      { method: "POST", body: { action, index, itemId } },
     );
   blank = (id: string, blanked: boolean) =>
     this.req<{ blanked: boolean }>(`/api/v1/sessions/${encodeURIComponent(id)}/blank`, {

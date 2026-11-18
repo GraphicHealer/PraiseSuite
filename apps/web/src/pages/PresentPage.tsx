@@ -6,7 +6,7 @@ const btn =
   "rounded border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800 disabled:opacity-50";
 
 /** Remote control surface: pick a session, take control, drive the outputs. */
-export function PresentPage(): ReactNode {
+export function PresentPage({ startService, startItemId }: { startService?: Service | null; startItemId?: string | null }): ReactNode {
   const [sessions, setSessions] = useState<PresentationSession[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [session, setSession] = useState<PresentationSession | null>(null);
@@ -17,10 +17,48 @@ export function PresentPage(): ReactNode {
   const [error, setError] = useState("");
   const wsRef = useRef<WebSocket | null>(null);
 
+  const startFor = async (svc: Service, itemId?: string | null) => {
+    const id = crypto.randomUUID();
+    const session: PresentationSession = {
+      id: id as PresentationSession["id"],
+      serviceId: svc.id,
+      name: svc.name,
+      status: "live",
+      position: {
+        sessionId: id as PresentationSession["id"],
+        serviceItemId: null,
+        songId: null,
+        arrangementId: null,
+        sectionId: null,
+        sectionInstanceId: null,
+        positionWithinSection: 0,
+      },
+      blanked: false,
+      mode: "normal",
+      alert: null,
+      controlOwner: null,
+      createdAt: new Date().toISOString(),
+      lastActivityAt: new Date().toISOString(),
+    };
+    await api.saveSession(session);
+    const list = await api.sessions();
+    setSessions(list);
+    attach(session);
+    if (itemId) await api.navigate(session.id, "item", undefined, itemId).catch(() => {});
+    else await api.navigate(session.id, "first").catch(() => {});
+    void refreshSlide(session.id);
+    void api.control(session.id, true).then(() => setControlling(true)).catch(() => {});
+  };
+
+  const startRef = useRef(false);
   useEffect(() => {
     api.sessions().then(setSessions).catch((e) => setError((e as Error).message));
     api.services().then(setServices).catch(() => {});
-  }, []);
+    if (startService && !startRef.current) {
+      startRef.current = true;
+      void startFor(startService, startItemId);
+    }
+  }, [startService]);
 
   const refreshSlide = async (id: string) => {
     try {
@@ -50,35 +88,7 @@ export function PresentPage(): ReactNode {
   const createSession = async () => {
     const svc = services.find((s) => s.id === (document.getElementById("svc-pick") as HTMLSelectElement).value);
     if (!svc) return;
-    const id = crypto.randomUUID();
-    const session: PresentationSession = {
-      id: id as PresentationSession["id"],
-      serviceId: svc.id,
-      name: svc.name,
-      status: "live",
-      position: {
-        sessionId: id as PresentationSession["id"],
-        serviceItemId: null,
-        songId: null,
-        arrangementId: null,
-        sectionId: null,
-        sectionInstanceId: null,
-        positionWithinSection: 0,
-      },
-      blanked: false,
-      mode: "normal",
-      alert: null,
-      controlOwner: null,
-      createdAt: new Date().toISOString(),
-      lastActivityAt: new Date().toISOString(),
-    };
-    await api.saveSession(session);
-    const list = await api.sessions();
-    setSessions(list);
-    attach(session);
-    // First slide.
-    await api.navigate(session.id, "first").catch(() => {});
-    void refreshSlide(session.id);
+    await startFor(svc);
   };
 
   const takeControl = async () => {

@@ -37,6 +37,8 @@ import {
   resolveSlideStyle,
   scriptureSlideGroup,
   setListHtml,
+  serializeOpenSongSong,
+  serializeOpenSongSet,
   songbookHtml,
   lyricsSheetHtml,
   type BibleTranslation,
@@ -178,6 +180,36 @@ export function buildRoutes(deps: AppDeps): Route[] {
       return { ok: true };
     }),
 
+    // Library folders (OpenSong Songs/ subfolders — virtual here, derived from
+    // song.folder plus an explicit list so empty folders can exist).
+    r("GET", "/api/v1/folders", "admin", "List library folders", async () => {
+      const named = JSON.parse(deps.storage.getSetting("library.folders") ?? "[]") as string[];
+      const used = (await deps.repos.songs.list()).map((s) => s.folder).filter((f): f is string => f !== null);
+      return { folders: [...new Set([...named, ...used])].sort() };
+    }),
+    r("POST", "/api/v1/folders", "admin", "Create a library folder", async (ctx) => {
+      const { name } = z.object({ name: z.string().min(1) }).parse(await ctx.body());
+      const named = JSON.parse(deps.storage.getSetting("library.folders") ?? "[]") as string[];
+      if (!named.includes(name)) named.push(name);
+      deps.storage.setSetting("library.folders", JSON.stringify(named));
+      return { ok: true };
+    }),
+    r("DELETE", "/api/v1/folders/:name", "admin", "Delete a folder — songs move to the library root", async (ctx) => {
+      const name = ctx.params["name"]!;
+      const named = (JSON.parse(deps.storage.getSetting("library.folders") ?? "[]") as string[]).filter((f) => f !== name);
+      deps.storage.setSetting("library.folders", JSON.stringify(named));
+      for (const s of await deps.repos.songs.list()) {
+        if (s.folder === name) {
+          const song = await deps.repos.songs.get(s.id);
+          if (song) {
+            song.folder = null;
+            await deps.repos.songs.save(song);
+          }
+        }
+      }
+      return { ok: true };
+    }),
+
     r("GET", "/api/v1/services", "admin", "List services", async () => deps.repos.services.list()),
 
     r("GET", "/api/v1/services/:id", "admin", "Get a service", async (ctx) => {
@@ -278,16 +310,22 @@ export function buildRoutes(deps: AppDeps): Route[] {
       requireControl(ctx, session);
       const body = z
         .object({
-          action: z.enum(["next", "prev", "first", "last", "jump"]),
+          action: z.enum(["next", "prev", "first", "last", "jump", "item"]),
           index: z.number().int().nonnegative().optional(),
+          itemId: z.string().optional(),
         })
         .parse(await ctx.body());
       const { plan } = await sessionPlan(deps.repos, session);
       if (plan.slides.length === 0) return { position: session.position, slide: null, total: 0 };
-      const position =
-        body.action === "jump"
-          ? positionOfSlide(plan, Math.min(body.index ?? 0, plan.slides.length - 1), session.id)
-          : navigate(plan, session.position, body.action);
+      let position: PresentationSession["position"];
+      if (body.action === "jump") {
+        position = positionOfSlide(plan, Math.min(body.index ?? 0, plan.slides.length - 1), session.id);
+      } else if (body.action === "item") {
+        const idx = plan.slides.findIndex((s) => s.serviceItemId === body.itemId);
+        position = positionOfSlide(plan, idx === -1 ? 0 : idx, session.id);
+      } else {
+        position = navigate(plan, session.position, body.action);
+      }
       // Activity log: a song is "presented" when its first slide goes live.
       if (position.songId !== session.position.songId && position.songId !== null) {
         const song = await deps.repos.songs.get(position.songId);
@@ -584,6 +622,67 @@ export function buildRoutes(deps: AppDeps): Route[] {
       ctx.res.end(setListHtml(svc, printConfig(deps.storage).roles));
       return undefined;
     }),
+    // "Print songs" (OpenSong btn_set_print_songs): every song item's chord
+    // sheet, page-broken, in one document.
+    r("GET", "/api/v1/print/service/:id/songs", "admin", "Chord sheets for all songs in a service", async (ctx) => {
+      const svc = await deps.repos.services.get(ctx.params["id"]! as Service["id"]);
+      if (!svc) throw new ApiError(404, "not_found", "Service not found");
+      const parts: string[] = [];
+      for (const item of svc.items.filter((i) => i.kind === "song" && i.songId !== null)) {
+        const song = await deps.repos.songs.get(item.songId!);
+        if (song) parts.push(chordSheetHtml(song, { print: printConfig(deps.storage) }));
+      }
+      if (parts.length === 0) throw new ApiError(404, "not_found", "No songs in service");
+      const html = parts
+        .map((h) => h.replace(/^[\s\S]*?<body[^>]*>/i, "").replace(/<\/body>[\s\S]*$/i, ""))
+        .join(`<div style="page-break-after:always"></div>`);
+      ctx.res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      ctx.res.end(`<!doctype html><html><body>${html}</body></html>`);
+      return undefined;
+    }),
+    // OpenSong-format export (MainWindow "Export" buttons).
+    r("GET", "/api/v1/export/song/:id", "admin", "Export a song as OpenSong XML", async (ctx) => {
+      const song = await deps.repos.songs.get(ctx.params["id"]! as SongId);
+      if (!song) throw new ApiError(404, "not_found", "Song not found");
+      const xml = serializeOpenSongSong(song);
+      ctx.res.writeHead(200, {
+        "content-type": "application/xml; charset=utf-8",
+        "content-disposition": `attachment; filename="${encodeURIComponent(song.title)}.xml"`,
+      });
+      ctx.res.end(xml);
+      return undefined;
+    }),
+    r("GET", "/api/v1/export/service/:id", "admin", "Export a service as an OpenSong set", async (ctx) => {
+      const svc = await deps.repos.services.get(ctx.params["id"]! as Service["id"]);
+      if (!svc) throw new ApiError(404, "not_found", "Service not found");
+      const titles = new Map((await deps.repos.songs.list()).map((s) => [s.id as string, s.title]));
+      const xml = serializeOpenSongSet(svc, (id) => titles.get(id) ?? null);
+      ctx.res.writeHead(200, {
+        "content-type": "application/xml; charset=utf-8",
+        "content-disposition": `attachment; filename="${encodeURIComponent(svc.name)}.xml"`,
+      });
+      ctx.res.end(xml);
+      return undefined;
+    }),
+    r("GET", "/api/v1/export/songs", "admin", "Export every song as a zip of OpenSong XML", async (ctx) => {
+      const { zipSync, strToU8 } = await import("fflate");
+      const summaries = await deps.repos.songs.list();
+      const files: Record<string, Uint8Array> = {};
+      for (const s of summaries) {
+        const song = await deps.repos.songs.get(s.id);
+        if (!song) continue;
+        const path = `${song.folder !== null ? `${song.folder}/` : ""}${song.title}`;
+        files[`${path}`] = strToU8(serializeOpenSongSong(song));
+      }
+      const zip = Buffer.from(zipSync(files));
+      ctx.res.writeHead(200, {
+        "content-type": "application/zip",
+        "content-disposition": 'attachment; filename="songs.zip"',
+      });
+      ctx.res.end(zip);
+      return undefined;
+    }),
+
     r("GET", "/api/v1/print/songbook", "admin", "Songbook / TOC grouped by theme", async (ctx) => {
       const songs = await deps.repos.songs.list();
       ctx.res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
