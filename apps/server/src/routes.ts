@@ -52,7 +52,15 @@ import {
 import type { BibleId } from "@praisesuite/core";
 
 const SongSchema = z.object({ id: z.string() }).loose();
-const ServiceSchema = z.object({ id: z.string() }).loose();
+// Loose but structurally safe: malformed items must fail validation (400),
+// not crash inside the repository layer (500).
+const ServiceSchema = z
+  .object({
+    id: z.string(),
+    name: z.string().optional(),
+    items: z.array(z.object({ id: z.string(), kind: z.string() }).loose()).optional(),
+  })
+  .loose();
 
 export interface AppDeps {
   storage: SqliteStorage;
@@ -491,7 +499,7 @@ export function buildRoutes(deps: AppDeps): Route[] {
             mediaType,
             originalFilename: name,
           });
-          return m.storageKey;
+          return { id: m.id as string, storageKey: m.storageKey };
         },
       });
       return report;
@@ -748,7 +756,24 @@ export function buildRoutes(deps: AppDeps): Route[] {
       const titles = new Map(
         (await deps.repos.songs.list()).map((s) => [s.id as string, { name: s.title, folder: s.folder }]),
       );
-      const xml = serializeOpenSongSet(svc, (id) => titles.get(id) ?? null);
+      // Pre-fetch embedded image data for re-embedding into <image> (N4).
+      const imageKeys = svc.items.flatMap((item) =>
+        Array.isArray(item.config["images"])
+          ? (item.config["images"] as { storageKey?: string }[])
+              .map((i) => i.storageKey)
+              .filter((k): k is string => typeof k === "string")
+          : [],
+      );
+      const imageData = new Map<string, string>();
+      for (const key of imageKeys) {
+        const data = await deps.repos.files.get(key).catch(() => null);
+        if (data !== null) imageData.set(key, Buffer.from(data).toString("base64"));
+      }
+      const xml = serializeOpenSongSet(
+        svc,
+        (id) => titles.get(id) ?? null,
+        (key) => imageData.get(key) ?? null,
+      );
       ctx.res.writeHead(200, {
         "content-type": "application/xml; charset=utf-8",
         "content-disposition": `attachment; filename="${encodeURIComponent(svc.name)}.xml"`,

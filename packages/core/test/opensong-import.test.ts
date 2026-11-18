@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import {
   analyzeImport,
   applyImport,
+  buildPlan,
   detectDuplicates,
   existingInfo,
   expandZip,
@@ -62,9 +63,29 @@ describe("lyrics parser", () => {
     // 'B' at index 9 -> original offset 8; 'second part' starts at 11 -> rebased 8-11 <0? check filter
   });
 
-  it("marks blank-line slide breaks", () => {
-    const { sections } = parseOpenSongLyrics("[V1]\n line one\n\n line two");
-    expect(sections[0]!.lines[1]!.breakBefore).toBe("slide");
+  it("drops blank lines by default; slide-breaks only with blank_is_slide_change", () => {
+    // SongML LyricsToSections: a blank line is skipped unless the setting
+    // maps it to "||". Default (off): the line vanishes, no slide break.
+    const off = parseOpenSongLyrics("[V1]\n line one\n\n line two");
+    expect(off.sections[0]!.lines).toHaveLength(2);
+    expect(off.sections[0]!.lines[1]!.breakBefore).toBe("none");
+    const on = parseOpenSongLyrics("[V1]\n line one\n\n line two", {
+      blankIsSlideChange: true,
+    });
+    expect(on.sections[0]!.lines[1]!.breakBefore).toBe("slide");
+  });
+
+  it("treats || as a slide break and | as a line break within the slide", () => {
+    // SongML AdjustSlideBreaks splits on "||"; DeflateString maps "|" to
+    // a newline inside the slide body.
+    const { sections } = parseOpenSongLyrics(
+      "[V1]\n line a|line b\n line c||line d",
+    );
+    const lines = sections[0]!.lines;
+    expect(lines).toHaveLength(4);
+    expect(lines[1]!.breakBefore).toBe("inline");
+    expect(lines[3]!.breakBefore).toBe("bar");
+    expect(lines[3]!.text).toBe("line d");
   });
 
   it("handles comments and directives", () => {
@@ -319,3 +340,50 @@ function zipToU8(m: Map<string, Uint8Array>): Uint8Array {
   for (const [k, v] of m) rec[k] = v;
   return zipSync(rec);
 }
+
+describe("slide counting vs OpenSong (re-review N1/N2)", () => {
+  const planOf = (name: string) => {
+    const song = materializeSong(parseOpenSongSong(fixtureSong(name)).song, ids);
+    const service: Service = {
+      id: "svc" as Service["id"],
+      revision: {
+        id: "r",
+        parentId: null,
+        origin: "t",
+        createdAt: "2026-01-01T00:00:00Z",
+      } as Service["revision"],
+      name: "S",
+      date: null,
+      description: null,
+      items: [
+        {
+          id: "i1" as Service["items"][0]["id"],
+          kind: "song",
+          songId: song.id,
+          arrangementId: null,
+          mediaAssetId: null,
+          title: song.title,
+          subtitle: null,
+          notes: null,
+          slides: [],
+          loopSeconds: 0,
+          config: {},
+        },
+      ],
+    };
+    return buildPlan(service, new Map([[song.id, song]]));
+  };
+
+  it("And Can It Be: | is a line break inside the slide — V1 is ONE slide", () => {
+    const plan = planOf("And Can It Be");
+    const v1 = plan.slides.filter((s) => s.title.endsWith("— V1"));
+    expect(v1).toHaveLength(1);
+    // Both halves of the |-split line render in that single slide.
+    expect(v1[0]!.lines.join("\n")).toContain("an interest in my Savior");
+  });
+
+  it("Man Of Sorrows: 5 numbered verses = 5 slides, blank line is not a break", () => {
+    const plan = planOf("Man Of Sorrows");
+    expect(plan.slides).toHaveLength(5);
+  });
+});

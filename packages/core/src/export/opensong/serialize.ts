@@ -94,6 +94,19 @@ function serializeSection(s: SongSection): string {
       );
       continue;
     }
+    if (line.breakBefore === "bar" && pending) {
+      const base = pending.text.length + 2; // rejoin via "||" slide break
+      pending.text += "||" + line.text;
+      pending.chords.push(
+        ...line.chords.map((c) => ({ offset: base + c.offset, chord: c.chord })),
+      );
+      continue;
+    }
+    if (line.breakBefore === "bar") {
+      // Leading "||" with nothing pending: keep the slide boundary visible.
+      flush();
+      out.push("||");
+    }
     flush();
     pending = {
       text: line.text,
@@ -143,7 +156,7 @@ export function serializeOpenSongSong(song: Song): string {
     `  <capo print="${arr?.capoPrint === true ? "true" : "false"}">${arr?.capo ?? ""}</capo>\n` +
     el("tempo", song.tempo) +
     "\n" +
-    el("timesig", song.timeSignature) +
+    el("time_sig", song.timeSignature) +
     "\n" +
     el("ccli", song.ccliNumber) +
     "\n" +
@@ -201,6 +214,8 @@ function serializeBackgrounds(song: Song): string {
 export function serializeOpenSongSet(
   service: Service,
   songRef: (id: string) => { name: string; folder: string | null } | null,
+  /** Resolves a media storageKey -> base64 for re-embedding <image> data. */
+  imageData?: (storageKey: string) => string | null,
 ): string {
   const slides = (item: Service["items"][number]) =>
     item.slides.length === 0
@@ -239,7 +254,27 @@ export function serializeOpenSongSet(
       }
       if (item.kind === "media" && item.config["openSongType"] === "image") {
         const name = typeof item.config["imagePath"] === "string" ? item.config["imagePath"] : item.title;
-        return `${attrs("image", name)}\n    </slide_group>`;
+        const resize = typeof item.config["resize"] === "string" ? ` resize="${escapeXml(item.config["resize"] as string)}"` : "";
+        const keepAspect = typeof item.config["keepAspect"] === "string" ? ` keep_aspect="${escapeXml(item.config["keepAspect"] as string)}"` : "";
+        const images = Array.isArray(item.config["images"])
+          ? (item.config["images"] as { storageKey?: string; filename?: string; description?: string }[])
+          : [];
+        const imgSlides =
+          images.length === 0
+            ? ""
+            : `\n      <slides>\n${images
+                .map((img) => {
+                  const inner =
+                    (img.storageKey !== undefined && imageData !== undefined
+                      ? `<image>${imageData(img.storageKey) ?? ""}</image>`
+                      : img.filename !== undefined
+                        ? `<filename>${escapeXml(img.filename)}</filename>`
+                        : "") +
+                    (img.description !== undefined ? `<description>${escapeXml(img.description)}</description>` : "");
+                  return `        <slide>\n          ${inner}\n        </slide>`;
+                })
+                .join("\n")}\n      </slides>`;
+        return `${attrs("image", name, `${resize}${keepAspect}`)}${common}${imgSlides}\n    </slide_group>`;
       }
       // custom-slides / note / announcement -> OpenSong "custom" group
       return `${attrs("custom", item.title)}${common}${slides(item)}\n    </slide_group>`;

@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { ZodError } from "zod";
 import type { AuthService, TokenPayload } from "./auth.js";
 import { tokenFromRequest } from "./auth.js";
 
@@ -119,7 +120,16 @@ export function dispatch(routes: Route[], authService: AuthService, isOpenLocal:
         if (!res.writableEnded) send(res, 200, result ?? { ok: true });
       } catch (e) {
         if (e instanceof ApiError) sendError(res, e.status, e.code, e.message);
-        else {
+        else if (e instanceof ZodError) {
+          // Validation failures are client errors, not internal faults.
+          const issue = e.issues[0];
+          sendError(
+            res,
+            400,
+            "invalid_input",
+            issue ? `${issue.path.join(".")}: ${issue.message}` : e.message,
+          );
+        } else {
           sendError(res, 500, "internal", (e as Error).message);
         }
       }

@@ -38,7 +38,7 @@ function sectionItems(section: SongSection, hideLang2 = false): Item[] {
     if (line.kind === "comment") { flush(); if (!line.text.startsWith(";")) out.push({ type: "comment", text: line.text }); continue; }
     if (line.kind === "directive") { flush(); if (line.text !== "") out.push({ type: "directive", text: line.text }); continue; }
     if (line.kind !== "lyric") continue;
-    if (line.breakBefore === "slide" && pending) { flush(); out.push({ type: "blank" }); }
+    if ((line.breakBefore === "slide" || line.breakBefore === "bar") && pending) { flush(); out.push({ type: "blank" }); }
     if (line.breakBefore === "inline" && pending) {
       const base = pending.text.length + 1; // "|" prints as a space
       pending.text += " " + line.text;

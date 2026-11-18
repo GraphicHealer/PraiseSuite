@@ -12,6 +12,8 @@ export interface SetParseResult {
 export interface ParsedServiceItem extends Omit<ServiceItem, "id" | "songId" | "arrangementId"> {
   /** OpenSong song reference: `name` attr, may be "Folder/Title" path. */
   songRef: string | null;
+  /** Embedded <image> base64 / linked <filename> per slide (image groups). */
+  images: { base64: string | null; filename: string | null; description: string | null }[];
 }
 
 function toArray(v: unknown): Record<string, unknown>[] {
@@ -22,6 +24,15 @@ function toArray(v: unknown): Record<string, unknown>[] {
 function slidesOf(group: Record<string, unknown>): { body: string }[] {
   const slides = asRecord(group["slides"]);
   return toArray(slides["slide"]).map((s) => ({ body: asString(s["body"]) }));
+}
+
+function imagesOf(group: Record<string, unknown>): ParsedServiceItem["images"] {
+  const slides = asRecord(group["slides"]);
+  return toArray(slides["slide"]).map((s) => ({
+    base64: asString(s["image"]) || null,
+    filename: asString(s["filename"]) || null,
+    description: asString(s["description"]) || null,
+  }));
 }
 
 /**
@@ -71,6 +82,7 @@ export function parseOpenSongSet(xml: string, fallbackName: string): SetParseRes
       subtitle,
       notes,
       slides: slidesOf(group),
+      images: [] as ParsedServiceItem["images"],
       loopSeconds: loop ? seconds : 0,
       config,
     };
@@ -84,7 +96,11 @@ export function parseOpenSongSet(xml: string, fallbackName: string): SetParseRes
     } else if (type === "image") {
       config["openSongType"] = "image";
       config["imagePath"] = name;
-      items.push({ ...base, kind: "media" });
+      const resize = asString(group["@_resize"]);
+      if (resize) config["resize"] = resize;
+      const keepAspect = asString(group["@_keep_aspect"]);
+      if (keepAspect) config["keepAspect"] = keepAspect;
+      items.push({ ...base, kind: "media", images: imagesOf(group) });
     } else if (type === "custom") {
       items.push(base);
     } else {

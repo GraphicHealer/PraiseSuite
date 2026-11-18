@@ -40,13 +40,14 @@ export interface PresentationPlan {
   itemStart: number[];
 }
 
-/** Lines -> slide slices: "slide" and "inline" breaks both start a new slice. */
+/** Lines -> slide slices: only "slide"/"bar" start a new slice; "|" (inline)
+ * is a line break within the same slide (SongML DeflateString). */
 function slicesOfSection(section: SongSection): string[][] {
   const slices: string[][] = [[]];
   for (const line of section.lines) {
     if (line.kind !== "lyric") continue;
     if (
-      (line.breakBefore === "slide" || line.breakBefore === "inline") &&
+      (line.breakBefore === "slide" || line.breakBefore === "bar") &&
       slices[slices.length - 1]!.length > 0
     )
       slices.push([]);

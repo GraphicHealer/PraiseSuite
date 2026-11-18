@@ -176,6 +176,19 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
     [plan, session, doNavigate],
   );
 
+  /** OpenSong GoPreviousSection (Left arrow AND Backspace): back to the
+   * FIRST slide of the current item; if already there, the previous item. */
+  const prevSection = useCallback(() => {
+    if (!plan || !session) return;
+    const curItem = plan.slides[plan.current]?.itemId;
+    const firstOfItem = plan.slides.find((s) => s.itemId === curItem);
+    if (firstOfItem && plan.current > firstOfItem.index) {
+      void doNavigate("jump", firstOfItem.index);
+      return;
+    }
+    jumpToItem(-1);
+  }, [plan, session, doNavigate, jumpToItem]);
+
   const jumpToSection = useCallback(
     (match: (s: PlanSlide) => boolean) => {
       if (!plan || !session) return;
@@ -244,9 +257,9 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
       const key = e.key;
       let handled = true;
       if (key === "ArrowDown" || key === " " || key === "PageDown") void doNavigate("next");
-      else if (key === "ArrowUp" || key === "Backspace" || key === "PageUp") void doNavigate("prev");
+      else if (key === "ArrowUp" || key === "PageUp") void doNavigate("prev");
       else if (key === "ArrowRight") jumpToItem(1);
-      else if (key === "ArrowLeft") jumpToItem(-1);
+      else if (key === "ArrowLeft" || key === "Backspace") prevSection();
       else if (key === "Escape") confirmEnd();
       else if (/^F(\d|1[0-5])$/.test(key)) {
         const n = parseInt(key.slice(1), 10);
@@ -279,7 +292,7 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [session, controlling, plan, doNavigate, jumpToItem, jumpToSection, setMode, toggleFullscreen, leave, confirmEnd, openAdd]);
+  }, [session, controlling, plan, doNavigate, jumpToItem, prevSection, jumpToSection, setMode, toggleFullscreen, leave, confirmEnd, openAdd]);
 
   const takeControl = async () => {
     if (!session) return;

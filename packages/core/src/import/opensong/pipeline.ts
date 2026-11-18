@@ -2,9 +2,10 @@ import { strFromU8, unzipSync } from "fflate";
 import type { IdGenerator, Repositories } from "../../ports/index.js";
 import type { Song } from "../../domain/songs/types.js";
 import type { Service } from "../../domain/services/types.js";
-import type { RevisionId, ServiceId, ServiceItemId, SongId } from "../../ids.js";
+import type { MediaAssetId, RevisionId, ServiceId, ServiceItemId, SongId } from "../../ids.js";
 import { materializeSong, parseOpenSongSong, type ParsedSong } from "./song.js";
 import { parseOpenSongSet, resolveSongRefs, type ParsedServiceItem } from "./set.js";
+import { parsePresentSettings } from "./settings.js";
 import {
   detectDuplicates,
   existingInfo,
@@ -78,8 +79,23 @@ export function analyzeImport(
   const sets: AnalyzedSet[] = [];
   const skipped: ImportAnalysis["skipped"] = [];
 
+  // An embedded PresentSettings file controls blank-line slide behavior.
+  let blankIsSlideChange = false;
+  for (const file of files) {
+    if (!file.text.includes("<present_settings")) continue;
+    try {
+      blankIsSlideChange = parsePresentSettings(file.text).options.blankIsSlideChange;
+    } catch {
+      // ignore malformed settings files
+    }
+  }
+
   for (const file of files) {
     const name = file.path.split("/").pop() ?? file.path;
+    if (file.text.includes("<present_settings")) {
+      skipped.push({ path: file.path, reason: "settings file (import via Settings)" });
+      continue;
+    }
     if (!looksLikeXml(file.text)) {
       skipped.push({ path: file.path, reason: "not OpenSong XML" });
       continue;
@@ -90,7 +106,7 @@ export function analyzeImport(
         const parsed = parseOpenSongSet(file.text, name);
         sets.push({ path: file.path, name, items: parsed.items, warnings: parsed.warnings });
       } else {
-        const parsed = parseOpenSongSong(file.text);
+        const parsed = parseOpenSongSong(file.text, { blankIsSlideChange });
         songs.push({ path: file.path, song: parsed.song, warnings: parsed.warnings });
       }
     } catch (e) {
@@ -124,7 +140,11 @@ export async function applyImport(
   options: {
     onDuplicate?: (match: DuplicateMatch) => DuplicateAction;
     /** Persist embedded media (e.g. background <image> base64) -> storage key. */
-    storeMedia?: (name: string, mediaType: string, dataBase64: string) => Promise<string>;
+    storeMedia?: (
+      name: string,
+      mediaType: string,
+      dataBase64: string,
+    ) => Promise<{ id: string; storageKey: string }>;
   } = {},
 ): Promise<ImportReport> {
   const report: ImportReport = {
@@ -173,7 +193,7 @@ export async function applyImport(
       for (const bg of analyzed.song.backgrounds.items) {
         if (bg.imageData === null || bg.imageData === "" || bg.key) continue;
         try {
-          bg.key = await options.storeMedia(bg.filename ?? "background.png", "image/png", bg.imageData);
+          bg.key = (await options.storeMedia(bg.filename ?? "background.png", "image/png", bg.imageData)).storageKey;
         } catch {
           report.warnings.push(`${analyzed.path}: background image for "${bg.verse}" could not be stored`);
         }
@@ -197,18 +217,60 @@ export async function applyImport(
   }
 
   // Persist imported sets: resolve song refs against imported + existing
-  // songs, then save as services (D1).
+  // songs, then save as services (D1). Re-importing the same set name skips
+  // it (N5) — songs dedupe, so should sets.
+  const existingSetNames = new Set(
+    (await repos.services.list()).map((s) => s.name),
+  );
   for (const analyzedSet of analysis.sets) {
     if (!analyzedSet.items) {
       report.failed.push({ path: analyzedSet.path, error: analyzedSet.error ?? "parse failed" });
       continue;
     }
+    if (existingSetNames.has(analyzedSet.name)) {
+      report.warnings.push(`${analyzedSet.path}: set "${analyzedSet.name}" already exists; skipped`);
+      continue;
+    }
+    existingSetNames.add(analyzedSet.name);
     const resolved = resolveSongRefs(analyzedSet.items, byKey);
     for (const item of resolved) {
       const ref = analyzedSet.items[resolved.indexOf(item)]?.songRef;
       if (item.kind === "song" && item.songId === null) {
         report.warnings.push(`${analyzedSet.path}: song "${ref ?? item.title}" not found; kept as placeholder`);
       }
+    }
+    // Image groups: store each embedded <image> as a media asset (N4) so
+    // the set keeps its pictures and export can re-embed them.
+    const items: Service["items"] = [];
+    for (const [i, item] of resolved.entries()) {
+      const parsed = analyzedSet.items[i];
+      let mediaAssetId = item.mediaAssetId;
+      const stored: { storageKey?: string; filename?: string; description?: string }[] = [];
+      for (const img of parsed?.images ?? []) {
+        if (img.base64 && img.base64.trim() !== "" && options.storeMedia !== undefined) {
+          try {
+            const m = await options.storeMedia(
+              img.filename ?? img.description ?? "image.png",
+              "image/png",
+              img.base64,
+            );
+            stored.push({
+              storageKey: m.storageKey,
+              ...(img.description ? { description: img.description } : {}),
+            });
+            mediaAssetId = mediaAssetId ?? (m.id as MediaAssetId);
+          } catch {
+            report.warnings.push(`${analyzedSet.path}: image in "${analyzedSet.name}" could not be stored`);
+          }
+        } else if (img.filename) {
+          stored.push({
+            filename: img.filename,
+            ...(img.description ? { description: img.description } : {}),
+          });
+        }
+      }
+      if (stored.length > 0) item.config["images"] = stored;
+      items.push({ ...item, id: ids.next() as ServiceItemId, mediaAssetId });
     }
     const service: Service = {
       id: ids.next() as ServiceId,
@@ -221,7 +283,7 @@ export async function applyImport(
       name: analyzedSet.name,
       date: null,
       description: null,
-      items: resolved.map((item) => ({ ...item, id: ids.next() as ServiceItemId })),
+      items,
     };
     await repos.services.save(service);
     report.importedSets++;

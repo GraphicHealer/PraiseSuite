@@ -24,16 +24,20 @@ const primary =
 
 /**
  * App modal system: promise-based prompt()/confirm() replacements that work
- * in Electron (which lacks native dialogs). Focus trap + Esc/Enter handling.
+ * in Electron (which lacks native dialogs). Real focus trap, aria labeling,
+ * and focus restoration to the invoking element on close.
  */
 export function DialogProvider({ children }: { children: ReactNode }): ReactNode {
   const [dlg, setDlg] = useState<DialogState | null>(null);
   const [value, setValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const restoreRef = useRef<Element | null>(null);
 
   const prompt = useCallback(
     (message: string, def = "") =>
       new Promise<string | null>((resolve) => {
+        restoreRef.current = document.activeElement;
         setValue(def);
         setDlg({ kind: "prompt", message, def, resolve });
       }),
@@ -41,7 +45,10 @@ export function DialogProvider({ children }: { children: ReactNode }): ReactNode
   );
   const confirm = useCallback(
     (message: string) =>
-      new Promise<boolean>((resolve) => setDlg({ kind: "confirm", message, resolve })),
+      new Promise<boolean>((resolve) => {
+        restoreRef.current = document.activeElement;
+        setDlg({ kind: "confirm", message, resolve });
+      }),
     [],
   );
 
@@ -54,6 +61,43 @@ export function DialogProvider({ children }: { children: ReactNode }): ReactNode
     if (dlg.kind === "prompt") dlg.resolve(typeof result === "string" ? result : null);
     else dlg.resolve(result === true);
     setDlg(null);
+    // Return focus to the element that opened the dialog.
+    if (restoreRef.current instanceof HTMLElement) restoreRef.current.focus();
+    restoreRef.current = null;
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      close(null);
+      e.stopPropagation();
+      return;
+    }
+    if (e.key === "Enter" && dlg?.kind === "confirm") {
+      // A focused button handles Enter itself (click) — don't double-fire.
+      if (!(e.target instanceof HTMLButtonElement)) close(true);
+      e.stopPropagation();
+      return;
+    }
+    if (e.key === "Tab" && panelRef.current !== null) {
+      // Focus trap: keep Tab/Shift-Tab cycling inside the dialog.
+      const focusables = panelRef.current.querySelectorAll<HTMLElement>(
+        "input, button, [tabindex]",
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0]!;
+      const last = focusables[focusables.length - 1]!;
+      if (e.shiftKey && document.activeElement === first) {
+        last.focus();
+        e.preventDefault();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        first.focus();
+        e.preventDefault();
+      } else if (!panelRef.current.contains(document.activeElement)) {
+        first.focus();
+        e.preventDefault();
+      }
+    }
+    e.stopPropagation();
   };
 
   return (
@@ -62,22 +106,21 @@ export function DialogProvider({ children }: { children: ReactNode }): ReactNode
       {dlg !== null && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          onKeyDown={(e) => {
-            if (e.key === "Escape") close(null);
-            else if (e.key === "Enter" && dlg.kind === "confirm") close(true);
-            e.stopPropagation();
-          }}
+          onKeyDown={onKeyDown}
         >
           <div
+            ref={panelRef}
             role="dialog"
             aria-modal="true"
+            aria-labelledby="app-dialog-message"
             className="w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
           >
-            <p className="mb-3 text-sm">{dlg.message}</p>
+            <p id="app-dialog-message" className="mb-3 text-sm">{dlg.message}</p>
             {dlg.kind === "prompt" && (
               <input
                 ref={inputRef}
                 autoFocus
+                aria-label={dlg.message}
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
                 onKeyDown={(e) => {
@@ -87,10 +130,11 @@ export function DialogProvider({ children }: { children: ReactNode }): ReactNode
               />
             )}
             <div className="flex justify-end gap-2">
-              <button className={btn} onClick={() => close(null)}>
+              <button type="button" className={btn} onClick={() => close(null)}>
                 Cancel
               </button>
               <button
+                type="button"
                 className={primary}
                 autoFocus={dlg.kind === "confirm"}
                 onClick={() => close(dlg.kind === "prompt" ? value : true)}

@@ -86,7 +86,10 @@ function extractExtras(xml: string, root: Record<string, unknown>): string[] {
  * metadata fields, lyrics -> offset-anchored sections, `<presentation>`
  * order -> the default arrangement.
  */
-export function parseOpenSongSong(xml: string): SongParseResult {
+export function parseOpenSongSong(
+  xml: string,
+  opts?: { blankIsSlideChange?: boolean },
+): SongParseResult {
   const warnings: string[] = [];
   let doc: unknown;
   try {
@@ -101,6 +104,7 @@ export function parseOpenSongSong(xml: string): SongParseResult {
 
   const { sections, warnings: lyricWarnings } = parseOpenSongLyrics(
     textOf(root["lyrics"]),
+    opts,
   );
   warnings.push(...lyricWarnings);
 

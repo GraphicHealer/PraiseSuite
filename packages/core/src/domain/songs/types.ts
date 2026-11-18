@@ -27,10 +27,12 @@ export interface ChordAnnotation {
 export type LyricLineKind = "lyric" | "comment" | "directive";
 
 /**
- * Break before this line: "slide" = blank line / || boundary (new slide);
- * "inline" = | mid-line split (continues the written line, new slide).
+ * Break before this line (SongML AdjustSlideBreaks): "slide" = blank-line
+ * boundary (only when blank_is_slide_change is on); "bar" = || boundary
+ * (always a new slide); "inline" = | mid-line split — a new line WITHIN the
+ * same slide.
  */
-export type LineBreak = "none" | "slide" | "inline";
+export type LineBreak = "none" | "slide" | "inline" | "bar";
 
 export interface LyricLine {
   text: string;

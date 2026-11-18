@@ -1,5 +1,6 @@
 import type {
   ChordAnnotation,
+  LineBreak,
   LyricLine,
   SectionType,
   SongSection,
@@ -83,22 +84,29 @@ function chordAnnotations(chordLine: string): ChordAnnotation[] {
 }
 
 /**
- * Split a lyric line on | / || slide-break markers, re-basing chord
- * offsets into each piece. Returns null when the line is ONLY break
- * markers (a break with no text).
+ * Split a lyric line on | / || break markers, re-basing chord offsets into
+ * each piece. SongML: "|" is a line break WITHIN the slide (DeflateString
+ * -> Chr(10)); "||" is the only slide boundary.
  */
 function splitOnBreaks(
   text: string,
   chords: ChordAnnotation[],
-): { text: string; chords: ChordAnnotation[] }[] {
-  const pieces: { text: string; chords: ChordAnnotation[] }[] = [];
+): { text: string; chords: ChordAnnotation[]; break: LineBreak }[] {
+  const pieces: { text: string; chords: ChordAnnotation[]; break: LineBreak }[] = [];
   const starts: number[] = [];
   let pos = 0;
-  for (const piece of text.split(/\|+/)) {
+  // split(/(\|+)/) alternates piece, separator, piece...
+  const parts = text.split(/(\|+)/);
+  for (let i = 0; i < parts.length; i += 2) {
+    const piece = parts[i]!;
+    const sep = i > 0 ? parts[i - 1]! : "";
     starts.push(pos);
-    pieces.push({ text: piece, chords: [] });
-    pos += piece.length;
-    while (pos < text.length && text[pos] === "|") pos++;
+    pieces.push({
+      text: piece.trimEnd(),
+      chords: [],
+      break: sep.length >= 2 ? "bar" : sep.length === 1 ? "inline" : "none",
+    });
+    pos += piece.length + sep.length;
   }
   pieces.forEach((piece, i) => {
     const start = starts[i]!;
@@ -106,7 +114,6 @@ function splitOnBreaks(
     piece.chords = chords
       .filter((c) => c.offset >= start && c.offset < nextStart)
       .map((c) => ({ offset: c.offset - start, chord: c.chord }));
-    piece.text = piece.text.trimEnd();
   });
   return pieces;
 }
@@ -118,7 +125,10 @@ function splitOnBreaks(
  * `1`-`9` line prefixes become the prefix column; `(L)` sections get
  * interleaved lang assignments.
  */
-export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
+export function parseOpenSongLyrics(
+  lyrics: string,
+  opts?: { blankIsSlideChange?: boolean },
+): LyricsParseResult {
   const warnings: string[] = [];
   const sections: ParsedSection[] = [];
   const raw = lyrics
@@ -162,12 +172,26 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
     target.lines.push(line);
   };
 
+  const blankIsSlideChange = opts?.blankIsSlideChange === true;
+
   for (const line of raw) {
     const c0 = line.charAt(0);
-    if (line === "" || /^\|+$/.test(line)) {
+    if (/^\|{2,}$/.test(line)) {
+      // A line that is only "||" is a bare slide separator.
       pendingBreak = true;
-      pendingChords = []; // a blank/break line ends a chord block (SongML line-group rule)
+      pendingChords = [];
       chordCover = "none";
+      continue;
+    }
+    if (line === "" || /^\|$/.test(line)) {
+      // SongML LyricsToSections drops blank lines unless
+      // blank_is_slide_change is on (then AdjustSlideBreaks maps them to
+      // "||"). A lone "|" deflates to an empty display line — same rule.
+      if (blankIsSlideChange) {
+        pendingBreak = true;
+        pendingChords = [];
+        chordCover = "none";
+      }
       continue;
     }
     if (c0 === "[") {
@@ -259,7 +283,7 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
         {
           text: piece.text,
           chords: piece.chords,
-          breakBefore: idx > 0 ? "inline" : "none",
+          breakBefore: piece.break,
           prefix: idx === 0 ? prefix : null,
           kind: "lyric",
           lang: null,
