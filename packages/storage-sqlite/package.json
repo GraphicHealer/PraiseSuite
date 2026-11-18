@@ -1,0 +1,25 @@
+{
+  "name": "@praisesuite/storage-sqlite",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@praisesuite/core": "workspace:*",
+    "better-sqlite3": "^12.2.0",
+    "drizzle-orm": "^0.44.5"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^26.6.6",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
