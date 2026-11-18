@@ -4,7 +4,7 @@ import { createApp, bindHost } from "./app.js";
 
 const dataDir =
   process.env["PRAISESUITE_DATA"] ?? join(homedir(), ".praisesuite");
-const port = Number.parseInt(process.env["PORT"] ?? "8080", 10);
+const port = Number.parseInt(process.env["PORT"] ?? "7729", 10);
 
 const app = createApp({
   databasePath: join(dataDir, "praisesuite.sqlite"),

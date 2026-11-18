@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(dir, "..", "..", "..");
-const PORT = Number(process.env.PRAISESUITE_PORT ?? 8080);
+const PORT = Number(process.env.PRAISESUITE_PORT ?? 7729);
 const BASE = `http://127.0.0.1:${PORT}`;
 
 let serverProc = null;

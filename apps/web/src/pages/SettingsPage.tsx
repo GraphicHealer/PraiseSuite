@@ -263,7 +263,7 @@ export function SettingsPage(): ReactNode {
           <div className="flex items-center gap-2 pt-1">
             <input
               className="w-56 rounded border border-zinc-300 bg-transparent px-2 py-1 dark:border-zinc-700"
-              placeholder="Server address (e.g. host:8080)"
+              placeholder="Server address (e.g. host:7729)"
               value={syncAddr}
               onChange={(e) => setSyncAddr(e.target.value)}
             />
