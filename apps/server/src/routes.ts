@@ -16,7 +16,11 @@ import type { AuthService } from "./auth.js";
 import {
   analyzeImport,
   applyImport,
+  buildPlan,
   existingInfo,
+  indexOfPosition,
+  navigate,
+  positionOfSlide,
   type ImportFile,
 } from "@praisesuite/core";
 
@@ -110,12 +114,12 @@ export function buildRoutes(deps: AppDeps): Route[] {
       return { lanEnabled: deps.getLanEnabled(), addresses: deps.getLanEnabled() ? lanAddresses() : ["127.0.0.1"] };
     }),
 
-    r("GET", "/api/v1/songs", "guest", "List/search songs", async (ctx) => {
+    r("GET", "/api/v1/songs", "admin", "List/search songs", async (ctx) => {
       const q = ctx.query.get("query");
       return q ? deps.repos.songs.search(q) : deps.repos.songs.list();
     }),
 
-    r("GET", "/api/v1/songs/:id", "guest", "Get a song", async (ctx) => {
+    r("GET", "/api/v1/songs/:id", "admin", "Get a song", async (ctx) => {
       const song = await deps.repos.songs.get(ctx.params["id"]! as SongId);
       if (!song) throw new ApiError(404, "not_found", "Song not found");
       return song;
@@ -144,9 +148,9 @@ export function buildRoutes(deps: AppDeps): Route[] {
       return { ok: true };
     }),
 
-    r("GET", "/api/v1/services", "guest", "List services", async () => deps.repos.services.list()),
+    r("GET", "/api/v1/services", "admin", "List services", async () => deps.repos.services.list()),
 
-    r("GET", "/api/v1/services/:id", "guest", "Get a service", async (ctx) => {
+    r("GET", "/api/v1/services/:id", "admin", "Get a service", async (ctx) => {
       const s = await deps.repos.services.get(ctx.params["id"]! as Service["id"]);
       if (!s) throw new ApiError(404, "not_found", "Service not found");
       return s;
@@ -196,6 +200,84 @@ export function buildRoutes(deps: AppDeps): Route[] {
       return updated;
     }),
 
+    r("GET", "/api/v1/sessions/:id/slide", "guest", "Current slide content for receivers (no library exposure)", async (ctx) => {
+      if (ctx.auth?.sub === "guest" && ctx.auth.sessionId !== ctx.params["id"]) {
+        throw new ApiError(403, "forbidden", "Guest token is scoped to a different session");
+      }
+      const session = await deps.repos.sessions.get(ctx.params["id"]! as SessionId);
+      if (!session) throw new ApiError(404, "not_found", "Session not found");
+      const slide = await currentSlide(deps.repos, session);
+      return {
+        sessionId: session.id,
+        status: session.status,
+        blanked: session.blanked,
+        slide,
+      };
+    }),
+
+    r("POST", "/api/v1/sessions/:id/control", "guest", "Take/release presentation control (TAS 13.4)", async (ctx) => {
+      const session = await deps.repos.sessions.get(ctx.params["id"]! as SessionId);
+      if (!session) throw new ApiError(404, "not_found", "Session not found");
+      const body = z.object({ take: z.boolean() }).parse(await ctx.body());
+      const auth = ctx.auth!;
+      if (auth.sub === "guest" && auth.sessionId !== session.id) {
+        throw new ApiError(403, "forbidden", "Guest token is scoped to a different session");
+      }
+      if (auth.sub === "guest" && !auth.scopes.includes("control")) {
+        throw new ApiError(403, "forbidden", "Token lacks the control scope");
+      }
+      if (body.take) {
+        if (session.controlOwner !== null && session.controlOwner !== auth.jti && auth.sub !== "admin") {
+          throw new ApiError(409, "control_held", "Another controller holds this session");
+        }
+        session.controlOwner = auth.jti;
+      } else if (session.controlOwner === auth.jti || auth.sub === "admin") {
+        session.controlOwner = null;
+      }
+      session.lastActivityAt = new Date().toISOString();
+      await deps.repos.sessions.save(session);
+      deps.broadcastToSession(session.id, { type: "control", sessionId: session.id, controlOwner: session.controlOwner });
+      return { controlOwner: session.controlOwner };
+    }),
+
+    r("POST", "/api/v1/sessions/:id/navigate", "guest", "Move the musical position (next/prev/first/last/jump)", async (ctx) => {
+      const session = await deps.repos.sessions.get(ctx.params["id"]! as SessionId);
+      if (!session) throw new ApiError(404, "not_found", "Session not found");
+      requireControl(ctx, session);
+      const body = z
+        .object({
+          action: z.enum(["next", "prev", "first", "last", "jump"]),
+          index: z.number().int().nonnegative().optional(),
+        })
+        .parse(await ctx.body());
+      const { plan } = await sessionPlan(deps.repos, session);
+      if (plan.slides.length === 0) return { position: session.position, slide: null, total: 0 };
+      const position =
+        body.action === "jump"
+          ? positionOfSlide(plan, Math.min(body.index ?? 0, plan.slides.length - 1), session.id)
+          : navigate(plan, session.position, body.action);
+      const updated: PresentationSession = {
+        ...session,
+        position,
+        blanked: false,
+        lastActivityAt: new Date().toISOString(),
+      };
+      await deps.repos.sessions.save(updated);
+      deps.broadcastToSession(session.id, { type: "position", sessionId: session.id, position, blanked: false });
+      return { position, slide: indexOfPosition(plan, position), total: plan.slides.length };
+    }),
+
+    r("POST", "/api/v1/sessions/:id/blank", "guest", "Blank/unblank outputs", async (ctx) => {
+      const session = await deps.repos.sessions.get(ctx.params["id"]! as SessionId);
+      if (!session) throw new ApiError(404, "not_found", "Session not found");
+      requireControl(ctx, session);
+      const body = z.object({ blanked: z.boolean() }).parse(await ctx.body());
+      const updated: PresentationSession = { ...session, blanked: body.blanked, lastActivityAt: new Date().toISOString() };
+      await deps.repos.sessions.save(updated);
+      deps.broadcastToSession(session.id, { type: "blank", sessionId: session.id, blanked: body.blanked });
+      return { blanked: body.blanked };
+    }),
+
     r("POST", "/api/v1/import/opensong/preview", "admin", "Analyze OpenSong files without importing", async (ctx) => {
       const body = z
         .object({ files: z.array(z.object({ path: z.string(), text: z.string() })) })
@@ -236,8 +318,59 @@ export function buildRoutes(deps: AppDeps): Route[] {
       return report;
     }),
 
+    r("GET", "/api/v1/receiver/join", "public", "Join the most recent live session as a viewer", async () => {
+      const sessions = await deps.repos.sessions.listActive();
+      const live = sessions
+        .filter((s) => s.status === "live")
+        .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))[0];
+      if (!live) throw new ApiError(404, "no_session", "No live session to join");
+      return {
+        sessionId: live.id,
+        sessionName: live.name,
+        token: deps.auth.issue({ sub: "guest", sessionId: live.id, scopes: ["view"] }, 60 * 60 * 12),
+      };
+    }),
+
     r("GET", "/api/v1/openapi.json", "public", "OpenAPI document", async () => buildOpenApi(deps)),
   ];
+}
+
+/** Build the slide plan for a session's service (empty plan when unattached). */
+async function sessionPlan(repos: Repositories, session: PresentationSession) {
+  const service = session.serviceId ? await repos.services.get(session.serviceId) : null;
+  if (!service) return { service: null, plan: { slides: [], itemStart: [] } };
+  const songs = await Promise.all(
+    service.items.filter((i) => i.songId !== null).map((i) => repos.songs.get(i.songId!)),
+  );
+  const plan = buildPlan(
+    service,
+    new Map(songs.filter((s): s is Song => s !== null).map((s) => [s.id, s])),
+  );
+  return { service, plan };
+}
+
+/** Resolve the session's current slide content for receivers. */
+async function currentSlide(repos: Repositories, session: PresentationSession) {
+  const { plan } = await sessionPlan(repos, session);
+  const idx = indexOfPosition(plan, session.position) ?? 0;
+  const slide = plan.slides[idx] ?? null;
+  return slide ? { index: idx, total: plan.slides.length, title: slide.title, lines: slide.lines, kind: slide.kind } : null;
+}
+
+/** TAS 13.4: control requires admin or a guest token with "control" scope + ownership. */
+function requireControl(
+  ctx: { auth: import("./auth.js").TokenPayload | null; params: Record<string, string> },
+  session: PresentationSession,
+): void {
+  const auth = ctx.auth;
+  if (!auth) throw new ApiError(401, "unauthorized", "Token required");
+  if (auth.sub === "guest") {
+    if (auth.sessionId !== session.id) throw new ApiError(403, "forbidden", "Guest token is scoped to a different session");
+    if (!auth.scopes.includes("control")) throw new ApiError(403, "forbidden", "Token lacks the control scope");
+    if (session.controlOwner !== null && session.controlOwner !== auth.jti) {
+      throw new ApiError(409, "control_held", "Another controller holds this session");
+    }
+  }
 }
 
 function buildOpenApi(deps: AppDeps): unknown {

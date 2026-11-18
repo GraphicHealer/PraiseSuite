@@ -52,6 +52,10 @@ export interface PresentationSession {
   name: string;
   status: SessionStatus;
   position: MusicalPosition;
+  /** Screen blanked (black/logo) while position is retained for recovery. */
+  blanked: boolean;
+  /** jti of the token currently holding control, or null when free (TAS 13.4). */
+  controlOwner: string | null;
   createdAt: string; // ISO 8601
   lastActivityAt: string; // ISO 8601
 }

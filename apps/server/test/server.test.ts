@@ -102,6 +102,8 @@ describe("api v1", () => {
       position: { sessionId: "sess-1", serviceItemId: null, songId: null, arrangementId: null, sectionId: null, sectionInstanceId: null, positionWithinSection: 0 },
       createdAt: new Date().toISOString(),
       lastActivityAt: new Date().toISOString(),
+      blanked: false,
+      controlOwner: null,
     };
     await api("/api/v1/sessions/sess-1", { method: "PUT", body: JSON.stringify(session) }, adminToken);
 
@@ -168,6 +170,85 @@ describe("api v1", () => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
     const code = await new Promise<number>((resolve) => ws.on("error", (e) => resolve((e as Error & { message: string }).message.includes("401") ? 401 : 0)));
     expect(code).toBe(401);
+  });
+
+  it("navigate/blank/control flow over a real service plan", async () => {
+    // Seed a song + service bound to a session.
+    const songRes = await api("/api/v1/songs", {
+      method: "POST",
+      body: JSON.stringify({ title: "Nav Song" }),
+    }, adminToken);
+    const song = (await songRes.json()) as { id: string };
+
+    const service = {
+      id: "svc-1",
+      revision: { id: "r1", parentId: null, origin: "test", createdAt: new Date().toISOString() },
+      name: "Nav Service", date: null, description: null,
+      items: [
+        { id: "i1", kind: "song", songId: song.id, arrangementId: null, mediaAssetId: null, title: "Nav Song", subtitle: null, notes: null, slides: [], loopSeconds: 0, config: {} },
+      ],
+    };
+    await api("/api/v1/services/svc-1", { method: "PUT", body: JSON.stringify(service) }, adminToken);
+
+    const session = {
+      id: "sess-nav",
+      serviceId: "svc-1", name: "Nav", status: "live",
+      position: { sessionId: "sess-nav", serviceItemId: null, songId: null, arrangementId: null, sectionId: null, sectionInstanceId: null, positionWithinSection: 0 },
+      blanked: false, controlOwner: null,
+      createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(),
+    };
+    await api("/api/v1/sessions/sess-nav", { method: "PUT", body: JSON.stringify(session) }, adminToken);
+
+    // Song has no sections → plan has one fallback slide (item.slides empty → title slide).
+    let res = await api("/api/v1/sessions/sess-nav/navigate", {
+      method: "POST", body: JSON.stringify({ action: "next" }),
+    }, adminToken);
+    expect(res.status).toBe(200);
+
+    res = await api("/api/v1/sessions/sess-nav/blank", {
+      method: "POST", body: JSON.stringify({ blanked: true }),
+    }, adminToken);
+    expect((await res.json()) as { blanked: boolean }).toMatchObject({ blanked: true });
+
+    const slideRes = await api("/api/v1/sessions/sess-nav/slide", {}, adminToken);
+    const slideBody = (await slideRes.json()) as { blanked: boolean; slide: { title: string } | null };
+    expect(slideBody.blanked).toBe(true);
+    expect(slideBody.slide?.title).toBe("Nav Song");
+
+    // Control ownership: guest with "control" scope can take; others blocked.
+    const guestRes = await api("/api/v1/auth/guest", {
+      method: "POST", body: JSON.stringify({ sessionId: "sess-nav", scopes: ["control"] }),
+    }, adminToken);
+    const { token: g } = (await guestRes.json()) as { token: string };
+    res = await api("/api/v1/sessions/sess-nav/control", { method: "POST", body: JSON.stringify({ take: true }) }, g);
+    expect(res.status).toBe(200);
+
+    const guest2Res = await api("/api/v1/auth/guest", {
+      method: "POST", body: JSON.stringify({ sessionId: "sess-nav", scopes: ["control"] }),
+    }, adminToken);
+    const { token: g2 } = (await guest2Res.json()) as { token: string };
+    res = await api("/api/v1/sessions/sess-nav/navigate", { method: "POST", body: JSON.stringify({ action: "next" }) }, g2);
+    expect(res.status).toBe(409); // control held by g
+
+    // view-scoped guest can't navigate at all
+    const viewRes = await api("/api/v1/auth/guest", {
+      method: "POST", body: JSON.stringify({ sessionId: "sess-nav", scopes: ["view"] }),
+    }, adminToken);
+    const { token: gv } = (await viewRes.json()) as { token: string };
+    res = await api("/api/v1/sessions/sess-nav/navigate", { method: "POST", body: JSON.stringify({ action: "next" }) }, gv);
+    expect(res.status).toBe(403);
+  });
+
+  it("receiver join mints a view-scoped token for the live session", async () => {
+    const res = await api("/api/v1/receiver/join");
+    expect(res.status).toBe(200);
+    const j = (await res.json()) as { sessionId: string; token: string };
+    expect(j.sessionId).toBe("sess-nav"); // most recently active live session
+    // token works for the slide endpoint
+    const slide = await api(`/api/v1/sessions/${j.sessionId}/slide`, {}, j.token);
+    expect(slide.status).toBe(200);
+    // but not for library browsing
+    expect((await api("/api/v1/songs", {}, j.token)).status).toBe(403);
   });
 
   it("LAN toggle reports addresses", async () => {

@@ -10,6 +10,7 @@ export * from "./domain/sessions/types.js";
 export * from "./ports/index.js";
 export * from "./application/transport.js";
 export * from "./application/commands/create-song.js";
+export * from "./application/presentation/plan.js";
 export * from "./import/opensong/lyrics.js";
 export * from "./import/opensong/song.js";
 export * from "./import/opensong/set.js";

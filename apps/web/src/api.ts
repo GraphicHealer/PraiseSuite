@@ -1,4 +1,11 @@
-import type { Service, Song, SongSummary } from "@praisesuite/core";
+import type { PresentationSession, Service, Song, SongSummary } from "@praisesuite/core";
+
+export interface SlideResponse {
+  sessionId: string;
+  status: string;
+  blanked: boolean;
+  slide: { index: number; total: number; title: string; lines: string[]; kind: string } | null;
+}
 
 export interface ImportPreview {
   songs: {
@@ -106,6 +113,31 @@ class Api {
     });
   deleteService = (id: string) =>
     this.req<{ ok: boolean }>(`/api/v1/services/${encodeURIComponent(id)}`, { method: "DELETE" });
+
+  // sessions / presentation
+  sessions = () => this.req<PresentationSession[]>("/api/v1/sessions");
+  session = (id: string) => this.req<PresentationSession>(`/api/v1/sessions/${encodeURIComponent(id)}`);
+  saveSession = (s: PresentationSession) =>
+    this.req<PresentationSession>(`/api/v1/sessions/${encodeURIComponent(s.id)}`, { method: "PUT", body: s });
+  sessionSlide = (id: string) =>
+    this.req<SlideResponse>(`/api/v1/sessions/${encodeURIComponent(id)}/slide`);
+  navigate = (id: string, action: "next" | "prev" | "first" | "last" | "jump", index?: number) =>
+    this.req<{ position: PresentationSession["position"]; slide: number; total: number }>(
+      `/api/v1/sessions/${encodeURIComponent(id)}/navigate`,
+      { method: "POST", body: { action, index } },
+    );
+  blank = (id: string, blanked: boolean) =>
+    this.req<{ blanked: boolean }>(`/api/v1/sessions/${encodeURIComponent(id)}/blank`, {
+      method: "POST",
+      body: { blanked },
+    });
+  control = (id: string, take: boolean) =>
+    this.req<{ controlOwner: string | null }>(`/api/v1/sessions/${encodeURIComponent(id)}/control`, {
+      method: "POST",
+      body: { take },
+    });
+  guestToken = (sessionId: string, scopes: string[] = ["view"]) =>
+    this.req<{ token: string }>("/api/v1/auth/guest", { method: "POST", body: { sessionId, scopes } });
 
   // import
   importPreview = (files: ImportFilePayload[]) =>

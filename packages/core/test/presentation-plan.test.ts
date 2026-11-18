@@ -1,0 +1,100 @@
+import { describe, expect, it } from "vitest";
+import {
+  buildPlan,
+  indexOfPosition,
+  navigate,
+  positionOfSlide,
+  type Service,
+  type Song,
+} from "../src/index.js";
+
+const REV = { id: "r1", parentId: null, origin: "t", createdAt: "2026-01-01T00:00:00Z" };
+
+function song(id: string): Song {
+  return {
+    id: id as Song["id"],
+    revision: REV as Song["revision"],
+    title: "Test Song",
+    authors: [],
+    copyright: null, ccliNumber: null, defaultKey: null, tempo: null, timeSignature: null,
+    aka: null, keyLine: null, theme: null, secondaryTheme: null,
+    userFields: { user1: "", user2: "", user3: "" },
+    sections: [
+      {
+        id: "s1" as Song["sections"][0]["id"],
+        type: "verse", label: "V1", options: {},
+        lines: [
+          { text: "line1", chords: [], breakBefore: "none", prefix: null, kind: "lyric", lang: null },
+          { text: "line2", chords: [], breakBefore: "slide", prefix: null, kind: "lyric", lang: null },
+        ],
+      },
+      {
+        id: "s2" as Song["sections"][0]["id"],
+        type: "chorus", label: "C", options: {},
+        lines: [{ text: "chorus", chords: [], breakBefore: "none", prefix: null, kind: "lyric", lang: null }],
+      },
+    ],
+    arrangements: [
+      {
+        id: "a1" as Song["arrangements"][0]["id"],
+        name: "default", key: null, tempo: null, timeSignature: null, capo: null, notes: null,
+        sequence: [
+          { id: "as1" as Song["arrangements"][0]["sequence"][0]["id"], sectionId: "s1" as Song["sections"][0]["id"], repeats: 1 },
+          { id: "as2" as Song["arrangements"][0]["sequence"][0]["id"], sectionId: "s2" as Song["sections"][0]["id"], repeats: 2 },
+        ],
+      },
+    ],
+    background: null,
+    notes: null,
+  };
+}
+
+const service: Service = {
+  id: "svc" as Service["id"],
+  revision: REV as Service["revision"],
+  name: "SVC", date: null, description: null,
+  items: [
+    {
+      id: "i1" as Service["items"][0]["id"], kind: "song", songId: "song1" as Song["id"],
+      arrangementId: null, mediaAssetId: null, title: "Test Song", subtitle: null, notes: null,
+      slides: [], loopSeconds: 0, config: {},
+    },
+    {
+      id: "i2" as Service["items"][0]["id"], kind: "custom-slides", songId: null,
+      arrangementId: null, mediaAssetId: null, title: "Welcome", subtitle: null, notes: null,
+      slides: [{ body: "Welcome!" }], loopSeconds: 0, config: {},
+    },
+  ],
+};
+
+const plan = buildPlan(service, new Map([["song1" as Song["id"], song("song1")]]));
+
+describe("buildPlan", () => {
+  it("expands arrangement sequence × repeats × slices", () => {
+    // s1 has 2 slices, s2 has 1 slice, s2 repeats twice → 2 + 1 + 1 = 4 song slides + 1 custom
+    expect(plan.slides).toHaveLength(5);
+    expect(plan.slides[0]!.lines).toEqual(["line1"]);
+    expect(plan.slides[1]!.lines).toEqual(["line2"]);
+    expect(plan.slides[2]!.sectionInstanceId).toBe("as2");
+    expect(plan.slides[3]!.sectionInstanceId).toBe("as2"); // repeat
+    expect(plan.slides[4]!.title).toBe("Welcome");
+  });
+
+  it("position round-trips through slide indices", () => {
+    const pos = positionOfSlide(plan, 1, "sess" as never);
+    expect(indexOfPosition(plan, pos)).toBe(1);
+    expect(pos.sectionInstanceId).toBe("as1");
+    expect(pos.positionWithinSection).toBe(1);
+    expect(pos.serviceItemId).toBe("i1");
+  });
+
+  it("navigates with clamping", () => {
+    const sess = "sess" as never;
+    const p0 = positionOfSlide(plan, 0, sess);
+    expect(indexOfPosition(plan, navigate(plan, p0, "next"))).toBe(1);
+    expect(indexOfPosition(plan, navigate(plan, p0, "prev"))).toBe(0); // clamped
+    expect(indexOfPosition(plan, navigate(plan, p0, "last"))).toBe(4);
+    const pEnd = positionOfSlide(plan, 4, sess);
+    expect(indexOfPosition(plan, navigate(plan, pEnd, "next"))).toBe(4); // clamped
+  });
+});

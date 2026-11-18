@@ -1,0 +1,14 @@
+{
+  "name": "@praisesuite/desktop",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "src/main.mjs",
+  "scripts": {
+    "dev": "electron .",
+    "typecheck": "echo ok"
+  },
+  "devDependencies": {
+    "electron": "^39.0.0"
+  }
+}

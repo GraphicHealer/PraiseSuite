@@ -157,6 +157,8 @@ describe("sqlite storage", () => {
         },
         createdAt: "2026-01-01T00:00:00Z",
         lastActivityAt: "2026-01-01T00:00:00Z",
+        blanked: false,
+        controlOwner: null,
       };
       await repositories.sessions.save(session);
       expect(await repositories.sessions.listActive()).toHaveLength(1);
