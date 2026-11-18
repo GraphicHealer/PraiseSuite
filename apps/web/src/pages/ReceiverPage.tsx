@@ -22,7 +22,7 @@ interface SlideState {
   sessionId: string;
   status: string;
   blanked: boolean;
-  mode: "normal" | "blank" | "logo" | "freeze";
+  mode: "normal" | "blank" | "white" | "hidden" | "logo" | "freeze";
   alert: string | null;
   slide: SlidePayload | null;
 }
@@ -150,6 +150,9 @@ export function ReceiverPage(): ReactNode {
   const bg = slide?.backgroundKey ? mediaUrl(slide.backgroundKey) : null;
   const black = !state || state.blanked || state.mode === "blank" || !slide;
   const logoOnly = state?.mode === "logo" && slide?.logoKey;
+  // OpenSong modes: [W] White = all-white screen; [H] Hidden = background only.
+  const white = state?.mode === "white";
+  const textHidden = state?.mode === "hidden";
   const lines = slide?.lines ?? [];
   // Looping announcements cycle their lines within the current slide.
   const visible = slide?.loopSeconds ? [lines[loopIdx % Math.max(1, lines.length)] ?? ""] : lines;
@@ -209,7 +212,8 @@ export function ReceiverPage(): ReactNode {
           <img src={mediaUrl(slide.logoKey)} alt="logo" className="max-h-[60vh] max-w-[60vw]" />
         </div>
       )}
-      {!black && !logoOnly && style && !(slide?.backgroundAsText && bg) && (
+      {white && <div className="absolute inset-0 z-[5] bg-white" />}
+      {!black && !logoOnly && !textHidden && style && !(slide?.backgroundAsText && bg) && (
         <div
           className="relative flex min-h-screen flex-1 flex-col justify-center"
           style={{

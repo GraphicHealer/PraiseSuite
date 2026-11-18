@@ -29,8 +29,8 @@ export type SessionStatus = "preparing" | "live" | "suspended" | "ended";
 
 export type NavigationMode = "follow" | "independent" | "hybrid";
 
-/** Output mode (OpenSong initial_mode N/B/L + freeze). */
-export type OutputMode = "normal" | "blank" | "logo" | "freeze";
+/** Output mode (OpenSong modes N/K/W/H/L/F: normal, black, white, hidden, logo, frozen). */
+export type OutputMode = "normal" | "blank" | "white" | "hidden" | "logo" | "freeze";
 
 export type OutputType =
   | "projector"

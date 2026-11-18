@@ -286,6 +286,44 @@ export function buildRoutes(deps: AppDeps): Route[] {
       };
     }),
 
+    r("GET", "/api/v1/sessions/:id/plan", "guest", "Flattened slide list for the operator console", async (ctx) => {
+      if (ctx.auth?.sub === "guest" && ctx.auth.sessionId !== ctx.params["id"]) {
+        throw new ApiError(403, "forbidden", "Guest token is scoped to a different session");
+      }
+      const session = await deps.repos.sessions.get(ctx.params["id"]! as SessionId);
+      if (!session) throw new ApiError(404, "not_found", "Session not found");
+      const { service, plan } = await sessionPlan(deps.repos, session);
+      // Section label/prefix lookup for the list's Text column and verse keys.
+      const songIds = [...new Set(plan.slides.map((s) => s.songId).filter((x): x is SongId => x !== null))];
+      const songList = await Promise.all(songIds.map((id) => deps.repos.songs.get(id)));
+      const songs = new Map(songList.filter((s): s is Song => s !== null).map((s) => [s.id, s]));
+      const inItem = new Map<string, number>();
+      const slides = plan.slides.map((s, i) => {
+        const item = service?.items.find((it) => it.id === s.serviceItemId);
+        const song = s.songId ? songs.get(s.songId) : undefined;
+        const sec = s.sectionId !== null ? song?.sections.find((x) => x.id === s.sectionId) : undefined;
+        const arr =
+          s.arrangementId !== null ? song?.arrangements.find((a) => a.id === s.arrangementId) : undefined;
+        const as =
+          s.sectionInstanceId !== null ? arr?.sequence.find((x) => x.id === s.sectionInstanceId) : undefined;
+        const n = (inItem.get(s.serviceItemId) ?? 0) + 1;
+        inItem.set(s.serviceItemId, n);
+        return {
+          index: i,
+          itemId: s.serviceItemId,
+          itemTitle: item?.title ?? s.title,
+          itemKind: s.kind,
+          slideInItem: n,
+          firstLine: s.lines[0] ?? s.title,
+          sectionLabel: sec?.label ?? null,
+          prefix: as?.prefix ?? null,
+          loopSeconds: item?.loopSeconds ?? 0,
+          itemNotes: item?.notes ?? null,
+        };
+      });
+      return { slides, current: indexOfPosition(plan, session.position) ?? 0, total: plan.slides.length };
+    }),
+
     r("POST", "/api/v1/sessions/:id/control", "guest", "Take/release presentation control (TAS 13.4)", async (ctx) => {
       const session = await deps.repos.sessions.get(ctx.params["id"]! as SessionId);
       if (!session) throw new ApiError(404, "not_found", "Session not found");
@@ -364,7 +402,9 @@ export function buildRoutes(deps: AppDeps): Route[] {
       const session = await deps.repos.sessions.get(ctx.params["id"]! as SessionId);
       if (!session) throw new ApiError(404, "not_found", "Session not found");
       requireControl(ctx, session);
-      const body = z.object({ mode: z.enum(["normal", "logo", "freeze"]) }).parse(await ctx.body());
+      const body = z
+        .object({ mode: z.enum(["normal", "blank", "white", "hidden", "logo", "freeze"]) })
+        .parse(await ctx.body());
       const updated: PresentationSession = { ...session, mode: body.mode as OutputMode, lastActivityAt: new Date().toISOString() };
       await deps.repos.sessions.save(updated);
       deps.broadcastToSession(session.id, { type: "mode", sessionId: session.id, mode: updated.mode });

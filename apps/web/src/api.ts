@@ -1,11 +1,14 @@
 import type { PresentationSession, Service, Song, SongSummary } from "@praisesuite/core";
 import type { SlideStyle } from "./slide-types.js";
 
+/** Output modes matching OpenSong's PresentHelperWindow: [N/K/W/H/L/F]. */
+export type PresentMode = "normal" | "blank" | "white" | "hidden" | "logo" | "freeze";
+
 export interface SlideResponse {
   sessionId: string;
   status: string;
   blanked: boolean;
-  mode: "normal" | "blank" | "logo" | "freeze";
+  mode: PresentMode;
   alert: string | null;
   slide: {
     index: number;
@@ -148,6 +151,23 @@ class Api {
     this.req<PresentationSession>(`/api/v1/sessions/${encodeURIComponent(s.id)}`, { method: "PUT", body: s });
   sessionSlide = (id: string) =>
     this.req<SlideResponse>(`/api/v1/sessions/${encodeURIComponent(id)}/slide`);
+  sessionPlan = (id: string) =>
+    this.req<{
+      slides: {
+        index: number;
+        itemId: string;
+        itemTitle: string;
+        itemKind: string;
+        slideInItem: number;
+        firstLine: string;
+        sectionLabel: string | null;
+        prefix: string | null;
+        loopSeconds: number;
+        itemNotes: string | null;
+      }[];
+      current: number;
+      total: number;
+    }>(`/api/v1/sessions/${encodeURIComponent(id)}/plan`);
   navigate = (
     id: string,
     action: "next" | "prev" | "first" | "last" | "jump" | "item",
@@ -170,7 +190,7 @@ class Api {
     });
   guestToken = (sessionId: string, scopes: string[] = ["view"]) =>
     this.req<{ token: string }>("/api/v1/auth/guest", { method: "POST", body: { sessionId, scopes } });
-  setMode = (id: string, mode: "normal" | "logo" | "freeze") =>
+  setMode = (id: string, mode: PresentMode) =>
     this.req<{ mode: string }>(`/api/v1/sessions/${encodeURIComponent(id)}/mode`, {
       method: "POST",
       body: { mode },

@@ -1,54 +1,224 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { PresentationSession, Service } from "@praisesuite/core";
-import { api, type SlideResponse } from "../api.js";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import type { PresentationSession, Service, ServiceItem, SongSummary } from "@praisesuite/core";
+import { api, type PresentMode, type SlideResponse } from "../api.js";
+import { fontStack } from "../fonts";
+import type { SlideStyle, TextStyle } from "../slide-types";
 
 const btn =
-  "rounded border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800 disabled:opacity-50";
+  "rounded border border-zinc-300 px-2 py-1 text-left text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800 disabled:opacity-50";
 
-/** Remote control surface: pick a session, take control, drive the outputs. */
+type PlanSlide = {
+  index: number;
+  itemId: string;
+  itemTitle: string;
+  itemKind: string;
+  slideInItem: number;
+  firstLine: string;
+  sectionLabel: string | null;
+  prefix: string | null;
+  loopSeconds: number;
+  itemNotes: string | null;
+};
+type Plan = { slides: PlanSlide[]; current: number; total: number };
+
+type SlideStyleLike = SlideStyle | undefined;
+
+function mediaUrl(key: string): string {
+  return `/api/v1/media/${encodeURIComponent(key.split("/").pop() ?? key)}`;
+}
+
+function textCss(s: TextStyle, scale = 1): CSSProperties {
+  return {
+    fontFamily: fontStack(s.font),
+    fontSize: `${Math.max(8, s.size * scale * 0.25)}px`,
+    fontWeight: s.bold ? 700 : 400,
+    fontStyle: s.italic ? "italic" : "normal",
+    textDecoration: s.underline ? "underline" : "none",
+    color: s.color,
+    textAlign: s.align,
+  };
+}
+
+/** Miniature output canvas — mirrors the receiver's mode/background/text stack. */
+function SlidePreview({
+  title,
+  lines,
+  style,
+  backgroundKey,
+  logoKey,
+  mode,
+  blanked,
+  next,
+}: {
+  title: string;
+  lines: string[];
+  style: SlideStyleLike;
+  backgroundKey?: string | null;
+  logoKey?: string | null;
+  mode?: PresentMode;
+  blanked?: boolean;
+  next?: { title: string } | null;
+}): ReactNode {
+  const black = blanked || mode === "blank";
+  const white = mode === "white";
+  const hidden = mode === "hidden";
+  const logo = mode === "logo";
+  const bg = backgroundKey ? mediaUrl(backgroundKey) : null;
+  return (
+    <div
+      className="relative aspect-video w-full overflow-hidden rounded border border-zinc-300 bg-black dark:border-zinc-700"
+      title={title}
+    >
+      {bg && !black && !white && (
+        <img src={bg} alt="" className="absolute inset-0 h-full w-full object-cover" />
+      )}
+      {!bg && !black && !white && (
+        <div className="absolute inset-0" style={{ backgroundColor: style?.backgroundColor ?? "#000" }} />
+      )}
+      {white && <div className="absolute inset-0 bg-white" />}
+      {logo && logoKey && !black && !white && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black">
+          <img src={mediaUrl(logoKey)} alt="logo" className="max-h-[70%] max-w-[70%]" />
+        </div>
+      )}
+      {!black && !white && !hidden && !logo && style && (
+        <div
+          className="absolute inset-0 flex flex-col justify-center px-3"
+          style={{
+            justifyContent:
+              style.body.valign === "top" ? "flex-start" : style.body.valign === "bottom" ? "flex-end" : "center",
+            alignItems:
+              style.body.align === "left" ? "flex-start" : style.body.align === "right" ? "flex-end" : "center",
+          }}
+        >
+          {style.title.enabled && (
+            <div className="absolute top-0 right-0 left-0 px-2 pt-1" style={textCss(style.title, 0.55)}>
+              {title}
+            </div>
+          )}
+          <div className="max-w-full space-y-1">
+            {lines.map((l, i) => (
+              <p key={i} style={textCss(style.body, 0.55)} className="leading-tight">
+                {l}
+              </p>
+            ))}
+          </div>
+          {style.subtitle.enabled && (
+            <div className="absolute right-0 bottom-0 left-0 px-2 pb-1" style={textCss(style.subtitle, 0.55)}>
+              {style.descriptiveSubtitles ? next?.title ?? "" : title.split(" — ")[0]}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * OpenSong Presentation Helper — operator console matching
+ * PresentHelperWindow.xojo_window: slide list over notes over dual previews,
+ * Mode/Actions/keys column, and the full OpenSong key map.
+ */
 export function PresentPage({ startService, startItemId }: { startService?: Service | null; startItemId?: string | null }): ReactNode {
   const [sessions, setSessions] = useState<PresentationSession[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [session, setSession] = useState<PresentationSession | null>(null);
   const [slide, setSlide] = useState<SlideResponse | null>(null);
+  const [plan, setPlan] = useState<Plan | null>(null);
   const [controlling, setControlling] = useState(false);
   const [receiverUrl, setReceiverUrl] = useState("");
   const [alertText, setAlertText] = useState("");
+  const [fullscreen, setFullscreen] = useState(false);
+  const [showSongs, setShowSongs] = useState(false);
+  const [showScripture, setShowScripture] = useState(false);
+  const [songQuery, setSongQuery] = useState("");
+  const [songList, setSongList] = useState<SongSummary[]>([]);
+  const [bibles, setBibles] = useState<{ id: string; name: string; abbreviation: string }[]>([]);
+  const [bibleId, setBibleId] = useState("");
+  const [bibleRef, setBibleRef] = useState("");
+  const [frozen, setFrozen] = useState<SlideResponse | null>(null);
   const [error, setError] = useState("");
   const wsRef = useRef<WebSocket | null>(null);
+  const curRowRef = useRef<HTMLTableRowElement | null>(null);
+  const alertRef = useRef<HTMLInputElement | null>(null);
 
-  const startFor = async (svc: Service, itemId?: string | null) => {
-    const id = crypto.randomUUID();
-    const session: PresentationSession = {
-      id: id as PresentationSession["id"],
-      serviceId: svc.id,
-      name: svc.name,
-      status: "live",
-      position: {
-        sessionId: id as PresentationSession["id"],
-        serviceItemId: null,
-        songId: null,
-        arrangementId: null,
-        sectionId: null,
-        sectionInstanceId: null,
-        positionWithinSection: 0,
-      },
-      blanked: false,
-      mode: "normal",
-      alert: null,
-      controlOwner: null,
-      createdAt: new Date().toISOString(),
-      lastActivityAt: new Date().toISOString(),
-    };
-    await api.saveSession(session);
-    const list = await api.sessions();
-    setSessions(list);
-    attach(session);
-    if (itemId) await api.navigate(session.id, "item", undefined, itemId).catch(() => {});
-    else await api.navigate(session.id, "first").catch(() => {});
-    void refreshSlide(session.id);
-    void api.control(session.id, true).then(() => setControlling(true)).catch(() => {});
-  };
+  const refreshSlide = useCallback(async (id: string) => {
+    try {
+      const s = await api.sessionSlide(id);
+      if (s.mode !== "freeze") setFrozen(s);
+      setSlide(s);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, []);
+
+  const refreshPlan = useCallback(async (id: string) => {
+    try {
+      setPlan(await api.sessionPlan(id));
+    } catch {
+      /* pre-plan sessions */
+    }
+  }, []);
+
+  const attach = useCallback(
+    (s: PresentationSession) => {
+      setSession(s);
+      setControlling(false);
+      void refreshSlide(s.id);
+      void refreshPlan(s.id);
+      wsRef.current?.close();
+      const proto = window.location.protocol === "https:" ? "wss" : "ws";
+      const token = localStorage.getItem("ps.token");
+      const ws = new WebSocket(`${proto}://${window.location.host}/ws?token=${token}`);
+      ws.onopen = () => ws.send(JSON.stringify({ type: "subscribe", sessionId: s.id }));
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data as string) as { type: string };
+        if (["position", "blank", "mode", "alert"].includes(msg.type)) {
+          void refreshSlide(s.id);
+          void refreshPlan(s.id);
+        }
+        if (msg.type === "control") setControlling(false);
+      };
+      wsRef.current = ws;
+    },
+    [refreshSlide, refreshPlan],
+  );
+
+  const startFor = useCallback(
+    async (svc: Service, itemId?: string | null) => {
+      const id = crypto.randomUUID();
+      const session: PresentationSession = {
+        id: id as PresentationSession["id"],
+        serviceId: svc.id,
+        name: svc.name,
+        status: "live",
+        position: {
+          sessionId: id as PresentationSession["id"],
+          serviceItemId: null,
+          songId: null,
+          arrangementId: null,
+          sectionId: null,
+          sectionInstanceId: null,
+          positionWithinSection: 0,
+        },
+        blanked: false,
+        mode: "normal",
+        alert: null,
+        controlOwner: null,
+        createdAt: new Date().toISOString(),
+        lastActivityAt: new Date().toISOString(),
+      };
+      await api.saveSession(session);
+      setSessions(await api.sessions());
+      attach(session);
+      if (itemId) await api.navigate(session.id, "item", undefined, itemId).catch(() => {});
+      else await api.navigate(session.id, "first").catch(() => {});
+      void refreshSlide(session.id);
+      void refreshPlan(session.id);
+      void api.control(session.id, true).then(() => setControlling(true)).catch(() => {});
+    },
+    [attach, refreshSlide, refreshPlan],
+  );
 
   const startRef = useRef(false);
   useEffect(() => {
@@ -58,38 +228,122 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
       startRef.current = true;
       void startFor(startService, startItemId);
     }
-  }, [startService]);
+  }, [startService, startFor, startItemId]);
 
-  const refreshSlide = async (id: string) => {
-    try {
-      setSlide(await api.sessionSlide(id));
-    } catch (e) {
-      setError((e as Error).message);
+  // Keep the current slide row scrolled into view (OpenSong auto-selects it).
+  useEffect(() => {
+    curRowRef.current?.scrollIntoView({ block: "nearest" });
+  }, [plan?.current]);
+
+  const doNavigate = useCallback(
+    async (action: "next" | "prev" | "first" | "last" | "jump" | "item", index?: number, itemId?: string) => {
+      if (!session) return;
+      try {
+        await api.navigate(session.id, action, index, itemId);
+        await refreshSlide(session.id);
+        await refreshPlan(session.id);
+      } catch (e) {
+        setError((e as Error).message);
+      }
+    },
+    [session, refreshSlide, refreshPlan],
+  );
+
+  const setMode = useCallback(
+    (m: PresentMode) => {
+      if (!session) return;
+      void api.setMode(session.id, m).then(() => refreshSlide(session.id));
+    },
+    [session, refreshSlide],
+  );
+
+  // OpenSong PresentHelperWindow key map.
+  const jumpToItem = useCallback(
+    (delta: number) => {
+      if (!plan || !session) return;
+      const ids = [...new Set(plan.slides.map((s) => s.itemId))];
+      const curItem = plan.slides[plan.current]?.itemId;
+      const i = ids.indexOf(curItem ?? "");
+      const next = ids[Math.max(0, Math.min(ids.length - 1, i + delta))];
+      const target = plan.slides.find((s) => s.itemId === next);
+      if (target) void doNavigate("jump", target.index);
+    },
+    [plan, session, doNavigate],
+  );
+
+  const jumpToSection = useCallback(
+    (match: (s: PlanSlide) => boolean) => {
+      if (!plan || !session) return;
+      const curItem = plan.slides[plan.current]?.itemId;
+      const inItem = plan.slides.filter((s) => s.itemId === curItem && match(s));
+      const pool = inItem.length > 0 ? inItem : plan.slides.filter(match);
+      const target = pool.find((s) => s.index > plan.current) ?? pool[0];
+      if (target) void doNavigate("jump", target.index);
+    },
+    [plan, session, doNavigate],
+  );
+
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+      setFullscreen(false);
+    } else {
+      void document.documentElement.requestFullscreen();
+      setFullscreen(true);
     }
-  };
+  }, []);
 
-  const attach = (s: PresentationSession) => {
-    setSession(s);
-    setControlling(false);
-    void refreshSlide(s.id);
+  const leave = useCallback(() => {
     wsRef.current?.close();
-    const proto = window.location.protocol === "https:" ? "wss" : "ws";
-    const token = localStorage.getItem("ps.token");
-    const ws = new WebSocket(`${proto}://${window.location.host}/ws?token=${token}`);
-    ws.onopen = () => ws.send(JSON.stringify({ type: "subscribe", sessionId: s.id }));
-    ws.onmessage = (e) => {
-      const msg = JSON.parse(e.data as string) as { type: string; controlOwner?: string | null };
-      if (["position", "blank", "mode", "alert"].includes(msg.type)) void refreshSlide(s.id);
-      if (msg.type === "control") setControlling(false);
-    };
-    wsRef.current = ws;
-  };
+    setSession(null);
+    setSlide(null);
+    setPlan(null);
+  }, []);
 
-  const createSession = async () => {
-    const svc = services.find((s) => s.id === (document.getElementById("svc-pick") as HTMLSelectElement).value);
-    if (!svc) return;
-    await startFor(svc);
-  };
+  useEffect(() => {
+    if (!session || !controlling) return;
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      const key = e.key;
+      let handled = true;
+      if (key === "ArrowDown" || key === " " || key === "PageDown") void doNavigate("next");
+      else if (key === "ArrowUp" || key === "Backspace" || key === "PageUp") void doNavigate("prev");
+      else if (key === "ArrowRight") jumpToItem(1);
+      else if (key === "ArrowLeft") jumpToItem(-1);
+      else if (key === "Escape") leave();
+      else if (/^F(\d|1[0-5])$/.test(key)) {
+        const n = parseInt(key.slice(1), 10);
+        const ids = [...new Set((plan?.slides ?? []).map((s) => s.itemId))];
+        const id = ids[n - 1];
+        const target = plan?.slides.find((s) => s.itemId === id);
+        if (target) void doNavigate("jump", target.index);
+      } else if (/^[1-9]$/.test(key)) {
+        jumpToSection((s) => s.prefix === key || s.sectionLabel?.toLowerCase() === `v${key}`);
+      } else {
+        switch (key.toLowerCase()) {
+          case "n": setMode("normal"); break;
+          case "k": setMode("blank"); break;
+          case "w": setMode("white"); break;
+          case "h": setMode("hidden"); break;
+          case "l": setMode("logo"); break;
+          case "f": setMode("freeze"); break;
+          case "a": alertRef.current?.focus(); break;
+          case "q": setShowSongs(true); void api.songs().then(setSongList).catch(() => {}); break;
+          case "s": setShowScripture(true); void api.bibles().then((b) => { setBibles(b); setBibleId(b[0]?.id ?? ""); }).catch(() => {}); break;
+          case "m": toggleFullscreen(); break;
+          case "c": jumpToSection((s) => s.sectionLabel?.toLowerCase().startsWith("c") ?? false); break;
+          case "p": jumpToSection((s) => s.sectionLabel?.toLowerCase().startsWith("p") ?? false); break;
+          case "b": jumpToSection((s) => s.sectionLabel?.toLowerCase().startsWith("b") ?? false); break;
+          case "t": jumpToSection((s) => s.sectionLabel?.toLowerCase().startsWith("t") ?? false); break;
+          default: handled = false;
+        }
+      }
+      if (handled) e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [session, controlling, plan, doNavigate, jumpToItem, jumpToSection, setMode, toggleFullscreen, leave]);
 
   const takeControl = async () => {
     if (!session) return;
@@ -102,26 +356,64 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
     }
   };
 
+  const insertItem = async (item: ServiceItem) => {
+    if (!session?.serviceId) return;
+    const svc = await api.service(session.serviceId);
+    const curItem = plan?.slides[plan.current]?.itemId;
+    const at = svc.items.findIndex((i) => i.id === curItem);
+    svc.items.splice(at === -1 ? svc.items.length : at + 1, 0, item);
+    await api.saveService(svc);
+    await refreshPlan(session.id);
+  };
+
+  const addSong = async (sum: SongSummary) => {
+    const song = await api.song(sum.id);
+    await insertItem({
+      id: crypto.randomUUID() as ServiceItem["id"],
+      kind: "song",
+      songId: song.id,
+      arrangementId: song.arrangements[0]?.id ?? null,
+      mediaAssetId: null,
+      title: song.title,
+      subtitle: null,
+      notes: null,
+      slides: [],
+      loopSeconds: 0,
+      config: {},
+    });
+    setShowSongs(false);
+  };
+
+  const addScripture = async () => {
+    if (!bibleId || !bibleRef) return;
+    const p = await api.passage(bibleId, bibleRef);
+    await insertItem({
+      id: crypto.randomUUID() as ServiceItem["id"],
+      kind: "scripture",
+      songId: null,
+      arrangementId: null,
+      mediaAssetId: null,
+      title: p.title,
+      subtitle: null,
+      notes: null,
+      slides: p.slides,
+      loopSeconds: 0,
+      config: {},
+    });
+    setShowScripture(false);
+    setBibleRef("");
+  };
+
   const makeReceiverUrl = async () => {
     if (!session) return;
     const { token } = await api.guestToken(session.id, ["view"]);
     setReceiverUrl(`${window.location.origin}/receiver?session=${session.id}&token=${token}`);
   };
 
-  const doNavigate = async (action: "next" | "prev" | "first" | "last") => {
-    if (!session) return;
-    try {
-      await api.navigate(session.id, action);
-      await refreshSlide(session.id);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
-
-  return (
-    <div className="mx-auto max-w-4xl p-4">
-      <h1 className="mb-3 text-lg font-semibold">Present</h1>
-      {!session ? (
+  if (!session) {
+    return (
+      <div className="mx-auto max-w-4xl p-4">
+        <h1 className="mb-3 text-lg font-semibold">Present</h1>
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <select id="svc-pick" className="rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900">
@@ -130,7 +422,13 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
-            <button onClick={() => void createSession()} className="rounded bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-500">
+            <button
+              onClick={() => {
+                const svc = services.find((s) => s.id === (document.getElementById("svc-pick") as HTMLSelectElement).value);
+                if (svc) void startFor(svc);
+              }}
+              className="rounded bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-500"
+            >
               Start session
             </button>
           </div>
@@ -151,94 +449,238 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
           )}
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
-      ) : (
-        <div>
-          <div className="mb-3 flex items-center gap-2">
-            <button onClick={() => { wsRef.current?.close(); setSession(null); }} className={btn}>← Sessions</button>
-            <span className="font-medium">{session.name}</span>
-            <span className="text-xs text-zinc-500">{slide?.status}</span>
-            <div className="ml-auto flex gap-2">
-              {!controlling ? (
-                <button onClick={() => void takeControl()} className="rounded bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-500">
-                  Take control
-                </button>
+      </div>
+    );
+  }
+
+  const shownSlide = slide?.mode === "freeze" ? frozen ?? slide : slide;
+  const activeMode: PresentMode = slide?.blanked ? "blank" : slide?.mode ?? "normal";
+  const curPlanSlide = plan?.slides[plan.current];
+  const MODES: { key: string; mode: PresentMode; label: string }[] = [
+    { key: "N", mode: "normal", label: "Normal" },
+    { key: "K", mode: "blank", label: "Black" },
+    { key: "W", mode: "white", label: "White" },
+    { key: "H", mode: "hidden", label: "Hidden" },
+    { key: "L", mode: "logo", label: "Logo" },
+    { key: "F", mode: "freeze", label: "Frozen" },
+  ];
+
+  return (
+    <div className="flex h-screen flex-col p-2">
+      {/* Session strip */}
+      <div className="mb-2 flex items-center gap-2 text-sm">
+        <span className="font-semibold">Presentation Helper</span>
+        <span className="text-zinc-500">—</span>
+        <span className="font-medium">{session.name}</span>
+        <span className="text-xs text-zinc-500">{slide?.status}</span>
+        <div className="ml-auto flex items-center gap-2">
+          {!controlling ? (
+            <button onClick={() => void takeControl()} className="rounded bg-indigo-600 px-3 py-1 text-xs text-white hover:bg-indigo-500">
+              Take control
+            </button>
+          ) : (
+            <span className="rounded bg-emerald-100 px-2 py-1 text-xs text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">In control</span>
+          )}
+          <button onClick={() => void makeReceiverUrl()} className={btn}>Receiver link</button>
+          <a href="/stage" target="_blank" rel="noreferrer" className={btn}>Stage view</a>
+        </div>
+      </div>
+      {receiverUrl && <p className="mb-1 break-all rounded bg-zinc-100 p-1 font-mono text-xs dark:bg-zinc-900">{receiverUrl}</p>}
+      {error && <p className="mb-1 text-xs text-red-600">{error}</p>}
+
+      <div className="flex min-h-0 flex-1 gap-2">
+        {/* Left column: slide list / notes / previews */}
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          {/* lst_all_slides — Title | ID | Text (27% / 8% / 65%) */}
+          <div className="min-h-0 flex-1 overflow-auto rounded border border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-950">
+            <table className="w-full border-collapse text-xs">
+              <thead className="sticky top-0 bg-zinc-100 text-left dark:bg-zinc-900">
+                <tr>
+                  <th className="w-[27%] px-2 py-1 font-semibold">Title</th>
+                  <th className="w-[8%] px-1 py-1 font-semibold">ID</th>
+                  <th className="w-[65%] px-2 py-1 font-semibold">Text</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(plan?.slides ?? []).map((s, i) => {
+                  const newGroup = i === 0 || plan!.slides[i - 1]!.itemId !== s.itemId;
+                  const cur = i === plan?.current;
+                  return (
+                    <tr
+                      key={s.index}
+                      ref={cur ? curRowRef : undefined}
+                      onClick={() => controlling && void doNavigate("jump", s.index)}
+                      className={`cursor-pointer select-none ${
+                        newGroup ? "border-t-2 border-zinc-400 dark:border-zinc-500" : ""
+                      } ${cur ? "bg-indigo-100 dark:bg-indigo-950" : "hover:bg-zinc-50 dark:hover:bg-zinc-900"}`}
+                    >
+                      <td className="px-2 py-0.5 font-medium">
+                        {newGroup ? (s.loopSeconds > 0 ? `(Loop) ${s.itemTitle}` : s.itemTitle) : ""}
+                      </td>
+                      <td className="px-1 py-0.5 font-bold">{s.slideInItem}</td>
+                      <td className="truncate px-2 py-0.5">{s.firstLine}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* edt_slide_notes */}
+          <textarea
+            readOnly
+            value={curPlanSlide?.itemNotes ?? shownSlide?.slide?.lines.join("\n") ?? ""}
+            className="h-16 shrink-0 resize-none rounded border border-zinc-300 bg-white px-2 py-1 font-mono text-xs dark:border-zinc-700 dark:bg-zinc-950"
+            placeholder="Slide notes"
+          />
+
+          {/* cnv_preview + cnv_preview_next */}
+          <div className="flex shrink-0 gap-2">
+            <div className="flex-1">
+              <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Current slide preview</p>
+              {shownSlide?.slide ? (
+                <SlidePreview
+                  title={shownSlide.slide.title}
+                  lines={shownSlide.slide.lines}
+                  style={shownSlide.slide.style}
+                  backgroundKey={shownSlide.slide.backgroundKey}
+                  logoKey={shownSlide.slide.logoKey}
+                  mode={activeMode}
+                  blanked={shownSlide.blanked}
+                  next={shownSlide.slide.next}
+                />
               ) : (
-                <span className="rounded bg-emerald-100 px-3 py-1.5 text-sm text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">In control</span>
+                <div className="aspect-video w-full rounded border border-zinc-300 bg-black dark:border-zinc-700" />
               )}
-              <button onClick={() => void makeReceiverUrl()} className={btn}>Receiver link</button>
+            </div>
+            <div className="flex-1">
+              <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Next slide preview</p>
+              {slide?.slide?.next ? (
+                <SlidePreview
+                  title={slide.slide.next.title}
+                  lines={slide.slide.next.lines}
+                  style={slide.slide.style}
+                />
+              ) : (
+                <div className="aspect-video w-full rounded border border-zinc-300 bg-black dark:border-zinc-700" />
+              )}
             </div>
           </div>
-          {receiverUrl && (
-            <p className="mb-3 break-all rounded bg-zinc-100 p-2 font-mono text-xs dark:bg-zinc-900">{receiverUrl}</p>
-          )}
-          {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
+        </div>
 
-          <div className="rounded-lg bg-black p-8 text-center text-white">
-            {slide?.blanked ? (
-              <p className="text-zinc-600">(blanked)</p>
-            ) : slide?.slide ? (
-              <div className="space-y-2">
-                {slide.slide.lines.map((l, i) => (
-                  <p key={i} className="text-2xl font-semibold">{l}</p>
-                ))}
-                <p className="pt-2 text-xs text-zinc-500">{slide.slide.title} — {slide.slide.index + 1}/{slide.slide.total}</p>
-              </div>
-            ) : (
-              <p className="text-zinc-600">No slide</p>
-            )}
-          </div>
+        {/* Right column: Mode / Actions / keys */}
+        <div className="flex w-40 shrink-0 flex-col gap-2">
+          <fieldset className="rounded border border-zinc-300 p-1.5 dark:border-zinc-700">
+            <legend className="px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Mode</legend>
+            <div className="flex flex-col gap-1">
+              {MODES.map((m) => (
+                <button
+                  key={m.mode}
+                  disabled={!controlling}
+                  onClick={() => setMode(m.mode)}
+                  className={`${btn} ${activeMode === m.mode ? "bg-indigo-100 font-semibold dark:bg-indigo-950" : ""}`}
+                >
+                  [{m.key}] {m.label}
+                </button>
+              ))}
+            </div>
+          </fieldset>
 
-          <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-            <button disabled={!controlling} onClick={() => void doNavigate("first")} className={btn}>⇤ First</button>
-            <button disabled={!controlling} onClick={() => void doNavigate("prev")} className={btn}>← Prev</button>
-            <button
-              disabled={!controlling}
-              onClick={() => session && void api.blank(session.id, !(slide?.blanked ?? false)).then(() => refreshSlide(session.id))}
-              className={btn}
-            >
-              {slide?.blanked ? "Unblank" : "Blank"}
-            </button>
-            <button disabled={!controlling} onClick={() => void doNavigate("next")} className="rounded bg-indigo-600 px-6 py-1.5 text-sm text-white hover:bg-indigo-500 disabled:opacity-50">Next →</button>
-            <button disabled={!controlling} onClick={() => void doNavigate("last")} className={btn}>Last ⇥</button>
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-            <span className="text-xs uppercase tracking-wide text-zinc-500">Mode:</span>
-            {(["normal", "logo", "freeze"] as const).map((m) => (
-              <button
-                key={m}
-                disabled={!controlling}
-                onClick={() => session && void api.setMode(session.id, m).then(() => refreshSlide(session.id))}
-                className={`${btn} ${slide?.mode === m ? "bg-indigo-100 dark:bg-indigo-950" : ""}`}
-              >
-                {m}
+          <fieldset className="rounded border border-zinc-300 p-1.5 dark:border-zinc-700">
+            <legend className="px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Actions</legend>
+            <div className="flex flex-col gap-1">
+              <button disabled={!controlling} onClick={() => alertRef.current?.focus()} className={btn}>[A] Alert</button>
+              <input
+                ref={alertRef}
+                value={alertText}
+                onChange={(e) => setAlertText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && session) {
+                    void api.setAlert(session.id, alertText || null).then(() => refreshSlide(session.id));
+                    (e.target as HTMLInputElement).blur();
+                  }
+                }}
+                placeholder="Alert text…"
+                className="rounded border border-zinc-300 bg-transparent px-2 py-0.5 text-xs dark:border-zinc-700"
+              />
+              {slide?.alert && (
+                <button
+                  disabled={!controlling}
+                  onClick={() => {
+                    setAlertText("");
+                    if (session) void api.setAlert(session.id, null).then(() => refreshSlide(session.id));
+                  }}
+                  className={`${btn} text-amber-600`}
+                >
+                  Clear alert
+                </button>
+              )}
+              <button disabled={!controlling || !session.serviceId} onClick={() => { setShowSongs(true); void api.songs().then(setSongList).catch(() => {}); }} className={btn}>
+                [Q] Add Song
               </button>
-            ))}
-            <span className="ml-4 text-xs uppercase tracking-wide text-zinc-500">Alert:</span>
+              <button disabled={!controlling || !session.serviceId} onClick={() => { setShowScripture(true); void api.bibles().then((b) => { setBibles(b); setBibleId((x) => x || b[0]?.id || ""); }).catch(() => {}); }} className={btn}>
+                [S] Scripture
+              </button>
+              <button onClick={toggleFullscreen} className={btn}>[M] {fullscreen ? "Normal Screen" : "Full Screen"}</button>
+              <button onClick={leave} className={btn}>[Esc] Return</button>
+            </div>
+          </fieldset>
+
+          <pre className="rounded border border-zinc-300 p-1.5 text-[10px] leading-snug whitespace-pre-wrap text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+{"- Keys -\nDown: Next Slide\nUp: Previous Slide\nRight: Next Section\nLeft: Previous Section\nF1-F15: Song\n1-9: Verse\nC: Chorus\nP: Pre-chorus\nB: Bridge\nT: Tag"}
+          </pre>
+        </div>
+      </div>
+
+      {/* Quick-song picker */}
+      {showSongs && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowSongs(false)}>
+          <div className="w-96 rounded-lg bg-white p-4 shadow-xl dark:bg-zinc-900" onClick={(e) => e.stopPropagation()}>
+            <h2 className="mb-2 text-sm font-semibold">Add Song</h2>
             <input
-              value={alertText}
-              onChange={(e) => setAlertText(e.target.value)}
-              placeholder="Nursery alert, message…"
-              className="rounded border border-zinc-300 bg-transparent px-2 py-1 text-sm dark:border-zinc-700"
-            />
-            <button
-              disabled={!controlling}
-              onClick={() => session && void api.setAlert(session.id, alertText || null).then(() => refreshSlide(session.id))}
-              className={btn}
-            >
-              Show
-            </button>
-            <button
-              disabled={!controlling}
-              onClick={() => {
-                setAlertText("");
-                if (session) void api.setAlert(session.id, null).then(() => refreshSlide(session.id));
+              autoFocus
+              value={songQuery}
+              onChange={(e) => {
+                setSongQuery(e.target.value);
+                void api.songs(e.target.value).then(setSongList).catch(() => {});
               }}
-              className={btn}
-            >
-              Clear
+              placeholder="Search songs…"
+              className="mb-2 w-full rounded border border-zinc-300 bg-transparent px-2 py-1 text-sm dark:border-zinc-700"
+            />
+            <ul className="max-h-64 overflow-auto divide-y divide-zinc-200 dark:divide-zinc-800">
+              {songList.map((s) => (
+                <li key={s.id}>
+                  <button onClick={() => void addSong(s)} className="w-full px-2 py-1.5 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                    {s.title}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {/* Scripture picker */}
+      {showScripture && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowScripture(false)}>
+          <div className="w-80 rounded-lg bg-white p-4 shadow-xl dark:bg-zinc-900" onClick={(e) => e.stopPropagation()}>
+            <h2 className="mb-2 text-sm font-semibold">Scripture</h2>
+            <select value={bibleId} onChange={(e) => setBibleId(e.target.value)} className="mb-2 w-full rounded border border-zinc-300 bg-transparent px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900">
+              {bibles.map((b) => (
+                <option key={b.id} value={b.id}>{b.abbreviation} — {b.name}</option>
+              ))}
+            </select>
+            <input
+              autoFocus
+              value={bibleRef}
+              onChange={(e) => setBibleRef(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void addScripture()}
+              placeholder="John 3:16-17"
+              className="mb-2 w-full rounded border border-zinc-300 bg-transparent px-2 py-1 text-sm dark:border-zinc-700"
+            />
+            <button onClick={() => void addScripture()} className="w-full rounded bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-500">
+              Insert
             </button>
-            <a href="/stage" target="_blank" rel="noreferrer" className={`${btn} ml-4`}>Stage view</a>
           </div>
         </div>
       )}
