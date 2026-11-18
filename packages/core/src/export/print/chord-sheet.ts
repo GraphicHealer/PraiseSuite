@@ -68,8 +68,10 @@ interface Cell {
   indent?: boolean;
   /** chars this cell starts left of its column (offsetC pull-back) */
   shift?: number;
-  /** continuation hyphen at this cell's left edge (SongML dashStart) */
+  /** continuation hyphen in the gap before this cell (SongML dashStart) */
   dash?: boolean;
+  /** dash offset from this cell's column, in ch — centered in the gap */
+  dashShift?: number;
   /** right-side width the next cell pulls back into — SongML keeps the
    *  truncated fragment's measured slice width in the column, so the pulled
    *  word lands in the gap instead of overlapping this cell's text. */
@@ -89,6 +91,7 @@ interface Cell {
 function lyricCells(text: string, bounds: number[]): Cell[] {
   const cells: Cell[] = [];
   let start = 0;
+  let prevEnd = 0; // rendered end (chars) of the previous cell's text
   for (let i = 0; i <= bounds.length; i++) {
     const b = i < bounds.length ? bounds[i]! : text.length;
     let end = b;
@@ -102,23 +105,30 @@ function lyricCells(text: string, bounds: number[]): Cell[] {
     const raw = text.slice(start, end);
     const colStart = i === 0 ? 0 : bounds[i - 1]!;
     const shift = Math.max(0, colStart - start);
-    // Dash sits at this cell's LEFT boundary (bounds[i-1] == colStart). SongML
-    // checks "_" at boundary+offsetC — the pulled-back word start, not the raw
-    // boundary — so "an___cient" still hyphenates across the chord gap.
+    const indent = i > 0 && (raw.startsWith(" ") || raw.startsWith("_"));
+    const thisStart = colStart - shift + (indent ? 1 : 0);
+    // Dash sits centered in the gap between the previous cell's rendered end
+    // and this cell's start ("fa - i - ling"). SongML checks "_" at
+    // boundary+offsetC — the pulled-back word start, not the raw boundary —
+    // so "an___cient" still hyphenates across the chord gap.
     const leftB = colStart;
     const dashAt = leftB - shift;
     const underAdjacent = dashAt > 0 && dashAt < text.length && (text[dashAt - 1] === "_" || text[dashAt] === "_");
     const midWord = leftB > 0 && leftB < text.length && isLetter(text[leftB - 1]) && isLetter(text[leftB]);
+    const dash = i > 0 && (underAdjacent || (midWord && shift === 0));
     // The pulled-back fragment stays in this column's width budget (SongML
     // sliceWidth), so the previous cell reserves `shift` chars of space for
     // the word to be drawn back into.
     if (shift > 0 && cells.length > 0) cells[cells.length - 1]!.pad = shift;
     cells.push({
       text: clean(raw),
-      indent: i > 0 && (raw.startsWith(" ") || raw.startsWith("_")),
+      indent,
       shift,
-      dash: i > 0 && (underAdjacent || (midWord && shift === 0)),
+      dash,
+      // Dash center at gap midpoint → left edge sits half a dash-width left.
+      dashShift: dash ? Math.round(((prevEnd + thisStart) / 2 - 0.5 - colStart) * 2) / 2 : 0,
     });
+    prevEnd = thisStart + clean(raw).length;
     start = end;
   }
   return cells;
@@ -204,10 +214,10 @@ function blockHtml(
     const tds = lyricCells(wl.text, bounds)
       .map((c, ci) => {
         let t = esc(c.text);
-        // OpenSong draws the continuation hyphen mid-gap ("fa - i - ling") —
-        // hung 1ch left of the column so the lyric text itself stays aligned
-        // under the chord instead of starting after the dash.
-        if (c.text !== "" && c.dash) t = `<span style="margin-left:-1ch">&#8208;</span>` + t;
+        // OpenSong draws the continuation hyphen centered in the gap between
+        // this word and the previous one ("fa - i - ling") — the lyric text
+        // itself stays aligned under its chord column.
+        if (c.text !== "" && c.dash) t = `<span style="margin-left:${c.dashShift ?? -1}ch">&#8208;</span>` + t;
         let inner = t;
         if (c.shift) inner = `<span style="margin-left:-${c.shift}ch;display:inline-block">${inner}</span>`;
         if (c.indent) inner = `<span style="margin-left:1em">${inner}</span>`;
