@@ -64,6 +64,7 @@ export function App(): ReactNode {
   const [authed, setAuthed] = useState(api.isAuthed);
   const [authRequired, setAuthRequired] = useState(true);
   const [page, setPage] = useState<Page>("main");
+  const [mainTab, setMainTab] = useState<"songs" | "sets">("songs");
   // Popup print window: opened via openPrintPreview (?print=<url>) — standalone UI, no nav chrome.
   const [printParams] = useState(() => {
     const p = new URLSearchParams(window.location.search);
@@ -147,13 +148,21 @@ export function App(): ReactNode {
       </header>
       <main className="flex-1">
         <DialogProvider>
-          {page === "main" && <MainPage onPresentService={present} onImport={() => setPage("import")} />}
+          {page === "main" && (
+            <MainPage
+              mode={mainTab}
+              onModeChange={setMainTab}
+              onPresentService={present}
+              onImport={() => setPage("import")}
+            />
+          )}
           {page === "import" && <ImportPage />}
           {page === "present" && (
             <PresentPage
               key={presentReq ? `${presentReq.service.id}:${presentReq.itemId ?? ""}` : "pick"}
               startService={presentReq?.service ?? null}
               startItemId={presentReq?.itemId ?? null}
+              onExit={() => setPage("main")}
             />
           )}
           {page === "settings" && <SettingsPage />}

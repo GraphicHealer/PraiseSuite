@@ -22,13 +22,16 @@ const SCRATCH_SET_NAME = "(Presented Song)";
  * "Current Item" / "New Item" in Sets mode.
  */
 export function MainPage({
+  mode,
+  onModeChange,
   onPresentService,
   onImport,
 }: {
+  mode: "songs" | "sets";
+  onModeChange: (m: "songs" | "sets") => void;
   onPresentService: (service: Service, itemId?: string) => void;
   onImport: () => void;
 }): ReactNode {
-  const [mode, setMode] = useState<"songs" | "sets">("songs");
   // Print buttons open the standalone preview window (Chrome-style popup).
   const setPrintUrl = (url: string | null) => {
     if (url !== null) openPrintPreview({ url });
@@ -38,13 +41,13 @@ export function MainPage({
     <div className="flex h-[calc(100vh-53px)] flex-col">
       <div className="flex items-center gap-1 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
         <button
-          onClick={() => setMode("songs")}
+          onClick={() => onModeChange("songs")}
           className={`rounded px-4 py-1 text-sm font-medium ${mode === "songs" ? "bg-indigo-600 text-white" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
         >
           Songs
         </button>
         <button
-          onClick={() => setMode("sets")}
+          onClick={() => onModeChange("sets")}
           className={`rounded px-4 py-1 text-sm font-medium ${mode === "sets" ? "bg-indigo-600 text-white" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
         >
           Sets

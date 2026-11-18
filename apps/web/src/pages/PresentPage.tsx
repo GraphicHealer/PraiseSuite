@@ -29,7 +29,16 @@ type Plan = { slides: PlanSlide[]; current: number; total: number };
  * PresentHelperWindow.xojo_window: slide list over notes over dual previews,
  * Mode/Actions/keys column, and the full OpenSong key map.
  */
-export function PresentPage({ startService, startItemId }: { startService?: Service | null; startItemId?: string | null }): ReactNode {
+export function PresentPage({
+  startService,
+  startItemId,
+  onExit,
+}: {
+  startService?: Service | null;
+  startItemId?: string | null;
+  /** Desktop single-user flow: End returns to wherever present was launched. */
+  onExit?: () => void;
+}): ReactNode {
   const dlg = useDialog();
   const [sessions, setSessions] = useState<PresentationSession[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -127,13 +136,23 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
 
   const startRef = useRef(false);
   useEffect(() => {
-    api.sessions().then(setSessions).catch((e) => setError((e as Error).message));
+    api.sessions()
+      .then((list) => {
+        setSessions(list);
+        // Single-user desktop: re-attach to the live session instead of
+        // showing a picker. A picker only appears when nothing is live.
+        if (!startService && list.length > 0 && !startRef.current) {
+          startRef.current = true;
+          attach(list[0]!);
+        }
+      })
+      .catch((e) => setError((e as Error).message));
     api.services().then(setServices).catch(() => {});
     if (startService && !startRef.current) {
       startRef.current = true;
       void startFor(startService, startItemId);
     }
-  }, [startService, startFor, startItemId]);
+  }, [startService, startFor, startItemId, attach]);
 
   // Keep the current slide row scrolled into view (OpenSong auto-selects it).
   useEffect(() => {
@@ -226,7 +245,8 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
     setSession(null);
     setSlide(null);
     setPlan(null);
-  }, []);
+    onExit?.();
+  }, [onExit]);
 
   /** OpenSong Esc/close: END the presentation, not just detach. */
   const endSession = useCallback(
@@ -343,27 +363,6 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
               Start session
             </button>
           </div>
-          {sessions.length > 0 && (
-            <div>
-              <h2 className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">Active sessions</h2>
-              <ul className="divide-y divide-zinc-200 rounded border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-                {sessions.map((s) => (
-                  <li key={s.id} className="flex items-center">
-                    <button onClick={() => attach(s)} className="flex flex-1 items-baseline gap-3 px-3 py-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800">
-                      <span className="font-medium">{s.name}</span>
-                      <span className="text-xs text-zinc-500">{s.status}</span>
-                    </button>
-                    <button
-                      onClick={() => confirmEnd(s.id)}
-                      className="mr-2 rounded bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-500"
-                    >
-                      End
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
       </div>
@@ -402,29 +401,15 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
 
   return (
     <div className="flex h-screen flex-col p-2">
-      {/* Session strip */}
+      {/* Title strip — OpenSong's helper shows only the window caption. */}
       <div className="mb-2 flex items-center gap-2 text-sm">
         <span className="font-semibold">Presentation Helper</span>
         <span className="text-zinc-500">—</span>
         <span className="font-medium">{session.name}</span>
         <span className="text-xs text-zinc-500">{slide?.status}</span>
-        <div className="ml-auto flex items-center gap-2">
-          {!controlling ? (
-            <button onClick={() => void takeControl()} className="rounded bg-indigo-600 px-3 py-1 text-xs text-white hover:bg-indigo-500">
-              Take control
-            </button>
-          ) : (
-            <span className="rounded bg-emerald-100 px-2 py-1 text-xs text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">In control</span>
-          )}
-          <button onClick={() => void makeReceiverUrl()} className={btn}>Receiver link</button>
-          <a href="/stage" target="_blank" rel="noreferrer" className={btn}>Stage view</a>
-          <button
-            onClick={() => confirmEnd()}
-            className="rounded bg-red-600 px-3 py-1 text-xs text-white hover:bg-red-500"
-          >
-            End
-          </button>
-        </div>
+        {controlling && (
+          <span className="ml-auto rounded bg-emerald-100 px-2 py-1 text-xs text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">In control</span>
+        )}
       </div>
       {receiverUrl && <p className="mb-1 break-all rounded bg-zinc-100 p-1 font-mono text-xs dark:bg-zinc-900">{receiverUrl}</p>}
       {error && <p className="mb-1 text-xs text-red-600">{error}</p>}
@@ -537,6 +522,11 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
           <fieldset className="rounded border border-zinc-300 p-1.5 dark:border-zinc-700">
             <legend className="px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Actions</legend>
             <div className="flex flex-col gap-1">
+              {!controlling && (
+                <button onClick={() => void takeControl()} className={`${btn} bg-indigo-600 text-white hover:bg-indigo-500`}>
+                  Take control
+                </button>
+              )}
               <button disabled={!controlling} onClick={() => alertRef.current?.focus()} className={btn}>[A] Alert</button>
               <input
                 ref={alertRef}
@@ -570,6 +560,8 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
                 [S] Scripture
               </button>
               <button onClick={toggleFullscreen} className={btn}>[M] {fullscreen ? "Normal Screen" : "Full Screen"}</button>
+              <button onClick={() => void makeReceiverUrl()} className={btn}>Receiver link</button>
+              <a href="/stage" target="_blank" rel="noreferrer" className={`${btn} block text-center`}>Stage view</a>
               <button onClick={() => confirmEnd()} className={btn}>[Esc] End</button>
             </div>
           </fieldset>
