@@ -1,11 +1,18 @@
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
+import globals from "globals";
 
 export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
     ignores: ["**/dist/**", "**/build/**", "**/coverage/**", "**/node_modules/**"],
+  },
+  {
+    // Plain-JS files (Electron main, configs) run in Node — TS files get
+    // undefined-name checking from tsc instead of no-undef.
+    files: ["**/*.{mjs,cjs,js}"],
+    languageOptions: { globals: { ...globals.node } },
   },
   {
     // Boundary applies to shipped source only — test files run in Node and may
