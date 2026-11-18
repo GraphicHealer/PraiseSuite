@@ -178,10 +178,13 @@ function SongsMode({
             <li key={s.id}>
               <button
                 onClick={() => setSel(s.id)}
-                className={`flex w-full items-baseline gap-2 px-3 py-1.5 text-left ${sel === s.id ? "bg-indigo-50 dark:bg-indigo-950" : "hover:bg-zinc-50 dark:hover:bg-zinc-800"}`}
+                title={`${s.title}${s.authors.length > 0 ? ` — ${s.authors.join(", ")}` : ""}`}
+                className={`block w-full truncate px-2 py-1 text-left text-sm ${sel === s.id ? "bg-indigo-50 dark:bg-indigo-950" : "hover:bg-zinc-50 dark:hover:bg-zinc-800"}`}
               >
                 <span className="font-medium">{s.title}</span>
-                <span className="truncate text-xs text-zinc-500">{s.authors.join(", ")}</span>
+                {s.authors.length > 0 && (
+                  <span className="text-zinc-500"> — {s.authors.join(", ")}</span>
+                )}
               </button>
             </li>
           ))}
