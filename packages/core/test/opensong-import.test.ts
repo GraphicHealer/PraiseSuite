@@ -111,6 +111,22 @@ describe("song parser", () => {
     ]);
   });
 
+  it("resolves verse-instance tags V1->[V] prefix 1 (A Mighty Fortress)", () => {
+    const { song } = parseOpenSongSong(fixtureSong("A Mighty Fortress is Our God"));
+    expect(song.sections.map((s) => s.label)).toEqual(["V"]);
+    expect(
+      song.arrangements[0]!.sequence.map((x) => ({
+        label: song.sections[x.sectionIndex]!.label,
+        prefix: x.prefix,
+      })),
+    ).toEqual([
+      { label: "V", prefix: "1" },
+      { label: "V", prefix: "2" },
+      { label: "V", prefix: "3" },
+      { label: "V", prefix: "4" },
+    ]);
+  });
+
   it("warns on unknown presentation tags", () => {
     const xml = `<?xml version="1.0"?><song><title>T</title><presentation>V1 C9</presentation><lyrics>[V1]\n x</lyrics></song>`;
     const { warnings } = parseOpenSongSong(xml);

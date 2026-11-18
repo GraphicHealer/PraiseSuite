@@ -61,6 +61,11 @@ export interface ArrangementSection {
   id: ArrangementSectionId;
   sectionId: SongSectionId;
   repeats: number;
+  /**
+   * Verse-number prefix filter (OpenSong presentation "V1" -> section "V",
+   * prefix "1"). When set, only lines whose `prefix` matches are presented.
+   */
+  prefix: string | null;
 }
 
 export interface SongArrangement {

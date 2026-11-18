@@ -9,7 +9,7 @@ import { asRecord, asString, attrOf, parseXml, textOf } from "./xml.js";
 
 /** Arrangement draft referencing sections by index into ParsedSong.sections (ids assigned later). */
 export interface ParsedArrangement extends Omit<SongArrangement, "id" | "sequence"> {
-  sequence: { sectionIndex: number; repeats: number }[];
+  sequence: { sectionIndex: number; repeats: number; prefix: string | null }[];
 }
 
 /** A Song without ids/revision — assigned by materializeSong(). */
@@ -56,20 +56,29 @@ export function parseOpenSongSong(xml: string): SongParseResult {
   const capo = Number.isNaN(capoNum) ? null : capoNum;
   void attrOf(root["capo"], "print"); // print preference; not yet modeled
 
-  // <presentation> "V1 C V2 C" -> default arrangement sequence.
+  // <presentation> "V1 C V2 C" -> default arrangement sequence. A token can be
+  // a section label ("C") or label+verse prefix ("V1" -> section V, prefix 1).
   const presentation = asString(root["presentation"]).trim();
-  const sequence: { sectionIndex: number; repeats: number }[] = [];
+  const sequence: { sectionIndex: number; repeats: number; prefix: string | null }[] = [];
   if (presentation !== "") {
     for (const tag of presentation.split(/\s+/)) {
-      const idx = sections.findIndex((s) => s.label === tag);
+      let idx = sections.findIndex((s) => s.label === tag);
+      let prefix: string | null = null;
+      if (idx === -1) {
+        const m = /^([A-Za-z]+)(\d+)$/.exec(tag);
+        if (m) {
+          idx = sections.findIndex((s) => s.label === m[1]);
+          if (idx !== -1) prefix = m[2]!;
+        }
+      }
       if (idx === -1) {
         warnings.push(`presentation references unknown section "${tag}"; skipped`);
         continue;
       }
-      sequence.push({ sectionIndex: idx, repeats: 1 });
+      sequence.push({ sectionIndex: idx, repeats: 1, prefix });
     }
   } else {
-    sections.forEach((_s, idx) => sequence.push({ sectionIndex: idx, repeats: 1 }));
+    sections.forEach((_s, idx) => sequence.push({ sectionIndex: idx, repeats: 1, prefix: null }));
   }
 
   const arrangements: ParsedArrangement[] = [
@@ -127,6 +136,7 @@ export function materializeSong(parsed: ParsedSong, ids: IdGenerator): Song {
         id: ids.next() as SongArrangement["sequence"][number]["id"],
         sectionId: sectionIds[as.sectionIndex]!,
         repeats: as.repeats,
+        prefix: as.prefix,
       })),
     })),
     revision: {

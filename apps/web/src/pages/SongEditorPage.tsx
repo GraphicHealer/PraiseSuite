@@ -38,7 +38,8 @@ function presentationOf(song: Song): string {
   return seq
     .map((as) => {
       const label = song.sections.find((s) => s.id === as.sectionId)?.label ?? "?";
-      return as.repeats > 1 ? `${label} x${as.repeats}` : label;
+      const ref = `${label}${as.prefix ?? ""}`;
+      return as.repeats > 1 ? `${ref} x${as.repeats}` : ref;
     })
     .join(" ");
 }
@@ -103,11 +104,21 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
     const sequence = labels
       .map((tok) => {
         const m = /^(.+?)\s*x(\d+)$/i.exec(tok);
-        const label = m ? m[1]! : tok;
+        const ref = m ? m[1]! : tok;
         const repeats = m ? Number.parseInt(m[2]!, 10) : 1;
-        const hit = pool.find((p) => p.label === label);
+        // "C" -> section C; "V1" -> section V with verse prefix 1 (unless a
+        // section is literally labeled V1).
+        let hit = pool.find((p) => p.label === ref);
+        let prefix: string | null = null;
+        if (!hit) {
+          const vm = /^([A-Za-z]+)(\d+)$/.exec(ref);
+          if (vm) {
+            hit = pool.find((p) => p.label === vm[1]);
+            if (hit) prefix = vm[2]!;
+          }
+        }
         return hit
-          ? { id: crypto.randomUUID() as ArrangementSectionId, sectionId: hit.sectionId, repeats }
+          ? { id: crypto.randomUUID() as ArrangementSectionId, sectionId: hit.sectionId, repeats, prefix }
           : null;
       })
       .filter((as): as is NonNullable<typeof as> => as !== null);

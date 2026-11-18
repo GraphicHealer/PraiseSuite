@@ -41,7 +41,11 @@ function slicesOfSection(section: SongSection): string[][] {
   const slices: string[][] = [[]];
   for (const line of section.lines) {
     if (line.kind !== "lyric") continue;
-    if (line.breakBefore === "slide" || line.breakBefore === "inline") slices.push([]);
+    if (
+      (line.breakBefore === "slide" || line.breakBefore === "inline") &&
+      slices[slices.length - 1]!.length > 0
+    )
+      slices.push([]);
     slices[slices.length - 1]!.push(line.text);
   }
   while (slices.length > 1 && slices[slices.length - 1]!.length === 0) slices.pop();
@@ -73,8 +77,13 @@ export function buildPlan(
       const arrangement = song ? resolveArrangement(song, item.arrangementId) : null;
       if (song && arrangement) {
         for (const as of arrangement.sequence) {
-          const section = song.sections.find((s) => s.id === as.sectionId);
-          if (!section) continue;
+          const raw = song.sections.find((s) => s.id === as.sectionId);
+          if (!raw) continue;
+          // Verse-instance prefix ("V1" -> section V, lines prefixed "1").
+          const section =
+            as.prefix === null
+              ? raw
+              : { ...raw, lines: raw.lines.filter((l) => l.prefix === as.prefix) };
           const repeats = Math.max(1, as.repeats);
           for (let rep = 0; rep < repeats; rep++) {
             slicesOfSection(section).forEach((lines, sliceIndex) => {

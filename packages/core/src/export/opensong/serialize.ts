@@ -80,7 +80,10 @@ export function serializeOpenSongSong(song: Song): string {
   const arr = song.arrangements[0];
   const presentation = arr
     ? arr.sequence
-        .map((as) => song.sections.find((s) => s.id === as.sectionId)?.label ?? "")
+        .map((as) => {
+          const label = song.sections.find((s) => s.id === as.sectionId)?.label ?? "";
+          return label === "" ? "" : `${label}${as.prefix ?? ""}`;
+        })
         .filter(Boolean)
         .join(" ")
     : "";

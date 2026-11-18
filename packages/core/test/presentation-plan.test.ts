@@ -39,8 +39,8 @@ function song(id: string): Song {
         id: "a1" as Song["arrangements"][0]["id"],
         name: "default", key: null, tempo: null, timeSignature: null, capo: null, notes: null,
         sequence: [
-          { id: "as1" as Song["arrangements"][0]["sequence"][0]["id"], sectionId: "s1" as Song["sections"][0]["id"], repeats: 1 },
-          { id: "as2" as Song["arrangements"][0]["sequence"][0]["id"], sectionId: "s2" as Song["sections"][0]["id"], repeats: 2 },
+          { id: "as1" as Song["arrangements"][0]["sequence"][0]["id"], sectionId: "s1" as Song["sections"][0]["id"], repeats: 1, prefix: null },
+          { id: "as2" as Song["arrangements"][0]["sequence"][0]["id"], sectionId: "s2" as Song["sections"][0]["id"], repeats: 2, prefix: null },
         ],
       },
     ],
@@ -86,6 +86,27 @@ describe("buildPlan", () => {
     expect(pos.sectionInstanceId).toBe("as1");
     expect(pos.positionWithinSection).toBe(1);
     expect(pos.serviceItemId).toBe("i1");
+  });
+
+  it("filters section lines by verse prefix", () => {
+    const s = song("song2");
+    s.sections = [
+      {
+        id: "sv" as Song["sections"][0]["id"], type: "verse", label: "V", options: {},
+        lines: [
+          { text: "v1a", chords: [], breakBefore: "none", prefix: "1", kind: "lyric", lang: null },
+          { text: "v1b", chords: [], breakBefore: "none", prefix: "1", kind: "lyric", lang: null },
+          { text: "v2a", chords: [], breakBefore: "slide", prefix: "2", kind: "lyric", lang: null },
+        ],
+      },
+    ];
+    s.arrangements[0]!.sequence = [
+      { id: "p1" as Song["arrangements"][0]["sequence"][0]["id"], sectionId: "sv" as Song["sections"][0]["id"], repeats: 1, prefix: "1" },
+      { id: "p2" as Song["arrangements"][0]["sequence"][0]["id"], sectionId: "sv" as Song["sections"][0]["id"], repeats: 1, prefix: "2" },
+    ];
+    const svc = { ...service, items: [service.items[0]!] };
+    const p = buildPlan(svc, new Map([["song1" as Song["id"], s]]));
+    expect(p.slides.map((sl) => sl.lines)).toEqual([["v1a", "v1b"], ["v2a"]]);
   });
 
   it("navigates with clamping", () => {
