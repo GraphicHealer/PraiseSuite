@@ -317,6 +317,9 @@ export function buildRoutes(deps: AppDeps): Route[] {
           firstLine: s.lines[0] ?? s.title,
           sectionLabel: sec?.label ?? null,
           prefix: as?.prefix ?? null,
+          /** OpenSong slide @id shown in the list's ID column ("V1", "C"). */
+          slideId: sec !== undefined ? `${sec.label}${as?.prefix ?? ""}` : null,
+          sectionInstanceId: s.sectionInstanceId,
           loopSeconds: item?.loopSeconds ?? 0,
           itemNotes: item?.notes ?? null,
         };

@@ -162,6 +162,8 @@ class Api {
         firstLine: string;
         sectionLabel: string | null;
         prefix: string | null;
+        slideId: string | null;
+        sectionInstanceId: string | null;
         loopSeconds: number;
         itemNotes: string | null;
       }[];

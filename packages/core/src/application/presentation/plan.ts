@@ -1,5 +1,5 @@
 import type { Service, ServiceItem } from "../../domain/services/types.js";
-import type { Song, SongArrangement, SongSection } from "../../domain/songs/types.js";
+import type { ArrangementSection, Song, SongArrangement, SongSection } from "../../domain/songs/types.js";
 import type { MusicalPosition } from "../../domain/sessions/types.js";
 import type {
   ArrangementId,
@@ -58,6 +58,33 @@ function slicesOfSection(section: SongSection): string[][] {
   return slices.length === 0 ? [[]] : slices;
 }
 
+/**
+ * OpenSong per-item presentation order ("V1 V2 C") — selects which arrangement
+ * section instances appear, and in what order. Tokens match section label +
+ * verse prefix; unknown tokens are skipped, no matches falls back to the full
+ * arrangement sequence.
+ */
+function sequenceForItem(song: Song, arrangement: SongArrangement, item: ServiceItem): ArrangementSection[] {
+  const order = item.config["presentation"];
+  if (typeof order !== "string" || order.trim() === "") return arrangement.sequence;
+  const labelOf = (as: ArrangementSection) => {
+    const sec = song.sections.find((s) => s.id === as.sectionId);
+    return sec ? `${sec.label}${as.prefix ?? ""}` : "";
+  };
+  const used = new Set<string>();
+  const chosen: ArrangementSection[] = [];
+  for (const token of order.trim().split(/\s+/)) {
+    const match = arrangement.sequence.find(
+      (as) => !used.has(as.id) && labelOf(as).toLowerCase() === token.toLowerCase(),
+    );
+    if (match) {
+      used.add(match.id);
+      chosen.push(match);
+    }
+  }
+  return chosen.length > 0 ? chosen : arrangement.sequence;
+}
+
 function resolveArrangement(song: Song, arrangementId: ArrangementId | null): SongArrangement | null {
   if (song.arrangements.length === 0) return null;
   if (arrangementId === null) return song.arrangements[0]!;
@@ -82,7 +109,7 @@ export function buildPlan(
       const song = songsById.get(item.songId);
       const arrangement = song ? resolveArrangement(song, item.arrangementId) : null;
       if (song && arrangement) {
-        for (const as of arrangement.sequence) {
+        for (const as of sequenceForItem(song, arrangement, item)) {
           const raw = song.sections.find((s) => s.id === as.sectionId);
           if (!raw) continue;
           // Verse-instance prefix ("V1" -> section V, lines prefixed "1").

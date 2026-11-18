@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { PresentationSession, Service, ServiceItem, SongSummary } from "@praisesuite/core";
+import { serializeOpenSongLyrics } from "@praisesuite/core";
 import { api, type PresentMode, type SlideResponse } from "../api.js";
 import { fontStack } from "../fonts";
 import type { SlideStyle, TextStyle } from "../slide-types";
@@ -16,6 +17,8 @@ type PlanSlide = {
   firstLine: string;
   sectionLabel: string | null;
   prefix: string | null;
+  slideId: string | null;
+  sectionInstanceId: string | null;
   loopSeconds: number;
   itemNotes: string | null;
 };
@@ -30,7 +33,7 @@ function mediaUrl(key: string): string {
 function textCss(s: TextStyle, scale = 1): CSSProperties {
   return {
     fontFamily: fontStack(s.font),
-    fontSize: `${Math.max(8, s.size * scale * 0.25)}px`,
+    fontSize: `${Math.max(9, s.size * scale * 0.5)}px`,
     fontWeight: s.bold ? 700 : 400,
     fontStyle: s.italic ? "italic" : "normal",
     textDecoration: s.underline ? "underline" : "none",
@@ -129,13 +132,18 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
   const [receiverUrl, setReceiverUrl] = useState("");
   const [alertText, setAlertText] = useState("");
   const [fullscreen, setFullscreen] = useState(false);
-  const [showSongs, setShowSongs] = useState(false);
-  const [showScripture, setShowScripture] = useState(false);
+  const [addTab, setAddTab] = useState<"song" | "scripture" | "custom" | null>(null);
   const [songQuery, setSongQuery] = useState("");
-  const [songList, setSongList] = useState<SongSummary[]>([]);
+  const [songFolder, setSongFolder] = useState("(All)");
+  const [allSongs, setAllSongs] = useState<SongSummary[]>([]);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [previewSong, setPreviewSong] = useState<{ text: string; order: string } | null>(null);
+  const [customOrder, setCustomOrder] = useState("");
   const [bibles, setBibles] = useState<{ id: string; name: string; abbreviation: string }[]>([]);
   const [bibleId, setBibleId] = useState("");
   const [bibleRef, setBibleRef] = useState("");
+  const [customTitle, setCustomTitle] = useState("");
+  const [customBody, setCustomBody] = useState("");
   const [frozen, setFrozen] = useState<SlideResponse | null>(null);
   const [error, setError] = useState("");
   const wsRef = useRef<WebSocket | null>(null);
@@ -283,6 +291,14 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
     [plan, session, doNavigate],
   );
 
+  /** Song Lookup (OpenSong SongPickerWindow) — load library + open the dialog. */
+  const openAdd = useCallback((tab: "song" | "scripture" | "custom") => {
+    setAddTab(tab);
+    if (tab === "song") void api.songs().then(setAllSongs).catch(() => {});
+    if (tab === "scripture")
+      void api.bibles().then((b) => { setBibles(b); setBibleId((x) => x || b[0]?.id || ""); }).catch(() => {});
+  }, []);
+
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) {
       void document.exitFullscreen();
@@ -329,8 +345,8 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
           case "l": setMode("logo"); break;
           case "f": setMode("freeze"); break;
           case "a": alertRef.current?.focus(); break;
-          case "q": setShowSongs(true); void api.songs().then(setSongList).catch(() => {}); break;
-          case "s": setShowScripture(true); void api.bibles().then((b) => { setBibles(b); setBibleId(b[0]?.id ?? ""); }).catch(() => {}); break;
+          case "q": openAdd("song"); break;
+          case "s": openAdd("scripture"); break;
           case "m": toggleFullscreen(); break;
           case "c": jumpToSection((s) => s.sectionLabel?.toLowerCase().startsWith("c") ?? false); break;
           case "p": jumpToSection((s) => s.sectionLabel?.toLowerCase().startsWith("p") ?? false); break;
@@ -343,7 +359,7 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [session, controlling, plan, doNavigate, jumpToItem, jumpToSection, setMode, toggleFullscreen, leave]);
+  }, [session, controlling, plan, doNavigate, jumpToItem, jumpToSection, setMode, toggleFullscreen, leave, openAdd]);
 
   const takeControl = async () => {
     if (!session) return;
@@ -366,22 +382,63 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
     await refreshPlan(session.id);
   };
 
-  const addSong = async (sum: SongSummary) => {
+  const orderOf = (song: Awaited<ReturnType<typeof api.song>>) =>
+    (song.arrangements[0]?.sequence ?? [])
+      .map((as) => {
+        const sec = song.sections.find((s) => s.id === as.sectionId);
+        return sec ? `${sec.label}${as.prefix ?? ""}` : "";
+      })
+      .filter(Boolean)
+      .join(" ");
+
+  const preview = async (sum: SongSummary) => {
     const song = await api.song(sum.id);
+    setPreviewSong({ text: serializeOpenSongLyrics(song), order: orderOf(song) });
+  };
+
+  const addSongs = async (ids: string[]) => {
+    for (const id of ids) {
+      const sum = allSongs.find((s) => s.id === id);
+      if (!sum) continue;
+      const song = await api.song(sum.id);
+      await insertItem({
+        id: crypto.randomUUID() as ServiceItem["id"],
+        kind: "song",
+        songId: song.id,
+        arrangementId: song.arrangements[0]?.id ?? null,
+        mediaAssetId: null,
+        title: song.title,
+        subtitle: null,
+        notes: null,
+        slides: [],
+        loopSeconds: 0,
+        config: customOrder.trim() ? { presentation: customOrder.trim() } : {},
+      });
+    }
+    setPicked(new Set());
+    setCustomOrder("");
+    setPreviewSong(null);
+    setAddTab(null);
+  };
+
+  const addCustom = async () => {
+    if (!customTitle.trim() && !customBody.trim()) return;
     await insertItem({
       id: crypto.randomUUID() as ServiceItem["id"],
-      kind: "song",
-      songId: song.id,
-      arrangementId: song.arrangements[0]?.id ?? null,
+      kind: "custom-slides",
+      songId: null,
+      arrangementId: null,
       mediaAssetId: null,
-      title: song.title,
+      title: customTitle.trim() || "Custom",
       subtitle: null,
       notes: null,
-      slides: [],
+      slides: customBody.split(/\n{2,}/).filter((s) => s.trim()).map((body) => ({ body })),
       loopSeconds: 0,
       config: {},
     });
-    setShowSongs(false);
+    setCustomTitle("");
+    setCustomBody("");
+    setAddTab(null);
   };
 
   const addScripture = async () => {
@@ -400,7 +457,7 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
       loopSeconds: 0,
       config: {},
     });
-    setShowScripture(false);
+    setAddTab(null);
     setBibleRef("");
   };
 
@@ -456,6 +513,47 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
   const shownSlide = slide?.mode === "freeze" ? frozen ?? slide : slide;
   const activeMode: PresentMode = slide?.blanked ? "blank" : slide?.mode ?? "normal";
   const curPlanSlide = plan?.slides[plan.current];
+
+  // OpenSong lst_all_slides rows = set slide nodes: one row per section
+  // instance (song) or slide (other kinds); screen slices merge into one row.
+  const listRows = (plan?.slides ?? []).reduce<
+    {
+      key: string;
+      itemId: string;
+      itemTitle: string;
+      kind: string;
+      slideId: string;
+      firstLine: string;
+      index: number;
+      emphasized: boolean;
+      loop: boolean;
+      newGroup: boolean;
+    }[]
+  >((rows, s) => {
+    const prev = rows[rows.length - 1];
+    if (prev && s.itemId === prev.itemId && s.sectionInstanceId !== null && s.sectionInstanceId === prev.key) {
+      return rows;
+    }
+    rows.push({
+      key: s.sectionInstanceId ?? `slide-${s.index}`,
+      itemId: s.itemId,
+      itemTitle: s.itemTitle,
+      kind: s.itemKind,
+      slideId: s.slideId ?? String(s.slideInItem),
+      firstLine: s.firstLine,
+      index: s.index,
+      // OpenSong @emphasize (chorus) bolds the ID cell.
+      emphasized: s.slideId !== null && !/^[v]/i.test(s.slideId),
+      loop: s.loopSeconds > 0,
+      newGroup: prev === undefined || prev.itemId !== s.itemId,
+    });
+    return rows;
+  }, []);
+  const curRow = listRows.findIndex(
+    (r, i) =>
+      r.index <= (plan?.current ?? -1) &&
+      (i === listRows.length - 1 || listRows[i + 1]!.index > (plan?.current ?? -1)),
+  );
   const MODES: { key: string; mode: PresentMode; label: string }[] = [
     { key: "N", mode: "normal", label: "Normal" },
     { key: "K", mode: "blank", label: "Black" },
@@ -493,7 +591,7 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           {/* lst_all_slides — Title | ID | Text (27% / 8% / 65%) */}
           <div className="min-h-0 flex-1 overflow-auto rounded border border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-950">
-            <table className="w-full border-collapse text-xs">
+            <table className="w-full border-collapse text-sm">
               <thead className="sticky top-0 bg-zinc-100 text-left dark:bg-zinc-900">
                 <tr>
                   <th className="w-[27%] px-2 py-1 font-semibold">Title</th>
@@ -502,23 +600,24 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
                 </tr>
               </thead>
               <tbody>
-                {(plan?.slides ?? []).map((s, i) => {
-                  const newGroup = i === 0 || plan!.slides[i - 1]!.itemId !== s.itemId;
-                  const cur = i === plan?.current;
+                {listRows.map((r, i) => {
+                  const cur = i === curRow;
+                  // Alternating shading distinguishes consecutive rows (OpenSong listbox).
+                  const alt = i % 2 === 1 && !cur ? "bg-sky-50 dark:bg-sky-950/40" : "";
                   return (
                     <tr
-                      key={s.index}
+                      key={r.key}
                       ref={cur ? curRowRef : undefined}
-                      onClick={() => controlling && void doNavigate("jump", s.index)}
+                      onClick={() => controlling && void doNavigate("jump", r.index)}
                       className={`cursor-pointer select-none ${
-                        newGroup ? "border-t-2 border-zinc-400 dark:border-zinc-500" : ""
-                      } ${cur ? "bg-indigo-100 dark:bg-indigo-950" : "hover:bg-zinc-50 dark:hover:bg-zinc-900"}`}
+                        r.newGroup && i > 0 ? "[&>td]:border-t-4 [&>td]:border-zinc-300 dark:[&>td]:border-zinc-600" : ""
+                      } ${cur ? "bg-indigo-100 dark:bg-indigo-950" : `${alt} hover:bg-zinc-50 dark:hover:bg-zinc-900`}`}
                     >
-                      <td className="px-2 py-0.5 font-medium">
-                        {newGroup ? (s.loopSeconds > 0 ? `(Loop) ${s.itemTitle}` : s.itemTitle) : ""}
+                      <td className="px-2 py-1 font-medium">
+                        {r.newGroup ? (r.loop ? `(Loop) ${r.itemTitle}` : r.itemTitle) : ""}
                       </td>
-                      <td className="px-1 py-0.5 font-bold">{s.slideInItem}</td>
-                      <td className="truncate px-2 py-0.5">{s.firstLine}</td>
+                      <td className={`px-1 py-1 text-center ${r.emphasized ? "font-bold" : ""}`}>{r.slideId}</td>
+                      <td className="truncate px-2 py-1">{r.firstLine}</td>
                     </tr>
                   );
                 })}
@@ -615,10 +714,10 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
                   Clear alert
                 </button>
               )}
-              <button disabled={!controlling || !session.serviceId} onClick={() => { setShowSongs(true); void api.songs().then(setSongList).catch(() => {}); }} className={btn}>
+              <button disabled={!controlling || !session.serviceId} onClick={() => openAdd("song")} className={btn}>
                 [Q] Add Song
               </button>
-              <button disabled={!controlling || !session.serviceId} onClick={() => { setShowScripture(true); void api.bibles().then((b) => { setBibles(b); setBibleId((x) => x || b[0]?.id || ""); }).catch(() => {}); }} className={btn}>
+              <button disabled={!controlling || !session.serviceId} onClick={() => openAdd("scripture")} className={btn}>
                 [S] Scripture
               </button>
               <button onClick={toggleFullscreen} className={btn}>[M] {fullscreen ? "Normal Screen" : "Full Screen"}</button>
@@ -632,55 +731,186 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
         </div>
       </div>
 
-      {/* Quick-song picker */}
-      {showSongs && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowSongs(false)}>
-          <div className="w-96 rounded-lg bg-white p-4 shadow-xl dark:bg-zinc-900" onClick={(e) => e.stopPropagation()}>
-            <h2 className="mb-2 text-sm font-semibold">Add Song</h2>
-            <input
-              autoFocus
-              value={songQuery}
-              onChange={(e) => {
-                setSongQuery(e.target.value);
-                void api.songs(e.target.value).then(setSongList).catch(() => {});
-              }}
-              placeholder="Search songs…"
-              className="mb-2 w-full rounded border border-zinc-300 bg-transparent px-2 py-1 text-sm dark:border-zinc-700"
-            />
-            <ul className="max-h-64 overflow-auto divide-y divide-zinc-200 dark:divide-zinc-800">
-              {songList.map((s) => (
-                <li key={s.id}>
-                  <button onClick={() => void addSong(s)} className="w-full px-2 py-1.5 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800">
-                    {s.title}
-                  </button>
-                </li>
+      {/* Add Item — OpenSong SongPickerWindow (song tab) + scripture/custom tabs */}
+      {addTab !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setAddTab(null)}>
+          <div className="flex h-[520px] w-[640px] flex-col rounded-lg bg-white p-4 shadow-xl dark:bg-zinc-900" onClick={(e) => e.stopPropagation()}>
+            {/* Tab bar */}
+            <div className="mb-3 flex gap-1 border-b border-zinc-200 dark:border-zinc-700">
+              {([["song", "Songs"], ["scripture", "Scripture"], ["custom", "Custom"]] as const).map(([t, label]) => (
+                <button
+                  key={t}
+                  onClick={() => openAdd(t)}
+                  className={`rounded-t px-3 py-1.5 text-sm ${addTab === t ? "bg-zinc-100 font-semibold dark:bg-zinc-800" : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"}`}
+                >
+                  {label}
+                </button>
               ))}
-            </ul>
-          </div>
-        </div>
-      )}
+            </div>
 
-      {/* Scripture picker */}
-      {showScripture && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowScripture(false)}>
-          <div className="w-80 rounded-lg bg-white p-4 shadow-xl dark:bg-zinc-900" onClick={(e) => e.stopPropagation()}>
-            <h2 className="mb-2 text-sm font-semibold">Scripture</h2>
-            <select value={bibleId} onChange={(e) => setBibleId(e.target.value)} className="mb-2 w-full rounded border border-zinc-300 bg-transparent px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900">
-              {bibles.map((b) => (
-                <option key={b.id} value={b.id}>{b.abbreviation} — {b.name}</option>
-              ))}
-            </select>
-            <input
-              autoFocus
-              value={bibleRef}
-              onChange={(e) => setBibleRef(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && void addScripture()}
-              placeholder="John 3:16-17"
-              className="mb-2 w-full rounded border border-zinc-300 bg-transparent px-2 py-1 text-sm dark:border-zinc-700"
-            />
-            <button onClick={() => void addScripture()} className="w-full rounded bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-500">
-              Insert
-            </button>
+            {addTab === "song" && (
+              <>
+                <p className="mb-2 text-xs text-zinc-500">
+                  To add a song, click the song title below and click &quot;Add&quot;. If you know the name of the
+                  song you can type it in the Quick Lookup field. Double-click a song to add it.
+                </p>
+                <div className="mb-2 flex items-center gap-3">
+                  <label className="flex items-center gap-1.5 text-xs">
+                    <span className="font-semibold">Select Folder:</span>
+                    <select
+                      value={songFolder}
+                      onChange={(e) => setSongFolder(e.target.value)}
+                      className="rounded border border-zinc-300 bg-transparent px-1.5 py-0.5 dark:border-zinc-700 dark:bg-zinc-900"
+                    >
+                      <option>(All)</option>
+                      {[...new Set(allSongs.map((s) => s.folder).filter((f): f is string => f !== null))].map((f) => (
+                        <option key={f}>{f}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-1 items-center gap-1.5 text-xs">
+                    <span className="font-semibold">Quick Lookup:</span>
+                    <input
+                      autoFocus
+                      value={songQuery}
+                      onChange={(e) => setSongQuery(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && picked.size === 0 && void api.songs(songQuery).then((r) => { if (r[0]) void preview(r[0]); })}
+                      className="flex-1 rounded border border-zinc-300 bg-transparent px-2 py-0.5 dark:border-zinc-700"
+                    />
+                  </label>
+                </div>
+                <div className="flex min-h-0 flex-1 gap-2">
+                  {/* Song list (multi-select) */}
+                  <ul className="w-1/2 overflow-auto rounded border border-zinc-300 divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-700">
+                    {allSongs
+                      .filter(
+                        (s) =>
+                          (songFolder === "(All)" || s.folder === songFolder) &&
+                          (songQuery === "" ||
+                            s.title.toLowerCase().includes(songQuery.toLowerCase()) ||
+                            s.authors.some((a) => a.toLowerCase().includes(songQuery.toLowerCase()))),
+                      )
+                      .map((s) => (
+                        <li key={s.id}>
+                          <button
+                            onClick={() => {
+                              setPicked((p) => {
+                                const n = new Set(p);
+                                if (n.has(s.id)) n.delete(s.id);
+                                else n.add(s.id);
+                                return n;
+                              });
+                              void preview(s);
+                            }}
+                            onDoubleClick={() => { setPicked(new Set()); void addSongs([s.id]); }}
+                            className={`w-full px-2 py-1 text-left text-sm ${
+                              picked.has(s.id) ? "bg-indigo-100 dark:bg-indigo-950" : "hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                            }`}
+                          >
+                            {s.title}
+                          </button>
+                        </li>
+                      ))}
+                  </ul>
+                  {/* Preview + order */}
+                  <div className="flex w-1/2 flex-col gap-1.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Song Preview</p>
+                    <textarea
+                      readOnly
+                      value={previewSong?.text ?? ""}
+                      className="min-h-0 flex-1 resize-none rounded border border-zinc-300 bg-zinc-50 p-1.5 font-mono text-[10px] leading-snug dark:border-zinc-700 dark:bg-zinc-950"
+                    />
+                    <label className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                      Custom presentation order
+                      <input
+                        value={customOrder}
+                        onChange={(e) => setCustomOrder(e.target.value)}
+                        className="mt-0.5 w-full rounded border border-zinc-300 bg-transparent px-2 py-0.5 font-mono text-xs normal-case dark:border-zinc-700"
+                      />
+                    </label>
+                    <label className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                      Original presentation order
+                      <input
+                        readOnly
+                        value={previewSong?.order ?? ""}
+                        className="mt-0.5 w-full rounded border border-zinc-300 bg-zinc-50 px-2 py-0.5 font-mono text-xs normal-case text-zinc-500 dark:border-zinc-700 dark:bg-zinc-950"
+                      />
+                    </label>
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center gap-2">
+                  <button
+                    onClick={() => void api.songs(songQuery).then((r) => setAllSongs(r)).catch(() => {})}
+                    className="rounded border border-zinc-300 px-4 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                  >
+                    Search
+                  </button>
+                  <div className="flex-1" />
+                  <button
+                    disabled={picked.size === 0}
+                    onClick={() => void addSongs([...picked])}
+                    className="rounded bg-indigo-600 px-6 py-1.5 text-sm text-white hover:bg-indigo-500 disabled:opacity-50"
+                  >
+                    Add
+                  </button>
+                  <button onClick={() => setAddTab(null)} className="rounded border border-zinc-300 px-4 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800">
+                    Done
+                  </button>
+                </div>
+              </>
+            )}
+
+            {addTab === "scripture" && (
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold">
+                  Translation
+                  <select value={bibleId} onChange={(e) => setBibleId(e.target.value)} className="mt-0.5 w-full rounded border border-zinc-300 bg-transparent px-2 py-1 text-sm font-normal dark:border-zinc-700 dark:bg-zinc-900">
+                    {bibles.map((b) => (
+                      <option key={b.id} value={b.id}>{b.abbreviation} — {b.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-xs font-semibold">
+                  Reference
+                  <input
+                    autoFocus
+                    value={bibleRef}
+                    onChange={(e) => setBibleRef(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && void addScripture()}
+                    placeholder="John 3:16-17"
+                    className="mt-0.5 w-full rounded border border-zinc-300 bg-transparent px-2 py-1 text-sm font-normal dark:border-zinc-700"
+                  />
+                </label>
+                <button onClick={() => void addScripture()} className="mt-1 self-end rounded bg-indigo-600 px-6 py-1.5 text-sm text-white hover:bg-indigo-500">
+                  Insert
+                </button>
+              </div>
+            )}
+
+            {addTab === "custom" && (
+              <div className="flex min-h-0 flex-1 flex-col gap-2">
+                <label className="text-xs font-semibold">
+                  Title
+                  <input
+                    autoFocus
+                    value={customTitle}
+                    onChange={(e) => setCustomTitle(e.target.value)}
+                    className="mt-0.5 w-full rounded border border-zinc-300 bg-transparent px-2 py-1 text-sm font-normal dark:border-zinc-700"
+                  />
+                </label>
+                <label className="flex min-h-0 flex-1 flex-col text-xs font-semibold">
+                  Slides (blank line between slides)
+                  <textarea
+                    value={customBody}
+                    onChange={(e) => setCustomBody(e.target.value)}
+                    className="mt-0.5 min-h-0 flex-1 resize-none rounded border border-zinc-300 bg-transparent px-2 py-1 font-mono text-sm font-normal dark:border-zinc-700"
+                  />
+                </label>
+                <button onClick={() => void addCustom()} className="self-end rounded bg-indigo-600 px-6 py-1.5 text-sm text-white hover:bg-indigo-500">
+                  Insert
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
