@@ -397,6 +397,6 @@ describe("slide counting vs OpenSong (re-review N1/N2)", () => {
 
   it("Man Of Sorrows: 5 numbered verses = 5 slides, blank line is not a break", () => {
     const plan = planOf("Man Of Sorrows");
-    expect(plan.slides).toHaveLength(5);
+    expect(plan.slides.filter((x) => !x.blank)).toHaveLength(5);
   });
 });

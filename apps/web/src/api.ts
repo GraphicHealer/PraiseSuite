@@ -170,6 +170,7 @@ class Api {
         sectionInstanceId: string | null;
         loopSeconds: number;
         itemNotes: string | null;
+        blank: boolean;
       }[];
       current: number;
       total: number;

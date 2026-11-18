@@ -354,6 +354,8 @@ export function buildRoutes(deps: AppDeps): Route[] {
           sectionInstanceId: s.sectionInstanceId,
           loopSeconds: item?.loopSeconds ?? 0,
           itemNotes: item?.notes ?? null,
+          /** OpenSong style/@blanks separator row — renders as an empty line in the helper list. */
+          blank: s.blank,
         };
       });
       return { slides, current: indexOfPosition(plan, session.position) ?? 0, total: plan.slides.length };

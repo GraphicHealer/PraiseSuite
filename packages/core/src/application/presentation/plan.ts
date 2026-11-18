@@ -32,6 +32,13 @@ export interface PlanSlide {
   backgroundKey: string | null;
   /** Show the background image instead of slide text (OpenSong @background_as_text). */
   backgroundAsText: boolean;
+  /**
+   * OpenSong style/@blanks separator: an empty slide inserted before each
+   * item (when the item name changes) and after the last one. It belongs to
+   * the FOLLOWING item (blank_uses_next) so it shows that item's background;
+   * the trailing blank uses the last item's.
+   */
+  blank: boolean;
 }
 
 export interface PresentationPlan {
@@ -103,9 +110,36 @@ export function buildPlan(
 ): PresentationPlan {
   const slides: PlanSlide[] = [];
   const itemStart: number[] = [];
+  // OpenSong InsertBlanksIntoSet (style/@blanks): an empty slide before each
+  // group whose name changes and one after the last. The blank carries the
+  // following item's id so it inherits that item's style/background
+  // (blank_uses_next); the trailing blank carries the last item's.
+  const pushBlank = (item: ServiceItem, sliceIndex: number) =>
+    slides.push({
+      serviceItemId: item.id,
+      kind: item.kind,
+      // Carry the song ref so the separator shows that song's background.
+      songId: item.kind === "song" ? item.songId : null,
+      arrangementId: null,
+      sectionId: null,
+      sectionInstanceId: null,
+      // Negative sliceIndexes keep positions unique: -1 leads an item, -2 trails the set.
+      sliceIndex,
+      title: "",
+      lines: [],
+      mediaKey: null,
+      backgroundKey: null,
+      backgroundAsText: false,
+      blank: true,
+    });
+  let prevName: string | null = null;
 
   for (const item of service.items) {
-    itemStart.push(slides.length);
+    const name = item.title;
+    if (name !== prevName) pushBlank(item, -1);
+    prevName = name;
+    // The blank is the first slide of the item — Next Section lands on it.
+    itemStart.push(slides.length - 1 >= 0 && slides[slides.length - 1]!.blank ? slides.length - 1 : slides.length);
     if (item.kind === "song" && item.songId !== null) {
       const song = songsById.get(item.songId);
       const arrangement = song ? resolveArrangement(song, item.arrangementId) : null;
@@ -141,6 +175,7 @@ export function buildPlan(
                 mediaKey: null,
                 backgroundKey: bg?.key ?? null,
                 backgroundAsText: bg !== null && (song.backgrounds?.asText ?? false),
+                blank: false,
               });
             });
           }
@@ -176,6 +211,7 @@ export function buildPlan(
           mediaKey: key,
           backgroundKey: null,
           backgroundAsText: false,
+          blank: false,
         });
       }
       continue;
@@ -195,6 +231,7 @@ export function buildPlan(
         mediaKey: null,
         backgroundKey: null,
         backgroundAsText: false,
+        blank: false,
       });
     }
     if (item.slides.length === 0) {
@@ -211,9 +248,12 @@ export function buildPlan(
         mediaKey: null,
         backgroundKey: null,
         backgroundAsText: false,
+        blank: false,
       });
     }
   }
+  const last = service.items[service.items.length - 1];
+  if (last) pushBlank(last, -2);
   return { slides, itemStart };
 }
 

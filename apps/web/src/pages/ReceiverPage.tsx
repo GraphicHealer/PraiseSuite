@@ -3,7 +3,7 @@ import { SlideCanvas } from "../components/SlideCanvas.js";
 import { api, type PresentMode } from "../api.js";
 import type { SlideStyle } from "../slide-types";
 
-type OutputPlanSlide = { index: number; itemId: string; sectionLabel: string | null; prefix: string | null };
+type OutputPlanSlide = { index: number; itemId: string; sectionLabel: string | null; prefix: string | null; blank: boolean };
 type OutputPlan = { slides: OutputPlanSlide[]; current: number };
 
 interface SlidePayload {
@@ -158,8 +158,8 @@ export function ReceiverPage(): ReactNode {
         const curItem = plan.slides.find((x) => x.index === cur)?.itemId;
         const items = [...new Set(plan.slides.map((x) => x.itemId))];
         const i = items.indexOf(curItem ?? "");
-        const first = plan.slides.find((x) => x.itemId === curItem);
-        const prev = i > 0 ? plan.slides.find((x) => x.itemId === items[i - 1]) : undefined;
+        const first = plan.slides.find((x) => x.itemId === curItem && !x.blank);
+        const prev = i > 0 ? plan.slides.find((x) => x.itemId === items[i - 1] && !x.blank) : undefined;
         const target = first && first.index < cur ? first : prev ?? first;
         if (target) jump(target.index);
       };

@@ -21,6 +21,7 @@ type PlanSlide = {
   sectionInstanceId: string | null;
   loopSeconds: number;
   itemNotes: string | null;
+  blank: boolean;
 };
 type Plan = { slides: PlanSlide[]; current: number; total: number };
 
@@ -196,17 +197,21 @@ export function PresentPage({
   );
 
   /** OpenSong GoPreviousSection (Left arrow AND Backspace): back to the
-   * FIRST slide of the current item; if already there, the previous item. */
+   * FIRST slide of the current item; if already there, the previous item.
+   * Skips style/@blanks separators — backspace never lands on a blank. */
   const prevSection = useCallback(() => {
     if (!plan || !session) return;
     const curItem = plan.slides[plan.current]?.itemId;
-    const firstOfItem = plan.slides.find((s) => s.itemId === curItem);
+    const firstOfItem = plan.slides.find((s) => s.itemId === curItem && !s.blank);
     if (firstOfItem && plan.current > firstOfItem.index) {
       void doNavigate("jump", firstOfItem.index);
       return;
     }
-    jumpToItem(-1);
-  }, [plan, session, doNavigate, jumpToItem]);
+    const ids = [...new Set(plan.slides.map((s) => s.itemId))];
+    const prev = ids[Math.max(0, ids.indexOf(curItem ?? "") - 1)];
+    const target = plan.slides.find((s) => s.itemId === prev && !s.blank);
+    if (target) void doNavigate("jump", target.index);
+  }, [plan, session, doNavigate]);
 
   const jumpToSection = useCallback(
     (match: (s: PlanSlide) => boolean) => {
@@ -387,8 +392,10 @@ export function PresentPage({
     itemId: s.itemId,
     itemTitle: s.itemTitle,
     kind: s.itemKind,
-    slideId: s.slideId ?? String(s.slideInItem),
-    firstLine: s.firstLine,
+    slideId: s.blank ? "" : (s.slideId ?? String(s.slideInItem)),
+    firstLine: s.blank ? "" : s.firstLine,
+    blank: s.blank,
+    blankTitle: s.blank ? s.itemTitle : "",
     index: s.index,
     // OpenSong @emphasize (chorus) bolds the ID cell.
     emphasized: s.slideId !== null && !/^[v]/i.test(s.slideId),
@@ -448,7 +455,7 @@ export function PresentPage({
                       } ${cur ? "bg-indigo-100 dark:bg-indigo-950" : `${alt} hover:bg-zinc-50 dark:hover:bg-zinc-900`}`}
                     >
                       <td className="px-2 py-1 font-medium">
-                        {r.loop ? `(Loop) ${r.itemTitle}` : r.itemTitle}
+                        {r.blank ? " " : r.loop ? `(Loop) ${r.itemTitle}` : r.itemTitle}
                       </td>
                       <td className={`px-1 py-1 text-center ${r.emphasized ? "font-bold" : ""}`}>{r.slideId}</td>
                       <td className="truncate px-2 py-1">{r.firstLine}</td>

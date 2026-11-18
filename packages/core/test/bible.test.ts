@@ -105,8 +105,8 @@ describe("media slides in the plan", () => {
       }],
     } as unknown as Service;
     const plan = buildPlan(service, new Map());
-    expect(plan.slides).toHaveLength(2);
-    expect(plan.slides[0]!.mediaKey).toBe("media/aaa.mp4");
-    expect(plan.slides[1]!.mediaKey).toBe("media/bbb.png");
+    expect(plan.slides).toHaveLength(4); // blank + 2 media + trailing blank
+    expect(plan.slides[1]!.mediaKey).toBe("media/aaa.mp4");
+    expect(plan.slides[2]!.mediaKey).toBe("media/bbb.png");
   });
 });

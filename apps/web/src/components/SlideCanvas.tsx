@@ -136,28 +136,35 @@ export function SlideCanvas({
   const align =
     style?.body.align === "left" ? "flex-start" : style?.body.align === "right" ? "flex-end" : "center";
 
+  // OpenSong stacks by valign: title/subtitle default valign=bottom → they
+  // sit at the bottom (title above subtitle); body centers in what remains.
+  const titleEl = style?.title.enabled ? (
+    <div style={textCss(style.title)}>{title}</div>
+  ) : null;
+  const subtitleEl = style?.subtitle.enabled ? (
+    <div style={textCss(style.subtitle)}>
+      {style.descriptiveSubtitles ? next?.title ?? "" : title.split(" — ")[0]}
+    </div>
+  ) : null;
+
   const body = style && (
-    <div
-      className="absolute inset-0 flex flex-col"
-      style={{ padding: inset, justifyContent: justify, alignItems: align }}
-    >
-      {style.title.enabled && (
-        <div className="absolute top-0 right-0 left-0" style={{ padding: `${inset}px ${inset}px 0`, ...textCss(style.title) }}>
-          {title}
+    <div className="absolute inset-0 flex flex-col" style={{ padding: inset }}>
+      {style.title.valign === "top" && titleEl}
+      {style.subtitle.valign === "top" && subtitleEl}
+      <div
+        className="flex min-h-0 flex-1 flex-col"
+        style={{ justifyContent: justify, alignItems: align }}
+      >
+        <div className="max-w-full" style={{ display: "flex", flexDirection: "column" }}>
+          {lines.map((l, i) => (
+            <p key={i} style={{ ...textCss(style.body, bodyZoom), lineHeight: 1.2, margin: 0, marginBottom: lineLeading(style.body, bodyZoom) }}>
+              {l}
+            </p>
+          ))}
         </div>
-      )}
-      <div className="max-w-full" style={{ display: "flex", flexDirection: "column" }}>
-        {lines.map((l, i) => (
-          <p key={i} style={{ ...textCss(style.body, bodyZoom), lineHeight: 1.2, margin: 0, marginBottom: lineLeading(style.body, bodyZoom) }}>
-            {l}
-          </p>
-        ))}
       </div>
-      {style.subtitle.enabled && (
-        <div className="absolute right-0 bottom-0 left-0" style={{ padding: `0 ${inset}px ${inset}px`, ...textCss(style.subtitle) }}>
-          {style.descriptiveSubtitles ? next?.title ?? "" : title.split(" — ")[0]}
-        </div>
-      )}
+      {style.title.valign !== "top" && titleEl}
+      {style.subtitle.valign !== "top" && subtitleEl}
     </div>
   );
 

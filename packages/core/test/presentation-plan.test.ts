@@ -76,18 +76,34 @@ const plan = buildPlan(service, new Map([["song1" as Song["id"], song("song1")]]
 
 describe("buildPlan", () => {
   it("expands arrangement sequence × repeats × slices", () => {
-    // s1 has 2 slices, s2 has 1 slice, s2 repeats twice → 2 + 1 + 1 = 4 song slides + 1 custom
-    expect(plan.slides).toHaveLength(5);
-    expect(plan.slides[0]!.lines).toEqual(["line1"]);
-    expect(plan.slides[1]!.lines).toEqual(["line2"]);
-    expect(plan.slides[2]!.sectionInstanceId).toBe("as2");
-    expect(plan.slides[3]!.sectionInstanceId).toBe("as2"); // repeat
-    expect(plan.slides[4]!.title).toBe("Welcome");
+    // s1 has 2 slices, s2 has 1 slice, s2 repeats twice → 4 song slides + 1 custom,
+    // plus OpenSong style/@blanks separators: before each item + one trailing.
+    expect(plan.slides).toHaveLength(8);
+    expect(plan.slides[0]!.blank).toBe(true); // separator before "Test Song"
+    expect(plan.slides[1]!.lines).toEqual(["line1"]);
+    expect(plan.slides[2]!.lines).toEqual(["line2"]);
+    expect(plan.slides[3]!.sectionInstanceId).toBe("as2");
+    expect(plan.slides[4]!.sectionInstanceId).toBe("as2"); // repeat
+    expect(plan.slides[5]!.blank).toBe(true); // separator before "Welcome"
+    expect(plan.slides[6]!.title).toBe("Welcome");
+    expect(plan.slides[7]!.blank).toBe(true); // trailing separator
+  });
+
+  it("inserts a blank separator before each item and one at the end (OpenSong style/@blanks)", () => {
+    const blanks = plan.slides.filter((s) => s.blank);
+    expect(blanks).toHaveLength(3); // before "Test Song", before "Welcome", trailing
+    // The separator belongs to the following item — it shows that item's background.
+    expect(plan.slides[0]!.serviceItemId).toBe("i1");
+    expect(plan.slides[5]!.serviceItemId).toBe("i2");
+    expect(plan.slides[7]!.serviceItemId).toBe("i2");
+    // Same-named items get no separator between them.
+    const same = { ...service, items: [service.items[0]!, { ...service.items[0]!, id: "i1b" as never }] };
+    expect(buildPlan(same, new Map([["song1" as Song["id"], song("song1")]])).slides.filter((s) => s.blank)).toHaveLength(2);
   });
 
   it("position round-trips through slide indices", () => {
-    const pos = positionOfSlide(plan, 1, "sess" as never);
-    expect(indexOfPosition(plan, pos)).toBe(1);
+    const pos = positionOfSlide(plan, 2, "sess" as never);
+    expect(indexOfPosition(plan, pos)).toBe(2);
     expect(pos.sectionInstanceId).toBe("as1");
     expect(pos.positionWithinSection).toBe(1);
     expect(pos.serviceItemId).toBe("i1");
@@ -111,7 +127,7 @@ describe("buildPlan", () => {
     ];
     const svc = { ...service, items: [service.items[0]!] };
     const p = buildPlan(svc, new Map([["song1" as Song["id"], s]]));
-    expect(p.slides.map((sl) => sl.lines)).toEqual([["v1a", "v1b"], ["v2a"]]);
+    expect(p.slides.filter((sl) => !sl.blank).map((sl) => sl.lines)).toEqual([["v1a", "v1b"], ["v2a"]]);
   });
 
   it("strips underscores and squeezes spaces like OpenSong slides", () => {
@@ -127,7 +143,7 @@ describe("buildPlan", () => {
     ];
     const svc = { ...service, items: [service.items[0]!] };
     const p = buildPlan(svc, new Map([["song1" as Song["id"], s]]));
-    expect(p.slides[0]!.lines).toEqual(["choosing a mighty fortress"]);
+    expect(p.slides[1]!.lines).toEqual(["choosing a mighty fortress"]);
   });
 
   it("assigns verse backgrounds to matching section slides, cycling slices", () => {
@@ -143,10 +159,10 @@ describe("buildPlan", () => {
     const svc = { ...service, items: [service.items[0]!] };
     const p = buildPlan(svc, new Map([["song1" as Song["id"], s]]));
     // V1 has 2 slices -> bg-a then bg-b; C slices -> bg-c each repeat
-    expect(p.slides[0]!.backgroundKey).toBe("media/bg-a.png");
-    expect(p.slides[1]!.backgroundKey).toBe("media/bg-b.png");
-    expect(p.slides[2]!.backgroundKey).toBe("media/bg-c.png");
+    expect(p.slides[1]!.backgroundKey).toBe("media/bg-a.png");
+    expect(p.slides[2]!.backgroundKey).toBe("media/bg-b.png");
     expect(p.slides[3]!.backgroundKey).toBe("media/bg-c.png");
+    expect(p.slides[4]!.backgroundKey).toBe("media/bg-c.png");
     expect(p.slides.every((x) => !x.backgroundAsText)).toBe(true);
   });
 
@@ -158,8 +174,8 @@ describe("buildPlan", () => {
     };
     const svc = { ...service, items: [service.items[0]!] };
     const p = buildPlan(svc, new Map([["song1" as Song["id"], s]]));
-    expect(p.slides[0]!.backgroundAsText).toBe(true);
-    expect(p.slides[2]!.backgroundAsText).toBe(false); // C has no background
+    expect(p.slides[1]!.backgroundAsText).toBe(true);
+    expect(p.slides[3]!.backgroundAsText).toBe(false); // C has no background
   });
 
   it("maps imported OpenSong image groups to media slides (R2)", () => {
@@ -175,9 +191,9 @@ describe("buildPlan", () => {
       ],
     };
     const p = buildPlan(svc, new Map());
-    expect(p.slides).toHaveLength(2);
-    expect(p.slides[0]!.mediaKey).toBe("media/a.jpg");
-    expect(p.slides[1]!.mediaKey).toBe("media/b.jpg");
+    expect(p.slides).toHaveLength(4); // blank + 2 media + trailing blank
+    expect(p.slides[1]!.mediaKey).toBe("media/a.jpg");
+    expect(p.slides[2]!.mediaKey).toBe("media/b.jpg");
   });
 
   it("navigates with clamping", () => {
@@ -185,8 +201,8 @@ describe("buildPlan", () => {
     const p0 = positionOfSlide(plan, 0, sess);
     expect(indexOfPosition(plan, navigate(plan, p0, "next"))).toBe(1);
     expect(indexOfPosition(plan, navigate(plan, p0, "prev"))).toBe(0); // clamped
-    expect(indexOfPosition(plan, navigate(plan, p0, "last"))).toBe(4);
-    const pEnd = positionOfSlide(plan, 4, sess);
-    expect(indexOfPosition(plan, navigate(plan, pEnd, "next"))).toBe(4); // clamped
+    expect(indexOfPosition(plan, navigate(plan, p0, "last"))).toBe(7);
+    const pEnd = positionOfSlide(plan, 7, sess);
+    expect(indexOfPosition(plan, navigate(plan, pEnd, "next"))).toBe(7); // clamped
   });
 });
