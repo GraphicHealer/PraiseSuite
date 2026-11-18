@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { SongSummary } from "@praisesuite/core";
 import { api } from "../api.js";
+import { PrintPreview } from "../PrintPreview.js";
 
 export function LibraryPage({ onOpenSong }: { onOpenSong: (id: string) => void }): ReactNode {
   const [songs, setSongs] = useState<SongSummary[]>([]);
   const [query, setQuery] = useState("");
   const [theme, setTheme] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [printUrl, setPrintUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -49,6 +51,7 @@ export function LibraryPage({ onOpenSong }: { onOpenSong: (id: string) => void }
         ))}
       </aside>
       <div className="min-w-0 flex-1">
+        {printUrl && <PrintPreview url={printUrl} onClose={() => setPrintUrl(null)} />}
         <div className="mb-3 flex gap-2">
           <input
             value={query}
@@ -57,7 +60,7 @@ export function LibraryPage({ onOpenSong }: { onOpenSong: (id: string) => void }
             className="w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
           />
           <button
-            onClick={() => window.open(api.printUrl("/api/v1/print/songbook"), "_blank")}
+            onClick={() => setPrintUrl(api.printUrl("/api/v1/print/songbook"))}
             className="shrink-0 rounded border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
             title="Songbook / table of contents"
           >

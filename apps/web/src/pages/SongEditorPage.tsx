@@ -4,7 +4,7 @@ import type { EditorView } from "@codemirror/view";
 import {
   parseOpenSongLyrics,
   serializeOpenSongLyrics,
-  transposeSection,
+  transposeSourceText,
   type Song,
   type SongArrangement,
   type SongSectionId,
@@ -13,6 +13,7 @@ import {
 import { api } from "../api.js";
 import { opensongLanguage } from "../opensong-language.js";
 import { useDark } from "../use-dark.js";
+import { PrintPreview } from "../PrintPreview.js";
 
 const input =
   "rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800";
@@ -58,6 +59,7 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
   const [capo, setCapo] = useState("");
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState("");
+  const [printUrl, setPrintUrl] = useState<string | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const dark = useDark();
 
@@ -75,9 +77,9 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
     setDirty(true);
   };
 
-  /** Rebuild sections from edited source, preserving section ids by label. */
-  const applySource = (base: Song): Song | null => {
-    const { sections: parsed, warnings } = parseOpenSongLyrics(source);
+  /** Rebuild sections from source text, preserving section ids by label. */
+  const applySource = (base: Song, text: string = source): Song | null => {
+    const { sections: parsed, warnings } = parseOpenSongLyrics(text);
     const byLabel = new Map(base.sections.map((s) => [s.label, s.id]));
     const used = new Set<string>();
     const sections = parsed.map((s) => {
@@ -154,14 +156,11 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
 
   const transpose = (semitones: number) => {
     if (!song) return;
-    const merged = applySource(song);
-    if (!merged) return;
-    const next = {
-      ...merged,
-      sections: merged.sections.map((s) => transposeSection(s, semitones, { targetKey: null })),
-    };
-    setSong(next);
-    setSource(serializeOpenSongLyrics(next));
+    // In-place chord-token transpose (OpenSong parity): only chord names in
+    // "." lines change; the rest of the document is untouched.
+    const next = transposeSourceText(source, semitones, {});
+    setSource(next);
+    applySource(song, next);
     setDirty(true);
   };
 
@@ -223,11 +222,18 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
           <button onClick={() => transpose(-1)} className={btn}>-♭</button>
           <button onClick={() => transpose(1)} className={btn}>+♯</button>
           <button
-            onClick={() => window.open(api.printUrl(`/api/v1/print/song/${encodeURIComponent(song.id)}?mode=chord`), "_blank")}
+            onClick={() => setPrintUrl(api.printUrl(`/api/v1/print/song/${encodeURIComponent(song.id)}?mode=chord`))}
             className={btn}
-            title="Chord sheet (Ctrl+P to save as PDF)"
+            title="Chord sheet"
           >
             Print
+          </button>
+          <button
+            onClick={() => setPrintUrl(api.printUrl(`/api/v1/print/song/${encodeURIComponent(song.id)}?mode=lyrics`))}
+            className={btn}
+            title="Lyrics sheet"
+          >
+            Print lyrics
           </button>
           <button onClick={() => void save()} className="rounded bg-indigo-600 px-3 py-1 text-sm text-white hover:bg-indigo-500">
             {dirty ? "Save" : "Saved"}
@@ -280,6 +286,7 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
         <button onClick={ins.multiVerse} className={btn}>Multi-Verse</button>
         <button onClick={ins.section} className={btn}>Section</button>
       </div>
+      {printUrl && <PrintPreview url={printUrl} onClose={() => setPrintUrl(null)} />}
       <div className="min-h-0 flex-1 overflow-hidden rounded border border-zinc-300 dark:border-zinc-700">
         <CodeMirror
           value={source}

@@ -11,6 +11,7 @@ import {
   parseOpenSongSet,
   parseOpenSongSong,
   serializeOpenSongSong,
+  transposeSourceText,
   type IdGenerator,
   type Song,
 } from "../src/index.js";
@@ -131,6 +132,24 @@ describe("song parser", () => {
     const xml = `<?xml version="1.0"?><song><title>T</title><presentation>V1 C9</presentation><lyrics>[V1]\n x</lyrics></song>`;
     const { warnings } = parseOpenSongSong(xml);
     expect(warnings.some((w) => w.includes("C9"))).toBe(true);
+  });
+});
+
+describe("transposeSourceText", () => {
+  it("transposes . chord tokens in place, document untouched", () => {
+    const src = "[V1]\n.G        C        D\n Amazing   grace    how\n;comment line\n\n[V2]\n.Bb       F\n Sweet     sound";
+    const out = transposeSourceText(src, 2, {});
+    const lines = out.split("\n");
+    // chord tokens move, nothing else does
+    expect(lines[0]).toBe("[V1]");
+    expect(lines[2]).toBe(" Amazing   grace    how");
+    expect(lines[3]).toBe(";comment line");
+    expect(lines[1]).toBe(".A        D        E"); // G C D +2
+    expect(lines[6]).toBe(".Cb       G"); // Bb F +2, flat spelling preserved
+  });
+  it("keeps a gap when a longer name overruns the next column", () => {
+    const out = transposeSourceText(".G    Ab", -1, {}); // G->Gb (down=flat), Ab->G
+    expect(out).toMatch(/^\.Gb\s+G/);
   });
 });
 

@@ -5,6 +5,7 @@ import type {
   SongSection,
 } from "../../domain/songs/types.js";
 import { parseChord } from "../../domain/chords/parse.js";
+import { transposeChord } from "../../domain/chords/transpose.js";
 
 export interface LyricsParseResult {
   sections: ParsedSection[];
@@ -233,4 +234,48 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
     );
   }
   return { sections, warnings };
+}
+
+/**
+ * Transpose chord tokens in place within "." chord lines — OpenSong SongML's
+ * Transpose behavior: only chord names change; lyric lines, comments,
+ * directives, and all spacing are untouched. If a transposed name overruns
+ * the next token's column, following tokens cascade right (columns re-pad,
+ * as SongML does by padding rows to the longest slice).
+ */
+export function transposeSourceText(source: string, semitones: number, opts: { preferFlats?: boolean } = {}): string {
+  if (semitones === 0) return source;
+  return source
+    .split("\n")
+    .map((line) => {
+      if (!line.startsWith(".")) return line;
+      // Token = whitespace-separated chord name after the "." prefix.
+      const parts: { start: number; end: number; name: string }[] = [];
+      const re = /\S+/g;
+      re.lastIndex = 1;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(line)) !== null) parts.push({ start: m.index, end: m.index + m[0].length, name: m[0] });
+      if (parts.length === 0) return line;
+      let out = line.slice(0, parts[0]!.start);
+      let cursor = parts[0]!.start;
+      for (const p of parts) {
+        // keep original spacing unless the previous token overran this column
+        if (p.start > cursor) {
+          out += line.slice(cursor, p.start);
+          cursor = p.start;
+        } else if (p.start < cursor) {
+          out += " ";
+          cursor += 1;
+        }
+        const name = transposeChord(
+          parseChord(p.name),
+          semitones,
+          opts.preferFlats === undefined ? {} : { preferFlats: opts.preferFlats },
+        ).display;
+        out += name;
+        cursor += name.length;
+      }
+      return out;
+    })
+    .join("\n");
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Service, ServiceItem, ServiceItemId, SongSummary } from "@praisesuite/core";
 import { api } from "../api.js";
+import { PrintPreview } from "../PrintPreview.js";
 
 const btn =
   "rounded border border-zinc-300 px-2 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800";
@@ -38,6 +39,7 @@ export function ServicesPage({ onOpenSong }: { onOpenSong: (id: string) => void 
   const [current, setCurrent] = useState<Service | null>(null);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState("");
+  const [printUrl, setPrintUrl] = useState<string | null>(null);
   const [bibles, setBibles] = useState<{ id: string; name: string; abbreviation: string }[]>([]);
   const [bibleId, setBibleId] = useState("");
   const [refText, setRefText] = useState("");
@@ -127,12 +129,13 @@ export function ServicesPage({ onOpenSong }: { onOpenSong: (id: string) => void 
 
   return (
     <div className="mx-auto max-w-3xl p-4">
+      {printUrl && <PrintPreview url={printUrl} onClose={() => setPrintUrl(null)} />}
       <div className="mb-3 flex items-center gap-2">
         <button onClick={() => { setCurrent(null); setDirty(false); }} className={btn}>← Services</button>
         <input className={`${input} text-lg font-semibold`} value={current.name} onChange={(e) => patch({ name: e.target.value })} />
         <input type="date" className={input} value={current.date ?? ""} onChange={(e) => patch({ date: e.target.value || null })} />
         <button
-          onClick={() => window.open(api.printUrl(`/api/v1/print/service/${encodeURIComponent(current.id)}`), "_blank")}
+          onClick={() => setPrintUrl(api.printUrl(`/api/v1/print/service/${encodeURIComponent(current.id)}`))}
           className={btn}
           title="Printable set list"
         >

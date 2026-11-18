@@ -51,6 +51,7 @@ function chordRow(chords: { offset: number; display: string }[]): string {
   const chars: string[] = [];
   for (const c of [...chords].sort((a, b) => a.offset - b.offset)) {
     while (chars.length < c.offset + 1) chars.push(" "); // +1: lyric text starts col 1
+    if (chars.length > c.offset + 1) chars.push(" "); // previous name overran: keep a gap
     chars.push(c.display);
   }
   return chars.join("").trimEnd();
@@ -76,14 +77,19 @@ export function chordSheetHtml(song: Song, opts: SheetOptions = {}): string {
   };
 
   const parts: string[] = [];
-  parts.push(`<h1 style="${roleCss(roles["title"])};margin-bottom:2pt">${esc(song.title)}</h1>`);
-  if (song.authors.length) parts.push(`<div style="${roleCss(roles["author"])}">${esc(song.authors.join("; "))}</div>`);
+  // OpenSong lead-sheet header: title left, author right-aligned, one baseline.
+  parts.push(
+    `<div style="display:flex;align-items:baseline;justify-content:space-between;border-bottom:1px solid #888;padding-bottom:2pt">` +
+      `<span style="${roleCss(roles["title"])};font-size:16pt;font-weight:bold">${esc(song.title)}</span>` +
+      `<span style="${roleCss(roles["author"])}">${esc(song.authors.join("; "))}</span>` +
+    `</div>`,
+  );
   const meta: string[] = [];
   if (song.defaultKey) meta.push(`Key: ${esc(song.defaultKey)}`);
   if (capo > 0) meta.push(`Capo ${capo}`);
   if (song.tempo) meta.push(`Tempo: ${esc(song.tempo)}`);
   if (song.timeSignature) meta.push(song.timeSignature);
-  if (meta.length) parts.push(`<div style="${roleCss(roles["author"])};color:#666">${meta.join(" · ")}</div>`);
+  if (meta.length) parts.push(`<div style="${roleCss(roles["capo_chords"])};color:#666;margin-top:2pt">${meta.join(" - ")}</div>`);
 
   for (const section of song.sections) {
     parts.push(`<div class="ps-sec"><div style="${roleCss(roles["heading"])};font-weight:bold">${esc(section.label)}</div>`);
@@ -99,7 +105,7 @@ export function chordSheetHtml(song: Song, opts: SheetOptions = {}): string {
     }
     parts.push("</div>");
   }
-  if (song.copyright) parts.push(`<div style="${roleCss(roles["copyright"])};margin-top:14pt;color:#777;font-size:8pt">${esc(song.copyright)}</div>`);
+  if (song.copyright) parts.push(`<div style="${roleCss(roles["copyright"])};margin-top:14pt;color:#777;font-size:8pt">Copyright © ${esc(song.copyright)}</div>`);
   return printPage(`${song.title} — chord sheet`, parts.join("\n"));
 }
 

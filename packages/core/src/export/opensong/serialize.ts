@@ -22,6 +22,7 @@ function chordLine(line: { text: string; chords: { offset: number; chord: { disp
   for (const c of line.chords) {
     const col = c.offset + 1; // '.' occupies column 0
     while (chars.length < col) chars.push(" ");
+    if (chars.length > col) chars.push(" "); // previous name overran: keep a gap
     chars.push(c.chord.display);
   }
   return "." + chars.join("").trimEnd();
