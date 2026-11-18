@@ -1,0 +1,19 @@
+{
+  "name": "@praisesuite/core",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "scripts": {
+    "test": "vitest run && vitest run --environment happy-dom",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "happy-dom": "^15.11.7",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

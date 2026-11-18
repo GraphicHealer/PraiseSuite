@@ -1,0 +1,57 @@
+import type {
+  ArrangementId,
+  ArrangementSectionId,
+  DeviceId,
+  OutputId,
+  ServiceId,
+  ServiceItemId,
+  SessionId,
+  SongId,
+  SongSectionId,
+} from "../../ids.js";
+
+/**
+ * Shared musical position (TAS 5.2). Outputs never sync by slide number —
+ * each output maps this position to its own rendering.
+ */
+export interface MusicalPosition {
+  sessionId: SessionId;
+  serviceItemId: ServiceItemId | null;
+  songId: SongId | null;
+  arrangementId: ArrangementId | null;
+  sectionId: SongSectionId | null;
+  sectionInstanceId: ArrangementSectionId | null;
+  /** Index within the section (line/slice), for outputs that sub-divide a section. */
+  positionWithinSection: number;
+}
+
+export type SessionStatus = "preparing" | "live" | "suspended" | "ended";
+
+export type NavigationMode = "follow" | "independent" | "hybrid";
+
+export type OutputType =
+  | "projector"
+  | "confidence"
+  | "stage"
+  | "musician"
+  | "browser-receiver"
+  | "native-display";
+
+export interface PresentationOutput {
+  id: OutputId;
+  sessionId: SessionId;
+  type: OutputType;
+  navigationMode: NavigationMode;
+  deviceId: DeviceId | null;
+  config: Record<string, unknown>;
+}
+
+export interface PresentationSession {
+  id: SessionId;
+  serviceId: ServiceId | null;
+  name: string;
+  status: SessionStatus;
+  position: MusicalPosition;
+  createdAt: string; // ISO 8601
+  lastActivityAt: string; // ISO 8601
+}
