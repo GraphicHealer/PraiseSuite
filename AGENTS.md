@@ -6,6 +6,13 @@
 - `pnpm test` — run all package tests. `packages/core` runs twice: Node and `happy-dom` (portability check — do not skip the second run).
 - `pnpm typecheck` — `tsc --noEmit` across packages
 - `pnpm lint` — ESLint; `packages/core` has boundary rules forbidding Node APIs
+- `pnpm -r run build` — full workspace build (web production build included)
+
+## Verification workflow
+
+- After any change/addition: run `pnpm lint`, `pnpm -r run typecheck`, `pnpm test`, and `pnpm -r run build` **locally** before committing.
+- After pushing, **check CI too**: `gh run list --limit 5` (and `gh run watch`/`gh run view --log-failed` to diagnose). Local green is not enough — keep CI green on every commit, not just milestone checkpoints.
+- The desktop test instance: `pnpm -C apps/web build && pnpm -C apps/desktop dev`. Note: `ELECTRON_RUN_AS_NODE` must not be set in the launching shell, and the child server needs `node` on PATH (see `apps/desktop/src/main.mjs`).
 
 ## Non-negotiable rules (from the architecture spec)
 
