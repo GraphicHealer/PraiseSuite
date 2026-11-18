@@ -83,10 +83,12 @@ export function parseOpenSongSong(xml: string): SongParseResult {
   );
   warnings.push(...lyricWarnings);
 
-  const capoRaw = asString(root["capo"]).trim();
+  const capoRaw = textOf(root["capo"]).trim();
   const capoNum = capoRaw === "" ? NaN : Number.parseInt(capoRaw, 10);
   const capo = Number.isNaN(capoNum) ? null : capoNum;
-  void attrOf(root["capo"], "print"); // print preference; not yet modeled
+  // <capo print="true|false">: gates the capo chord row + "Capo N" header in
+  // OpenSong's print; GetValueB treats a missing/empty attr as false.
+  const capoPrint = capo === null ? null : attrOf(root["capo"], "print") === "true";
 
   // <presentation> "V1 C V2 C" -> default arrangement sequence. A token can be
   // a section label ("C") or label+verse prefix ("V1" -> section V, prefix 1).
@@ -120,6 +122,7 @@ export function parseOpenSongSong(xml: string): SongParseResult {
       tempo: str(root["tempo"]),
       timeSignature: str(root["timesig"]),
       capo,
+      capoPrint,
       notes: null,
       sequence,
     },

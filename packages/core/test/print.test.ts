@@ -114,6 +114,36 @@ describe("chordSheetHtml (SongML slice model)", () => {
     expect(capoRow).toContain(">E<"); // G capo 3 -> E
   });
 
+  it("slices every verse line at the shared chord positions (SongML group)", () => {
+    // One ".chord" line followed by 4 verse lines: all four rows get cut at
+    // the same boundaries so the word under each chord column aligns.
+    const { sections } = parseOpenSongLyrics(
+      "[V]\n.Bb      F      Eb\n1A mighty fortress is our God\n2Did we in our own strength\n3And though this world with\n4That Word above all\n",
+    );
+    const s = song();
+    const h = chordSheetHtml({ ...s, sections: sections.map((x, i) => ({ ...x, id: `u${i}` as Song["sections"][0]["id"] })) });
+    const grp = h.match(/<table class="grp"[\s\S]*?<\/table>/)![0];
+    const lyRows = grp.match(/<tr class="ly">[\s\S]*?<\/tr>/g)!;
+    expect(lyRows.length).toBe(4);
+    // verse 2-4 have no chords of their own — they must still be sliced
+    for (const row of lyRows) {
+      const tds = row.match(/<td/g)!.length;
+      expect(tds).toBeGreaterThan(3); // prefix + bar + 3 slice cells (2 bounds + lead)
+    }
+    expect(grp).toContain('class="bar" rowspan="4"');
+    expect(lyRows[1]).toContain("Did we");
+  });
+
+  it("suppresses the capo row when <capo print=\"false\"> was imported", () => {
+    const s = song();
+    const noPrint = chordSheetHtml({
+      ...s,
+      arrangements: s.arrangements.map((a) => ({ ...a, capoPrint: false })),
+    });
+    expect(noPrint).not.toContain('class="capo"');
+    expect(noPrint).not.toContain("Capo 3");
+  });
+
   it("transposes the chord row (and the capo row follows)", () => {
     const up = chordSheetHtml(song(), { transpose: 2 });
     const chordRow = up.split("\n").find((l) => l.includes('class="ch"'))!;

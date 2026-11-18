@@ -110,7 +110,7 @@ export function serializeOpenSongSong(song: Song): string {
     "\n" +
     el("presentation", presentation) +
     "\n" +
-    `  <capo print="">${arr?.capo ?? ""}</capo>\n` +
+    `  <capo print="${arr?.capoPrint === true ? "true" : "false"}">${arr?.capo ?? ""}</capo>\n` +
     el("tempo", song.tempo) +
     "\n" +
     el("timesig", song.timeSignature) +

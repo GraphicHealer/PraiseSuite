@@ -115,7 +115,7 @@ function lyricCells(text: string, bounds: number[]): Cell[] {
     if (shift > 0 && cells.length > 0) cells[cells.length - 1]!.pad = shift;
     cells.push({
       text: clean(raw),
-      indent: raw.startsWith(" ") || raw.startsWith("_"),
+      indent: i > 0 && (raw.startsWith(" ") || raw.startsWith("_")),
       shift,
       dash: i > 0 && (underAdjacent || (midWord && shift === 0)),
     });
@@ -124,60 +124,101 @@ function lyricCells(text: string, bounds: number[]): Cell[] {
   return cells;
 }
 
-/** One line-group (.chord + lyric row) -> table rows in the slice-column model. */
-function groupHtml(wl: WrittenLine, cfg: PrintConfig, tr: number, capo: number, lang2: boolean, chorus: boolean): string {
+/**
+ * One block (.chord line + all lyric lines sharing it) -> a table in the
+ * slice-column model. SongML draws the whole group from one chordPos array:
+ * every lyric line is cut at the SAME boundaries, so a word under "Bb" in
+ * verse 1 lines up with the word under the same column in verses 2-4.
+ *
+ * Column count = bounds + 1 (the "0" sentinel slice before the first chord).
+ * Each line's cells are independent — pull-backs/dashes are per-line.
+ *
+ * Line prefixes (SongML Draw_LinePrefixes): when any line in the block has a
+ * non-space prefix, a prefix column is added (each prefix in its line's font)
+ * plus a vertical bar spanning the lyric rows, separated by ~1en before and
+ * ~1em after.
+ */
+function blockHtml(
+  lines: WrittenLine[],
+  cfg: PrintConfig,
+  tr: number,
+  capo: number,
+  capoPrint: boolean,
+  bilingual: boolean,
+  chorus: boolean,
+): string {
   const roles = cfg.roles;
-  const bounds = [...new Set(wl.chords.map((c) => c.offset).filter((o) => o > 0))].sort((a, b) => a - b);
-  const chordAt = new Map(wl.chords.map((c) => [c.offset, c.display]));
+  const vis = cfg.options;
+  const first = lines[0]!;
+  const hasChordLine = first.chords.length > 0;
+  const bounds = hasChordLine
+    ? [...new Set(first.chords.map((c) => c.offset).filter((o) => o > 0))].sort((a, b) => a - b)
+    : [];
+  const chordAt = new Map(first.chords.map((c) => [c.offset, c.display]));
   const mapTr = (d: string) => (tr !== 0 ? transposeChord(parseChord(d), tr, {}).display : d);
   const mapCapo = (d: string) => capoFingering(parseChord(mapTr(d)), capo).display;
 
+  const hasChords = hasChordLine && vis?.hideChords !== true;
+  const showCapo = hasChords && capo > 0 && capoPrint && vis?.hideCapo !== true;
+  const hasPrefix = lines.some((l) => l.prefix !== " ");
+  const colCount = bounds.length + 1;
+
   const lyricSpace = cfg.spacing["lyrics"] ?? { before: 0, after: 0 };
   const l2Space = cfg.spacing["lyrics_language2"] ?? lyricSpace;
-  const sp = lang2 ? l2Space : lyricSpace;
   const chordSpace = cfg.spacing["chords"] ?? { before: 0, after: 0 };
   const capoSpace = cfg.spacing["capo"] ?? { before: 0, after: 0 };
 
-  const cells = lyricCells(wl.text, bounds);
-  const vis = cfg.options;
-  const hasChords = wl.chords.length > 0 && vis?.hideChords !== true;
-  const showCapo = capo > 0 && vis?.hideCapo !== true;
-  const nRows = 1 + (hasChords ? 1 : 0) + (hasChords && showCapo ? 1 : 0);
-  const rows: string[] = [];
-  const prefixCell =
-    wl.prefix === " " ? "" : `<td rowspan="${nRows}" class="pfx" style="${roleCss(roles["lyrics"])};vertical-align:middle;padding-right:4pt">${esc(wl.prefix)}</td>`;
-
-  const chordRow = (role: import("../../domain/styles/types.js").TextStyle | undefined, sp2: { before: number; after: number }, cls: string, map: (d: string) => string) =>
-    `<tr class="${cls}"><td></td>` +
-    cells
-      .map((_, i) => {
-        const d = chordAt.get(i === 0 ? 0 : bounds[i - 1]!);
-        return `<td style="${roleCss(role)};padding:${sp2.before}pt 1em ${sp2.after}pt 0">${d ? esc(map(d)) : ""}</td>`;
-      })
-      .join("") +
+  const headTds = hasPrefix ? `<td></td><td></td>` : "";
+  const chordRow = (
+    role: import("../../domain/styles/types.js").TextStyle | undefined,
+    sp: { before: number; after: number },
+    cls: string,
+    map: (d: string) => string,
+  ) =>
+    `<tr class="${cls}">${headTds}` +
+    Array.from({ length: colCount }, (_, i) => {
+      const d = chordAt.get(i === 0 ? 0 : bounds[i - 1]!);
+      const pl = i === 0 && hasPrefix ? "1em" : "0";
+      // trailing 1em = SongML's StringWidth(slice + "M") chord spacing
+      return `<td style="${roleCss(role)};padding:${sp.before}pt 1em ${sp.after}pt ${pl}">${d ? esc(map(d)) : ""}</td>`;
+    }).join("") +
     `</tr>`;
 
-  if (hasChords && showCapo) rows.push(chordRow(roles["capo_chords"], capoSpace, "capo", mapCapo));
+  const rows: string[] = [];
   if (hasChords) rows.push(chordRow(roles["chords"], chordSpace, "ch", mapTr));
-  rows.push(
-    `<tr class="ly">${prefixCell}` +
-      cells
-        .map((c) => {
-          let t = esc(c.text);
-          // OpenSong draws the continuation hyphen mid-gap ("fa - i - ling").
-          if (c.text !== "" && c.dash) t = `&nbsp;&#8208;&nbsp;` + t;
-          let inner = t;
-          if (c.shift) inner = `<span style="margin-left:-${c.shift}ch;display:inline-block">${inner}</span>`;
-          if (c.indent) inner = `<span style="margin-left:1em">${inner}</span>`;
-          // white-space:pre keeps the slice's own trailing space — it is the
-          // visual gap to the next column; a td boundary would otherwise
-          // collapse it and mash words together.
-          const pad = c.pad ? `padding-right:${c.pad}ch;` : "";
-          return `<td style="${roleCss(roles[lang2 ? "lyrics_language2" : "lyrics"])};padding:${sp.before}pt 0 ${sp.after}pt 0;${pad}white-space:pre">${inner}</td>`;
-        })
-        .join("") +
-    `</tr>`,
-  );
+  if (showCapo) rows.push(chordRow(roles["capo_chords"], capoSpace, "capo", mapCapo));
+
+  // A "." line with no lyric text draws chord rows only (no empty lyric row)
+  const lyricRows = lines.length === 1 && hasChordLine && first.text === "" ? [] : lines;
+  lyricRows.forEach((wl, li) => {
+    const lang2 = bilingual ? li % 2 === 1 : wl.lang === 2;
+    const sp = lang2 ? l2Space : lyricSpace;
+    const role = roles[lang2 ? "lyrics_language2" : "lyrics"];
+    const pfxTd = hasPrefix
+      ? `<td class="pfx" style="${roleCss(role)};padding-right:0.5em;white-space:nowrap">${wl.prefix === " " ? "" : esc(wl.prefix)}</td>`
+      : "";
+    const barTd =
+      hasPrefix && li === 0
+        ? `<td class="bar" rowspan="${lyricRows.length}" style="border-left:1px solid #000"></td>`
+        : "";
+    const tds = lyricCells(wl.text, bounds)
+      .map((c, ci) => {
+        let t = esc(c.text);
+        // OpenSong draws the continuation hyphen mid-gap ("fa - i - ling").
+        if (c.text !== "" && c.dash) t = `&nbsp;&#8208;&nbsp;` + t;
+        let inner = t;
+        if (c.shift) inner = `<span style="margin-left:-${c.shift}ch;display:inline-block">${inner}</span>`;
+        if (c.indent) inner = `<span style="margin-left:1em">${inner}</span>`;
+        // white-space:pre keeps the slice's own trailing space — it is the
+        // visual gap to the next column; a td boundary would otherwise
+        // collapse it and mash words together.
+        const pad = c.pad ? `padding-right:${c.pad}ch;` : "";
+        const pl = ci === 0 && hasPrefix ? "padding-left:1em;" : "";
+        return `<td style="${roleCss(role)};padding:${sp.before}pt 0 ${sp.after}pt 0;${pad}${pl}white-space:pre">${inner}</td>`;
+      })
+      .join("");
+    rows.push(`<tr class="ly">${pfxTd}${barTd}${tds}</tr>`);
+  });
   return `<table class="grp"${chorus ? ` data-chorus="1"` : ""} style="border-collapse:collapse">${rows.join("")}</table>`;
 }
 
@@ -191,7 +232,11 @@ export function chordSheetHtml(song: Song, opts: SheetOptions = {}): string {
   const cfg = mergePrintConfig(opts.print ?? (opts.roles ? { roles: opts.roles } : {}));
   const roles = cfg.roles;
   const tr = opts.transpose ?? 0;
-  const capo = opts.capo ?? song.arrangements[0]?.capo ?? 0;
+  const arr = song.arrangements[0];
+  const capo = opts.capo ?? arr?.capo ?? 0;
+  // <capo print>: an explicit opts.capo forces the row on; otherwise the
+  // song's flag decides (absent on non-OpenSong songs -> show).
+  const capoPrint = opts.capo !== undefined ? opts.capo > 0 : arr?.capoPrint !== false;
   const secSpace = cfg.spacing["sections"] ?? { before: 0, after: 0 };
 
   const parts: string[] = [];
@@ -202,12 +247,27 @@ export function chordSheetHtml(song: Song, opts: SheetOptions = {}): string {
       `<span style="${roleCss(roles["author"])}">${esc(song.authors.join("; "))}</span>` +
     `</div>`,
   );
-  const meta: string[] = [];
-  if (song.defaultKey) meta.push(`Key: ${esc(song.defaultKey)}`);
-  if (capo > 0) meta.push(`Capo ${capo}`);
-  if (song.tempo) meta.push(`Tempo: ${esc(song.tempo)}`);
-  if (song.timeSignature) meta.push(song.timeSignature);
-  if (meta.length) parts.push(`<div style="${roleCss(roles["capo_chords"])};margin-top:2pt">${meta.join(" - ")}</div>`);
+  // SongML "extra header" line(s), right-aligned in the copyright font:
+  //   tempo - time_sig Time - Capo N   then   Presentation: V1 V2 C
+  const extra: string[] = [];
+  if (song.tempo) extra.push(song.tempo);
+  if (song.timeSignature) extra.push(`${song.timeSignature} Time`);
+  if (capo > 0 && capoPrint) extra.push(`Capo ${capo}`);
+  if (extra.length) {
+    parts.push(`<div style="${roleCss(roles["copyright"])};text-align:right">${extra.map(esc).join(" - ")}</div>`);
+  }
+  const seq = arr?.sequence;
+  const vis0 = cfg.options;
+  if (vis0?.presentationOrder === true && seq !== undefined && seq.length > 0) {
+    const byId0 = new Map(song.sections.map((s) => [s.id as string, s]));
+    const tokens = seq
+      .map((e) => {
+        const lbl = byId0.get(e.sectionId as string)?.label ?? "?";
+        return `${lbl}${e.prefix ?? ""}`;
+      })
+      .join(" ");
+    parts.push(`<div style="${roleCss(roles["copyright"])};text-align:right">Presentation: ${esc(tokens)}</div>`);
+  }
 
   const hasColumnBreak = song.sections.some((s) => s.lines.some((l) => l.kind === "directive" && l.text === "--"));
   if (hasColumnBreak) parts.push(`<div style="columns:2;column-gap:2em">`);
@@ -215,7 +275,6 @@ export function chordSheetHtml(song: Song, opts: SheetOptions = {}): string {
   const vis = cfg.options;
   // "Print presentation order": sections in the first arrangement's sequence
   // (with repeats) instead of written order.
-  const seq = song.arrangements[0]?.sequence;
   const byId = new Map(song.sections.map((s) => [s.id as string, s]));
   const ordered =
     vis?.presentationOrder === true && seq !== undefined && seq.length > 0
@@ -226,10 +285,11 @@ export function chordSheetHtml(song: Song, opts: SheetOptions = {}): string {
       : song.sections;
 
   const lyricSize = roles["lyrics"]?.size ?? 12;
+  const isDigit = (p: string) => /^[1-9]$/.test(p);
   for (const section of ordered) {
     const chorus = section.label.charAt(0).toUpperCase() === "C" && cfg.highlightChorus;
     const bilingual = section.options["L"] !== undefined;
-    parts.push(`<div class="sec" style="margin-top:${secSpace.before + 6}pt">`);
+    parts.push(`<div class="sec" style="margin-top:${secSpace.before}pt">`);
     const head = esc(headingName(section.label));
     parts.push(
       cfg.headerAdornment
@@ -237,12 +297,41 @@ export function chordSheetHtml(song: Song, opts: SheetOptions = {}): string {
         : `<div style="${roleCss(roles["heading"])};margin-bottom:${secSpace.after}pt">${head}</div>`,
     );
 
-    let rowIdx = 0;
-    for (const item of sectionItems(section, vis?.hideLang2 === true)) {
+    const items = sectionItems(section, vis?.hideLang2 === true);
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]!;
       if (item.type === "line") {
-        const lang2 = bilingual ? rowIdx % 2 === 1 : item.wl.lang === 2;
-        parts.push(`<div style="break-inside:avoid">${groupHtml(item.wl, cfg, tr, capo, lang2, chorus)}</div>`);
-        rowIdx++;
+        // FindLyricLineCount: a ".chord" line's positions apply to every
+        // lyric line it precedes — digit-prefixed runs go together, a
+        // space-prefixed line stands alone (or pairs when bilingual).
+        const block: WrittenLine[] = [item.wl];
+        const chorded = item.wl.chords.length > 0;
+        let j = i + 1;
+        const nextWl = (): WrittenLine | undefined => {
+          const it = items[j];
+          return it !== undefined && it.type === "line" ? it.wl : undefined;
+        };
+        const firstLyric = chorded ? nextWl() : item.wl;
+        if (firstLyric !== undefined && isDigit(firstLyric.prefix)) {
+          while (j < items.length) {
+            const w = nextWl();
+            if (w === undefined || w.chords.length > 0 || !isDigit(w.prefix)) break;
+            block.push(w);
+            j++;
+          }
+        } else if (firstLyric !== undefined && firstLyric.prefix === " ") {
+          if (chorded) {
+            block.push(firstLyric);
+            j++;
+          }
+          const w = nextWl();
+          if (bilingual && w !== undefined && w.chords.length === 0 && w.prefix === " ") {
+            block.push(w);
+            j++;
+          }
+        }
+        parts.push(`<div style="break-inside:avoid">${blockHtml(block, cfg, tr, capo, capoPrint, bilingual, chorus)}</div>`);
+        i = j - 1;
       } else if (item.type === "blank") {
         parts.push(`<div style="height:${Math.round(lyricSize * 1.2)}pt"></div>`);
       } else if (item.type === "comment") {
@@ -258,13 +347,22 @@ export function chordSheetHtml(song: Song, opts: SheetOptions = {}): string {
   }
   if (hasColumnBreak) parts.push(`</div>`);
 
-  if (song.copyright) parts.push(`<div style="${roleCss(roles["copyright"])};position:fixed;bottom:0;left:0;right:0">Copyright © ${esc(song.copyright)}</div>`);
+  // SongML Draw_Footer: rule above, centered copyright-font lines below it.
+  const foot: string[] = [];
+  if (song.ccliNumber) foot.push(`<div style="${roleCss(roles["copyright"])}">CCLI Song # ${esc(song.ccliNumber)}</div>`);
+  if (song.copyright) foot.push(`<div style="${roleCss(roles["copyright"])}">Copyright © ${esc(song.copyright)}</div>`);
+  if (foot.length) {
+    parts.push(
+      `<div style="position:fixed;bottom:0;left:0;right:0;text-align:center;border-top:1px solid #000;padding-top:2pt">${foot.join("")}</div>`,
+    );
+  }
   const pageStyle = pageCss(cfg.page);
   return printPage(`${song.title} — chord sheet`, `<style>${pageStyle}${chorusCss(cfg)}</style>` + parts.join("\n"));
 }
 
 function chorusCss(cfg: PrintConfig): string {
-  return cfg.highlightChorus ? `table[data-chorus="1"] .ly td { font-weight: bold; }` : "";
+  // SongML highlight_chorus bolds the lyric text (prefixes stay unbolded).
+  return cfg.highlightChorus ? `table[data-chorus="1"] .ly td:not(.pfx) { font-weight: bold; }` : "";
 }
 
 /**

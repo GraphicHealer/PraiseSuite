@@ -75,6 +75,8 @@ export interface SongArrangement {
   tempo: string | null;
   timeSignature: string | null;
   capo: number | null;
+  /** OpenSong <capo print="..."> — whether print output shows the capo chord row. */
+  capoPrint?: boolean | null | undefined;
   notes: string | null;
   sequence: ArrangementSection[];
 }
