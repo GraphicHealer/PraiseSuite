@@ -318,7 +318,7 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
         {status && <p className="text-xs text-zinc-500">{status}</p>}
 
       {tab === "general" && (
-        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-4">
+        <div className="grid shrink overflow-y-auto grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-4">
           <Field label="Title" value={song.title} onChange={(v) => update({ title: v })} />
           <Field label="AKA" value={song.aka ?? ""} onChange={(v) => update({ aka: v || null })} />
           <Field label="Author" value={song.authors.join("; ")} onChange={(v) => update({ authors: v.split(";").map((a) => a.trim()).filter(Boolean) })} />
@@ -342,7 +342,7 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
         </div>
       )}
       {tab === "advanced" && (
-        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-4">
+        <div className="grid shrink overflow-y-auto grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-4">
           <Field label={userLabels[0] ?? "User Defined 1"} value={song.userFields.user1} onChange={(v) => update({ userFields: { ...song.userFields, user1: v } })} />
           <Field label={userLabels[1] ?? "User Defined 2"} value={song.userFields.user2} onChange={(v) => update({ userFields: { ...song.userFields, user2: v } })} />
           <Field label={userLabels[2] ?? "User Defined 3"} value={song.userFields.user3} onChange={(v) => update({ userFields: { ...song.userFields, user3: v } })} />
@@ -351,7 +351,7 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
         </div>
       )}
       {tab === "backgrounds" && (
-        <div className="flex flex-col gap-2 overflow-y-auto">
+        <div className="flex shrink flex-col gap-2 overflow-y-auto">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
             <label className="flex items-center gap-1">
               <input type="radio" name="bg-resize" checked={bgs().resize === "screen"} onChange={() => updateBg({ resize: "screen" })} />
@@ -421,8 +421,8 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
       </div>
       </div>
 
-      {/* Right action column (OpenSong's vertical button stack) */}
-      <div className="flex w-36 shrink-0 flex-col gap-2">
+      {/* Right action column (OpenSong's vertical button stack) — scrolls on short screens */}
+      <div className="flex w-36 shrink-0 flex-col gap-2 overflow-y-auto">
         <fieldset className="rounded border border-zinc-300 p-1.5 dark:border-zinc-700">
           <legend className="px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Song</legend>
           <div className="flex flex-col gap-1">
