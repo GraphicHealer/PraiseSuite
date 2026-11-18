@@ -10,7 +10,7 @@ declare module "pagedjs" {
     constructor(options?: Record<string, unknown>);
     preview(
       content: HTMLElement | HTMLElement[] | DocumentFragment | string,
-      stylesheets?: (string | CSSStyleSheet | HTMLStyleElement)[],
+      stylesheets?: (string | CSSStyleSheet | HTMLStyleElement | Record<string, string>)[],
       renderTo?: HTMLElement | DocumentFragment,
     ): Promise<PreviewFlow>;
     on(event: string, callback: (...args: unknown[]) => void): void;

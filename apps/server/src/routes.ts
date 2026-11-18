@@ -23,6 +23,8 @@ import {
   analyzeImport,
   applyImport,
   applyPrintOverrides,
+  mergePrintConfig,
+  pageCss,
   buildPlan,
   chordSheetHtml,
   defaultSlideStyle,
@@ -643,7 +645,7 @@ export function buildRoutes(deps: AppDeps): Route[] {
         .map((h) => h.replace(/^[\s\S]*?<body[^>]*>/i, "").replace(/<\/body>[\s\S]*$/i, ""))
         .join(`<div style="page-break-after:always"></div>`);
       ctx.res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      ctx.res.end(withFonts(`<!doctype html><html><head><style>@page{size:${cfg.page.width}pt ${cfg.page.height}pt;margin:${cfg.page.margin}pt}</style></head><body>${html}</body></html>`, deps.webRoot));
+      ctx.res.end(withFonts(`<!doctype html><html><head><style>${pageCss(cfg.page)}</style></head><body>${html}</body></html>`, deps.webRoot));
       return undefined;
     }),
     // OpenSong-format export (MainWindow "Export" buttons).
@@ -827,7 +829,7 @@ function logSongActivity(storage: SqliteStorage, song: Song, action: number): vo
 
 function printConfig(storage: SqliteStorage): import("@praisesuite/core").PrintConfig {
   try {
-    return { ...DEFAULT_PRINT_CONFIG, ...(JSON.parse(storage.getSetting("style.print") ?? "{}") as import("@praisesuite/core").PrintConfig) };
+    return mergePrintConfig(JSON.parse(storage.getSetting("style.print") ?? "{}") as Partial<import("@praisesuite/core").PrintConfig>);
   } catch {
     return DEFAULT_PRINT_CONFIG;
   }

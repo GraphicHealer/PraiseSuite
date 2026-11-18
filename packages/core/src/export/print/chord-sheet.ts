@@ -1,9 +1,9 @@
 import type { Song, SongSection } from "../../domain/songs/types.js";
 import { capoFingering, transposeChord } from "../../domain/chords/transpose.js";
 import { parseChord } from "../../domain/chords/parse.js";
-import { esc, printPage, roleCss } from "./layout.js";
+import { esc, pageCss, printPage, roleCss } from "./layout.js";
 import type { PrintConfig } from "../../import/opensong/settings.js";
-import { DEFAULT_PRINT_CONFIG } from "../../import/opensong/settings.js";
+import { mergePrintConfig } from "../../import/opensong/settings.js";
 
 export interface SheetOptions {
   /** Semitones to transpose chord rows by (musician transpose). */
@@ -29,11 +29,12 @@ type Item =
   | { type: "directive"; text: string };
 
 /** Ordered stream: "|" pieces merged into one written line, comments/directives inline. */
-function sectionItems(section: SongSection): Item[] {
+function sectionItems(section: SongSection, hideLang2 = false): Item[] {
   const out: Item[] = [];
   let pending: WrittenLine | null = null;
   const flush = () => { if (pending) { out.push({ type: "line", wl: pending }); pending = null; } };
   for (const line of section.lines) {
+    if (hideLang2 && line.lang === 2) continue;
     if (line.kind === "comment") { flush(); if (!line.text.startsWith(";")) out.push({ type: "comment", text: line.text }); continue; }
     if (line.kind === "directive") { flush(); if (line.text !== "") out.push({ type: "directive", text: line.text }); continue; }
     if (line.kind !== "lyric") continue;
@@ -61,7 +62,19 @@ function headingName(label: string): string {
   return label.length > 1 ? `${name} ${label.slice(1)}` : name;
 }
 
-interface Cell { text: string; /** pad-left 1em (blankUnderChord) */ indent?: boolean; /** chars this cell starts left of its column (offsetC pull-back) */ shift?: number; /** continuation hyphen at this cell's left edge (SongML dashStart) */ dash?: boolean; }
+interface Cell {
+  text: string;
+  /** pad-left 1em (blankUnderChord) */
+  indent?: boolean;
+  /** chars this cell starts left of its column (offsetC pull-back) */
+  shift?: number;
+  /** continuation hyphen at this cell's left edge (SongML dashStart) */
+  dash?: boolean;
+  /** right-side width the next cell pulls back into — SongML keeps the
+   *  truncated fragment's measured slice width in the column, so the pulled
+   *  word lands in the gap instead of overlapping this cell's text. */
+  pad?: number;
+}
 
 /**
  * Slice a lyric line at chord boundaries (SongML Draw_ChordLyricLine).
@@ -96,6 +109,10 @@ function lyricCells(text: string, bounds: number[]): Cell[] {
     const dashAt = leftB - shift;
     const underAdjacent = dashAt > 0 && dashAt < text.length && (text[dashAt - 1] === "_" || text[dashAt] === "_");
     const midWord = leftB > 0 && leftB < text.length && isLetter(text[leftB - 1]) && isLetter(text[leftB]);
+    // The pulled-back fragment stays in this column's width budget (SongML
+    // sliceWidth), so the previous cell reserves `shift` chars of space for
+    // the word to be drawn back into.
+    if (shift > 0 && cells.length > 0) cells[cells.length - 1]!.pad = shift;
     cells.push({
       text: clean(raw),
       indent: raw.startsWith(" ") || raw.startsWith("_"),
@@ -122,11 +139,13 @@ function groupHtml(wl: WrittenLine, cfg: PrintConfig, tr: number, capo: number, 
   const capoSpace = cfg.spacing["capo"] ?? { before: 0, after: 0 };
 
   const cells = lyricCells(wl.text, bounds);
-  const hasChords = wl.chords.length > 0;
-  const nRows = 1 + (hasChords ? 1 : 0) + (hasChords && capo > 0 ? 1 : 0);
+  const vis = cfg.options;
+  const hasChords = wl.chords.length > 0 && vis?.hideChords !== true;
+  const showCapo = capo > 0 && vis?.hideCapo !== true;
+  const nRows = 1 + (hasChords ? 1 : 0) + (hasChords && showCapo ? 1 : 0);
   const rows: string[] = [];
   const prefixCell =
-    wl.prefix === " " ? "" : `<td rowspan="${nRows}" class="pfx" style="${roleCss(roles["lyrics"])};vertical-align:middle">${esc(wl.prefix)}</td>`;
+    wl.prefix === " " ? "" : `<td rowspan="${nRows}" class="pfx" style="${roleCss(roles["lyrics"])};vertical-align:middle;padding-right:4pt">${esc(wl.prefix)}</td>`;
 
   const chordRow = (role: import("../../domain/styles/types.js").TextStyle | undefined, sp2: { before: number; after: number }, cls: string, map: (d: string) => string) =>
     `<tr class="${cls}"><td></td>` +
@@ -138,21 +157,23 @@ function groupHtml(wl: WrittenLine, cfg: PrintConfig, tr: number, capo: number, 
       .join("") +
     `</tr>`;
 
-  if (hasChords && capo > 0) rows.push(chordRow(roles["capo_chords"], capoSpace, "capo", mapCapo));
+  if (hasChords && showCapo) rows.push(chordRow(roles["capo_chords"], capoSpace, "capo", mapCapo));
   if (hasChords) rows.push(chordRow(roles["chords"], chordSpace, "ch", mapTr));
   rows.push(
     `<tr class="ly">${prefixCell}` +
       cells
         .map((c) => {
           let t = esc(c.text);
-          if (c.text !== "" && c.dash) t = `&#8208;` + t; // ‑ continuation hyphen
+          // OpenSong draws the continuation hyphen mid-gap ("fa - i - ling").
+          if (c.text !== "" && c.dash) t = `&nbsp;&#8208;&nbsp;` + t;
           let inner = t;
           if (c.shift) inner = `<span style="margin-left:-${c.shift}ch;display:inline-block">${inner}</span>`;
           if (c.indent) inner = `<span style="margin-left:1em">${inner}</span>`;
           // white-space:pre keeps the slice's own trailing space — it is the
           // visual gap to the next column; a td boundary would otherwise
           // collapse it and mash words together.
-          return `<td style="${roleCss(roles[lang2 ? "lyrics_language2" : "lyrics"])};padding:${sp.before}pt 0 ${sp.after}pt 0;white-space:pre">${inner}</td>`;
+          const pad = c.pad ? `padding-right:${c.pad}ch;` : "";
+          return `<td style="${roleCss(roles[lang2 ? "lyrics_language2" : "lyrics"])};padding:${sp.before}pt 0 ${sp.after}pt 0;${pad}white-space:pre">${inner}</td>`;
         })
         .join("") +
     `</tr>`,
@@ -167,7 +188,7 @@ function groupHtml(wl: WrittenLine, cfg: PrintConfig, tr: number, capo: number, 
  * `-__` rule, `-!!` page break, `---` column break, verse prefixes.
  */
 export function chordSheetHtml(song: Song, opts: SheetOptions = {}): string {
-  const cfg = opts.print ?? { ...DEFAULT_PRINT_CONFIG, roles: opts.roles ?? {} };
+  const cfg = mergePrintConfig(opts.print ?? (opts.roles ? { roles: opts.roles } : {}));
   const roles = cfg.roles;
   const tr = opts.transpose ?? 0;
   const capo = opts.capo ?? song.arrangements[0]?.capo ?? 0;
@@ -191,8 +212,21 @@ export function chordSheetHtml(song: Song, opts: SheetOptions = {}): string {
   const hasColumnBreak = song.sections.some((s) => s.lines.some((l) => l.kind === "directive" && l.text === "--"));
   if (hasColumnBreak) parts.push(`<div style="columns:2;column-gap:2em">`);
 
+  const vis = cfg.options;
+  // "Print presentation order": sections in the first arrangement's sequence
+  // (with repeats) instead of written order.
+  const seq = song.arrangements[0]?.sequence;
+  const byId = new Map(song.sections.map((s) => [s.id as string, s]));
+  const ordered =
+    vis?.presentationOrder === true && seq !== undefined && seq.length > 0
+      ? seq.flatMap((e) => {
+          const s = byId.get(e.sectionId as string);
+          return s ? Array.from({ length: e.repeats }, () => s) : [];
+        })
+      : song.sections;
+
   const lyricSize = roles["lyrics"]?.size ?? 12;
-  for (const section of song.sections) {
+  for (const section of ordered) {
     const chorus = section.label.charAt(0).toUpperCase() === "C" && cfg.highlightChorus;
     const bilingual = section.options["L"] !== undefined;
     parts.push(`<div class="sec" style="margin-top:${secSpace.before + 6}pt">`);
@@ -204,7 +238,7 @@ export function chordSheetHtml(song: Song, opts: SheetOptions = {}): string {
     );
 
     let rowIdx = 0;
-    for (const item of sectionItems(section)) {
+    for (const item of sectionItems(section, vis?.hideLang2 === true)) {
       if (item.type === "line") {
         const lang2 = bilingual ? rowIdx % 2 === 1 : item.wl.lang === 2;
         parts.push(`<div style="break-inside:avoid">${groupHtml(item.wl, cfg, tr, capo, lang2, chorus)}</div>`);
@@ -225,8 +259,8 @@ export function chordSheetHtml(song: Song, opts: SheetOptions = {}): string {
   if (hasColumnBreak) parts.push(`</div>`);
 
   if (song.copyright) parts.push(`<div style="${roleCss(roles["copyright"])};position:fixed;bottom:0;left:0;right:0">Copyright © ${esc(song.copyright)}</div>`);
-  const pageCss = `@page { size: ${cfg.page.width}pt ${cfg.page.height}pt; margin: ${cfg.page.margin}pt; }`;
-  return printPage(`${song.title} — chord sheet`, `<style>${pageCss}${chorusCss(cfg)}</style>` + parts.join("\n"));
+  const pageStyle = pageCss(cfg.page);
+  return printPage(`${song.title} — chord sheet`, `<style>${pageStyle}${chorusCss(cfg)}</style>` + parts.join("\n"));
 }
 
 function chorusCss(cfg: PrintConfig): string {
@@ -237,7 +271,7 @@ function chorusCss(cfg: PrintConfig): string {
  * Lyrics-only sheet: headings + cleaned lyric text (no chord columns).
  */
 export function lyricsSheetHtml(song: Song, opts: SheetOptions = {}): string {
-  const cfg = opts.print ?? { ...DEFAULT_PRINT_CONFIG, roles: opts.roles ?? {} };
+  const cfg = mergePrintConfig(opts.print ?? (opts.roles ? { roles: opts.roles } : {}));
   const roles = cfg.roles;
   const secSpace = cfg.spacing["sections"] ?? { before: 0, after: 0 };
   const parts: string[] = [];
@@ -254,7 +288,7 @@ export function lyricsSheetHtml(song: Song, opts: SheetOptions = {}): string {
     parts.push(`<div class="sec" style="break-inside:avoid;margin-top:${secSpace.before + 6}pt">`);
     parts.push(`<div style="${roleCss(roles["heading"])};margin-bottom:${secSpace.after}pt">${esc(headingName(section.label))}</div>`);
     let rowIdx = 0;
-    for (const item of sectionItems(section)) {
+    for (const item of sectionItems(section, cfg.options?.hideLang2 === true)) {
       if (item.type === "line") {
         const lang2 = bilingual ? rowIdx % 2 === 1 : item.wl.lang === 2;
         const text = (item.wl.prefix === " " ? "" : item.wl.prefix + " ") + clean(item.wl.text);
@@ -269,6 +303,6 @@ export function lyricsSheetHtml(song: Song, opts: SheetOptions = {}): string {
     parts.push("</div>");
   }
   if (song.copyright) parts.push(`<div style="${roleCss(roles["copyright"])};margin-top:14pt;font-size:8pt">Copyright © ${esc(song.copyright)}</div>`);
-  const pageCss = `@page { size: ${cfg.page.width}pt ${cfg.page.height}pt; margin: ${cfg.page.margin}pt; }`;
-  return printPage(`${song.title} — lyrics`, `<style>${pageCss}</style>` + parts.join("\n"));
+  const pageStyle = pageCss(cfg.page);
+  return printPage(`${song.title} — lyrics`, `<style>${pageStyle}</style>` + parts.join("\n"));
 }

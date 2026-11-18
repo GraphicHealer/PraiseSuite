@@ -115,6 +115,18 @@ export function parsePrintSettings(xml: string): Record<string, TextStyle> {
   return parsePrintConfig(xml).roles;
 }
 
+/** Runtime visibility toggles (OpenSong PrintSettingsWindow checkboxes). */
+export interface PrintVisibility {
+  /** "Print chords" off = lyric lines only. */
+  hideChords: boolean;
+  /** "Print capo chords" off = no capo fingering row. */
+  hideCapo: boolean;
+  /** "Print 2nd language lyrics" off = lang2 lines skipped. */
+  hideLang2: boolean;
+  /** "Print presentation order" = sections in arrangement sequence. */
+  presentationOrder: boolean;
+}
+
 /** Full print configuration: roles + layout spacing + style flags + page. */
 export interface PrintConfig {
   roles: Record<string, TextStyle>;
@@ -125,7 +137,9 @@ export interface PrintConfig {
   headerAdornment: boolean;
   borderThickness: number;
   /** Page box in points (OpenSong default: 612x792 letter, 72pt margins). */
-  page: { width: number; height: number; margin: number };
+  page: { width: number; height: number; top: number; right: number; bottom: number; left: number };
+  /** PrintSettingsWindow visibility toggles (request-level overrides). */
+  options?: PrintVisibility | undefined;
 }
 
 /** MainSettings bits we use: custom labels for the user1-3 song fields. */
@@ -145,15 +159,24 @@ export function parseMainSettings(xml: string): { userFieldLabels: string[] } {
 export const DEFAULT_PRINT_CONFIG: PrintConfig = {
   roles: {},
   spacing: {},
-  capsSongTitle: false,
-  highlightChorus: false,
+  capsSongTitle: true,
+  highlightChorus: true,
   headerAdornment: false,
-  borderThickness: 1,
-  page: { width: 612, height: 792, margin: 72 },
+  borderThickness: 2,
+  page: { width: 612, height: 792, top: 72, right: 72, bottom: 72, left: 72 },
 };
 
-/** OpenSong's own PrintSettings defaults (Settings/PrintSettings fixture). */
-const printRoleBase = (): TextStyle => ({ ...defaultSlideStyle().body, align: "left" });
+/** OpenSong's own PrintSettings defaults (Settings/PrintSettings fixture).
+ *  Slide-body colors are presentation chrome (white on dark) — print roles
+ *  reset to black-on-paper explicitly or lyrics print white-on-white. */
+const printRoleBase = (): TextStyle => ({
+  ...defaultSlideStyle().body,
+  align: "left",
+  color: "#000000",
+  bold: false,
+  italic: false,
+  underline: false,
+});
 export const PRINT_ROLE_DEFAULTS: Record<string, TextStyle> = {
   title: { ...printRoleBase(), font: "Arial", size: 20, bold: true },
   author: { ...printRoleBase(), font: "Times New Roman", size: 12, italic: true },
@@ -166,51 +189,86 @@ export const PRINT_ROLE_DEFAULTS: Record<string, TextStyle> = {
 };
 
 /**
+ * Merge a stored/partial print config onto the OpenSong defaults. A shallow
+ * spread drops every role/spacing the stored object doesn't mention (leaving
+ * print docs with empty styles) — roles merge field-by-field per role.
+ */
+export function mergePrintConfig(overrides: Partial<PrintConfig> = {}): PrintConfig {
+  const roles: Record<string, TextStyle> = { ...PRINT_ROLE_DEFAULTS };
+  for (const [name, style] of Object.entries(overrides.roles ?? {})) {
+    roles[name] = { ...(roles[name] ?? printRoleBase()), ...style };
+  }
+  return {
+    ...DEFAULT_PRINT_CONFIG,
+    ...overrides,
+    roles,
+    spacing: { ...DEFAULT_PRINT_CONFIG.spacing, ...(overrides.spacing ?? {}) },
+    page: { ...DEFAULT_PRINT_CONFIG.page, ...(overrides.page ?? {}) },
+  };
+}
+
+/**
  * Per-request print overrides (print-window options panel). Query params:
- * `cFont/cSize/cColor/cBold/cItalic` -> chords role (capo_chords follows the
- * same family); `lFont/lSize/lColor/lBold/lItalic` -> lyrics + language2;
- * `landscape=1` -> swaps the page box dimensions.
+ * `r_<role>_<font|size|color|bold|italic|underline>` for any of the 8 roles;
+ * `margin`/`capsTitle`/`chorus`/`adorn`/`border` for page & style flags;
+ * `hideChords`/`hideCapo`/`hideLang2`/`order` visibility toggles;
+ * `landscape` swaps the page box dimensions.
  */
 export function applyPrintOverrides(cfg: PrintConfig, q: URLSearchParams | Record<string, string | undefined>): PrintConfig {
   cfg = structuredClone(cfg);
+  const entries: [string, string][] =
+    q instanceof URLSearchParams ? [...q.entries()] : Object.entries(q).filter((e): e is [string, string] => e[1] !== undefined);
   const get = (k: string) => (q instanceof URLSearchParams ? q.get(k) ?? undefined : q[k]);
-  const bool = (v: string | undefined) => (v === undefined ? undefined : v === "1" || v === "true");
+  const bool = (v: string | undefined) => v === "1" || v === "true";
   const num = (v: string | undefined) => {
     if (v === undefined) return undefined;
     const n = Number.parseFloat(v);
     return Number.isFinite(n) && n > 0 ? n : undefined;
   };
 
-  const role = (name: string, prefix: string, inheritFont?: string): void => {
+  const ROLE_PROPS = new Set(["font", "size", "color", "bold", "italic", "underline"]);
+  for (const [k, v] of entries) {
+    const m = /^r_([a-z_0-9]+)_(font|size|color|bold|italic|underline)$/.exec(k);
+    if (!m) continue;
+    const [, name, prop] = m as unknown as [string, string, keyof Pick<TextStyle, "font" | "size" | "color" | "bold" | "italic" | "underline">];
+    if (!ROLE_PROPS.has(prop)) continue;
     const base = cfg.roles[name] ?? PRINT_ROLE_DEFAULTS[name];
-    const font = get(`${prefix}Font`) ?? inheritFont;
-    const size = num(get(`${prefix}Size`));
-    const color = get(`${prefix}Color`);
-    const bold = bool(get(`${prefix}Bold`));
-    const italic = bool(get(`${prefix}Italic`));
-    if (!base || (font === undefined && size === undefined && color === undefined && bold === undefined && italic === undefined)) return;
-    cfg.roles[name] = {
-      ...base,
-      ...(font !== undefined ? { font } : {}),
-      ...(size !== undefined ? { size } : {}),
-      ...(color !== undefined ? { color } : {}),
-      ...(bold !== undefined ? { bold } : {}),
-      ...(italic !== undefined ? { italic } : {}),
-    };
-  };
+    if (!base) continue;
+    const role = { ...(cfg.roles[name] ?? base) };
+    if (prop === "size") {
+      const n = num(v);
+      if (n === undefined) continue;
+      role.size = n;
+    } else if (prop === "bold" || prop === "italic" || prop === "underline") {
+      role[prop] = bool(v);
+    } else {
+      role[prop] = v;
+    }
+    cfg.roles[name] = role;
+  }
 
-  role("chords", "c");
-  // Capo row tracks the chord family but keeps its own size/color.
-  role("capo_chords", "capo", get("cFont"));
-  role("lyrics", "l");
-  role("lyrics_language2", "l2", get("lFont"));
-
+  const margin = num(get("margin"));
+  if (margin !== undefined) cfg.page = { ...cfg.page, top: margin, right: margin, bottom: margin, left: margin };
+  for (const side of ["top", "right", "bottom", "left"] as const) {
+    const v = num(get(`margin${side.charAt(0).toUpperCase()}${side.slice(1)}`));
+    if (v !== undefined) cfg.page = { ...cfg.page, [side]: v };
+  }
   if (bool(get("landscape"))) {
     const { width, height } = cfg.page;
-    if (height > width) {
-      cfg.page = { ...cfg.page, width: height, height: width };
-    }
+    if (height > width) cfg.page = { ...cfg.page, width: height, height: width };
   }
+  if (get("capsTitle") !== undefined) cfg.capsSongTitle = bool(get("capsTitle"));
+  if (get("chorus") !== undefined) cfg.highlightChorus = bool(get("chorus"));
+  if (get("adorn") !== undefined) cfg.headerAdornment = bool(get("adorn"));
+  const border = num(get("border"));
+  if (border !== undefined) cfg.borderThickness = border;
+
+  cfg.options = {
+    hideChords: bool(get("hideChords")),
+    hideCapo: bool(get("hideCapo")),
+    hideLang2: bool(get("hideLang2")),
+    presentationOrder: bool(get("order")),
+  };
   return cfg;
 }
 
@@ -244,13 +302,12 @@ export function parsePrintConfig(xml: string): PrintConfig {
   const page = asRecord(root["page"]);
   const pw = Number.parseFloat(asString(page["@_width"]));
   const ph = Number.parseFloat(asString(page["@_height"]));
-  const pl = Number.parseFloat(asString(page["@_left"]));
+  const side = (name: string) => {
+    const v = Number.parseFloat(asString(page[`@_${name}`]));
+    return Number.isFinite(v) ? v : 72;
+  };
   if (Number.isFinite(pw) && Number.isFinite(ph)) {
-    cfg.page = {
-      width: pw,
-      height: ph,
-      margin: Number.isFinite(pl) ? pl : 72,
-    };
+    cfg.page = { width: pw, height: ph, top: side("top"), right: side("right"), bottom: side("bottom"), left: side("left") };
   }
   return cfg;
 }

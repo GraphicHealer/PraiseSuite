@@ -1,4 +1,10 @@
 import type { TextStyle } from "../../domain/styles/types.js";
+import type { PrintConfig } from "../../import/opensong/settings.js";
+
+/** `@page` box + per-side margins (OpenSong page left/top/right/bottom). */
+export function pageCss(page: PrintConfig["page"]): string {
+  return `@page { size: ${page.width}pt ${page.height}pt; margin: ${page.top}pt ${page.right}pt ${page.bottom}pt ${page.left}pt; }`;
+}
 
 /** TextStyle -> CSS declaration string for print roles (PrintSettings). */
 export function roleCss(s: TextStyle | undefined): string {

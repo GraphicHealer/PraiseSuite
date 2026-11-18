@@ -53,23 +53,34 @@ const FONT_OPTIONS = [
   "Verdana", "Trebuchet MS", "Inter", "Source Serif 4", "JetBrains Mono",
 ];
 
+/** OpenSong PrintSettings roles (order = the window's role list). */
+const ROLES: [string, string][] = [
+  ["title", "Title"], ["author", "Author"], ["heading", "Heading"],
+  ["chords", "Chords"], ["capo_chords", "Capo chords"], ["lyrics", "Lyrics"],
+  ["lyrics_language2", "Lyrics (2nd lang.)"], ["copyright", "Copyright"],
+];
+
+type Tri = "" | "1" | "0";
+/** Fields the user touched for one role; empty = server/imported default. */
+interface RoleEdit { font?: string; size?: string; color?: string; bold?: Tri; italic?: Tri; underline?: Tri }
+
 interface Options {
   transpose: number;
   capo: string;
   landscape: boolean;
-  cFont: string;
-  cSize: string;
-  cColor: string;
-  cBold: boolean;
-  cItalic: boolean;
-  lFont: string;
-  lSize: string;
+  margin: string;
+  marginTop: string; marginRight: string; marginBottom: string; marginLeft: string;
+  capsTitle: Tri; chorus: Tri; adorn: Tri; border: string;
+  hideChords: boolean; hideCapo: boolean; hideLang2: boolean; order: boolean;
+  roles: Record<string, RoleEdit>;
 }
 
 const DEFAULT_OPTS: Options = {
   transpose: 0, capo: "", landscape: false,
-  cFont: "", cSize: "", cColor: "", cBold: false, cItalic: false,
-  lFont: "", lSize: "",
+  margin: "", marginTop: "", marginRight: "", marginBottom: "", marginLeft: "",
+  capsTitle: "", chorus: "", adorn: "", border: "",
+  hideChords: false, hideCapo: false, hideLang2: false, order: false,
+  roles: {},
 };
 
 /** Base print URL + option params -> effective document URL. */
@@ -79,13 +90,21 @@ function effectiveUrl(base: string, o: Options): string {
   if (o.transpose !== 0) p.set("transpose", String(o.transpose));
   if (o.capo !== "") p.set("capo", o.capo);
   if (o.landscape) p.set("landscape", "1");
-  if (o.cFont !== "") p.set("cFont", o.cFont);
-  if (o.cSize !== "") p.set("cSize", o.cSize);
-  if (o.cColor !== "") p.set("cColor", o.cColor);
-  if (o.cBold) p.set("cBold", "1");
-  if (o.cItalic) p.set("cItalic", "1");
-  if (o.lFont !== "") p.set("lFont", o.lFont);
-  if (o.lSize !== "") p.set("lSize", o.lSize);
+  for (const [k, v] of [["margin", o.margin], ["marginTop", o.marginTop], ["marginRight", o.marginRight], ["marginBottom", o.marginBottom], ["marginLeft", o.marginLeft], ["border", o.border]] as const) {
+    if (v !== "") p.set(k, v);
+  }
+  for (const [k, v] of [["capsTitle", o.capsTitle], ["chorus", o.chorus], ["adorn", o.adorn]] as const) {
+    if (v !== "") p.set(k, v);
+  }
+  if (o.hideChords) p.set("hideChords", "1");
+  if (o.hideCapo) p.set("hideCapo", "1");
+  if (o.hideLang2) p.set("hideLang2", "1");
+  if (o.order) p.set("order", "1");
+  for (const [role, e] of Object.entries(o.roles)) {
+    for (const [prop, v] of Object.entries(e)) {
+      if (v !== undefined && v !== "") p.set(`r_${role}_${prop}`, v);
+    }
+  }
   const s = p.toString();
   return s === "" ? base : `${base}${sep}${s}`;
 }
@@ -101,6 +120,7 @@ export function PrintWindow({ params }: { params: URLSearchParams }): ReactNode 
   const logUrl = params.get("log") ?? undefined;
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [opts, setOpts] = useState<Options>(DEFAULT_OPTS);
+  const [roleSel, setRoleSel] = useState("chords");
   const [pageCount, setPageCount] = useState<number | null>(null);
   const [zoom, setZoom] = useState(0.85);
   const [busy, setBusy] = useState(false);
@@ -120,10 +140,13 @@ export function PrintWindow({ params }: { params: URLSearchParams }): ReactNode 
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const doc = new DOMParser().parseFromString(await res.text(), "text/html");
         doc.querySelectorAll(".no-print").forEach((el) => el.remove());
-        const styles = [...doc.querySelectorAll("style")].map((s) => s.textContent ?? "");
+        // paged.js add() treats a bare string as a URL to fetch — inline CSS
+        // must be wrapped as {name: cssText} or it XHRs the CSS itself.
+        const styles = [...doc.querySelectorAll("style")].map((s, i) => ({ [`inline-${i}`]: s.textContent ?? "" }));
+        styles.push({ preview: PREVIEW_CSS });
         if (cancelled || !hostRef.current) return;
         hostRef.current.innerHTML = "";
-        const flow = await new Previewer().preview(doc.body.innerHTML, [...styles, PREVIEW_CSS], hostRef.current);
+        const flow = await new Previewer().preview(doc.body.innerHTML, styles, hostRef.current);
         if (!cancelled) setPageCount(flow.total);
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
@@ -176,6 +199,15 @@ export function PrintWindow({ params }: { params: URLSearchParams }): ReactNode 
   };
 
   const set = <K extends keyof Options>(k: K, v: Options[K]) => setOpts((o) => ({ ...o, [k]: v }));
+  const roleEdit = opts.roles[roleSel] ?? {};
+  const setRole = (prop: keyof RoleEdit, v: string) =>
+    setOpts((o) => {
+      const cur = { ...(o.roles[roleSel] ?? {}) };
+      if (v === "") delete cur[prop]; else (cur as Record<string, string>)[prop] = v;
+      const roles = { ...o.roles };
+      if (Object.keys(cur).length === 0) delete roles[roleSel]; else roles[roleSel] = cur;
+      return { ...o, roles };
+    });
   const label = "block text-xs font-medium text-zinc-400 mb-1";
   const input = "w-full rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm text-zinc-100";
 
@@ -227,45 +259,78 @@ export function PrintWindow({ params }: { params: URLSearchParams }): ReactNode 
               </button>
             ))}
           </div>
+          <div className="grid grid-cols-4 gap-1">
+            {([["marginTop", "Top"], ["marginBottom", "Bot."], ["marginLeft", "Left"], ["marginRight", "Right"]] as const).map(([k, name]) => (
+              <div key={k}>
+                <label htmlFor={k} className={label}>{name}</label>
+                <input id={k} type="number" min={0} max={200} value={opts[k]} placeholder="72" onChange={(e) => set(k, e.target.value)} className={input} title={`${name} margin (pt)`} />
+              </div>
+            ))}
+          </div>
+        </fieldset>
+
+        <fieldset className="space-y-1.5">
+          <legend className={label}>Style</legend>
+          {([["capsTitle", "Title in CAPS"], ["chorus", "Highlight choruses"], ["adorn", "Adorn section titles"]] as const).map(([k, name]) => (
+            <label key={k} className="flex items-center gap-2 text-sm">
+              <select value={opts[k]} onChange={(e) => set(k, e.target.value as Tri)} className="rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-xs text-zinc-100">
+                <option value="">Default</option><option value="1">On</option><option value="0">Off</option>
+              </select>
+              {name}
+            </label>
+          ))}
+          <div className="flex items-center gap-2">
+            <span className="text-sm">Border thickness</span>
+            <input type="number" min={0} max={10} value={opts.border} placeholder="2" onChange={(e) => set("border", e.target.value)} className={`${input} w-16`} />
+          </div>
+        </fieldset>
+
+        <fieldset className="space-y-1.5">
+          <legend className={label}>Hide</legend>
+          {([["hideChords", "Chords"], ["hideCapo", "Capo chords"], ["hideLang2", "2nd-language lyrics"]] as const).map(([k, name]) => (
+            <label key={k} className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={opts[k]} onChange={(e) => set(k, e.target.checked)} />
+              {name}
+            </label>
+          ))}
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={opts.order} onChange={(e) => set("order", e.target.checked)} />
+            Print in presentation order
+          </label>
         </fieldset>
 
         <fieldset className="space-y-2">
-          <legend className={label}>Chords</legend>
+          <legend className={label}>Role styles</legend>
+          <select value={roleSel} onChange={(e) => setRoleSel(e.target.value)} className={input}>
+            {ROLES.map(([k, name]) => <option key={k} value={k}>{name}</option>)}
+          </select>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label htmlFor="cFont" className={label}>Font</label>
-              {fontSelect(opts.cFont, (v) => set("cFont", v), "cFont")}
+              <label htmlFor="rFont" className={label}>Font</label>
+              {fontSelect(roleEdit.font ?? "", (v) => setRole("font", v), "rFont")}
             </div>
             <div>
-              <label htmlFor="cSize" className={label}>Size (pt)</label>
-              <input id="cSize" type="number" min={6} max={30} value={opts.cSize} placeholder="11" onChange={(e) => set("cSize", e.target.value)} className={input} />
+              <label htmlFor="rSize" className={label}>Size (pt)</label>
+              <input id="rSize" type="number" min={6} max={40} value={roleEdit.size ?? ""} placeholder="11" onChange={(e) => setRole("size", e.target.value)} className={input} />
             </div>
             <div>
-              <label htmlFor="cColor" className={label}>Color</label>
+              <label htmlFor="rColor" className={label}>Color</label>
               <div className="flex gap-1">
-                <input id="cColor" type="color" value={opts.cColor === "" ? "#000080" : opts.cColor} onChange={(e) => set("cColor", e.target.value)} className="h-7 w-9 cursor-pointer rounded border border-zinc-700 bg-zinc-800" />
-                {opts.cColor !== "" && <button onClick={() => set("cColor", "")} className="text-xs text-zinc-400 hover:text-zinc-200">reset</button>}
+                <input id="rColor" type="color" value={roleEdit.color ?? "#000000"} onChange={(e) => setRole("color", e.target.value)} className="h-7 w-9 cursor-pointer rounded border border-zinc-700 bg-zinc-800" />
+                {roleEdit.color !== undefined && <button onClick={() => setRole("color", "")} className="text-xs text-zinc-400 hover:text-zinc-200">reset</button>}
               </div>
             </div>
-            <div className="flex items-end gap-3 pb-1">
-              <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={opts.cBold} onChange={(e) => set("cBold", e.target.checked)} /> B</label>
-              <label className="flex items-center gap-1 text-sm italic"><input type="checkbox" checked={opts.cItalic} onChange={(e) => set("cItalic", e.target.checked)} /> I</label>
+            <div className="flex items-end gap-2 pb-1">
+              {([["bold", "B", "font-bold"], ["italic", "I", "italic"], ["underline", "U", "underline"]] as const).map(([k, t, cls]) => (
+                <select key={k} value={roleEdit[k] ?? ""} onChange={(e) => setRole(k, e.target.value as Tri)} title={k} className={`rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-xs text-zinc-100 ${cls}`}>
+                  <option value="">·</option><option value="1">{t}</option><option value="0">/{t}</option>
+                </select>
+              ))}
             </div>
           </div>
-        </fieldset>
-
-        <fieldset className="space-y-2">
-          <legend className={label}>Lyrics</legend>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label htmlFor="lFont" className={label}>Font</label>
-              {fontSelect(opts.lFont, (v) => set("lFont", v), "lFont")}
-            </div>
-            <div>
-              <label htmlFor="lSize" className={label}>Size (pt)</label>
-              <input id="lSize" type="number" min={6} max={30} value={opts.lSize} placeholder="12" onChange={(e) => set("lSize", e.target.value)} className={input} />
-            </div>
-          </div>
+          {Object.keys(opts.roles).length > 0 && (
+            <button onClick={() => set("roles", {})} className="text-xs text-zinc-400 hover:text-zinc-200">Reset all role styles</button>
+          )}
         </fieldset>
 
         <fieldset className="space-y-2">

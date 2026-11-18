@@ -8,6 +8,7 @@ import {
   parsePrintConfig,
   parseOpenSongLyrics,
   applyPrintOverrides,
+  mergePrintConfig,
   DEFAULT_PRINT_CONFIG,
   type Service,
   type Song,
@@ -174,20 +175,32 @@ describe("chordSheetHtml (SongML slice model)", () => {
 });
 
 describe("applyPrintOverrides", () => {
-  it("overrides the chords role without touching lyric layout", () => {
+  it("overrides a role's fields via r_<role>_<prop> params", () => {
     const cfg = applyPrintOverrides(DEFAULT_PRINT_CONFIG, {
-      cFont: "JetBrains Mono", cSize: "14", cColor: "#ff0000", cBold: "0", cItalic: "1",
+      r_chords_font: "JetBrains Mono", r_chords_size: "14", r_chords_color: "#ff0000",
+      r_chords_bold: "0", r_chords_italic: "1", r_chords_underline: "1",
     });
-    expect(cfg.roles["chords"]).toMatchObject({ font: "JetBrains Mono", size: 14, color: "#ff0000", bold: false, italic: true });
+    expect(cfg.roles["chords"]).toMatchObject({ font: "JetBrains Mono", size: 14, color: "#ff0000", bold: false, italic: true, underline: true });
     expect(cfg.roles["lyrics"]).toBeUndefined(); // untouched
-    // capo row inherits the chord family but keeps its own size/color
-    expect(cfg.roles["capo_chords"]).toMatchObject({ font: "JetBrains Mono", size: 10, color: "#008000" });
+    // other roles are independent — capo keeps its own style
+    expect(cfg.roles["capo_chords"]).toBeUndefined();
   });
 
-  it("overrides lyrics font+size for both language rows", () => {
-    const cfg = applyPrintOverrides(DEFAULT_PRINT_CONFIG, { lFont: "Inter", lSize: "16" });
-    expect(cfg.roles["lyrics"]).toMatchObject({ font: "Inter", size: 16 });
-    expect(cfg.roles["lyrics_language2"]).toMatchObject({ font: "Inter", size: 8 }); // family follows, size keeps default
+  it("sets margins — uniform and per-side", () => {
+    const cfg = applyPrintOverrides(DEFAULT_PRINT_CONFIG, { margin: "36", marginTop: "48" });
+    expect(cfg.page).toMatchObject({ top: 48, right: 36, bottom: 36, left: 36 });
+  });
+
+  it("style flags + visibility toggles", () => {
+    const cfg = applyPrintOverrides(DEFAULT_PRINT_CONFIG, {
+      capsTitle: "0", chorus: "0", adorn: "1", border: "3",
+      hideChords: "1", hideCapo: "1", hideLang2: "1", order: "1",
+    });
+    expect(cfg.capsSongTitle).toBe(false);
+    expect(cfg.highlightChorus).toBe(false);
+    expect(cfg.headerAdornment).toBe(true);
+    expect(cfg.borderThickness).toBe(3);
+    expect(cfg.options).toEqual({ hideChords: true, hideCapo: true, hideLang2: true, presentationOrder: true });
   });
 
   it("landscape swaps the page box", () => {
@@ -197,8 +210,22 @@ describe("applyPrintOverrides", () => {
 
   it("does not mutate the input config", () => {
     const src = { ...DEFAULT_PRINT_CONFIG };
-    applyPrintOverrides(src, { cSize: "20" });
+    applyPrintOverrides(src, { r_chords_size: "20" });
     expect(src.roles["chords"]).toBeUndefined();
+  });
+});
+
+describe("mergePrintConfig", () => {
+  it("fills every role from the OpenSong defaults", () => {
+    const cfg = mergePrintConfig();
+    expect(cfg.roles["chords"]).toMatchObject({ font: "Times New Roman", bold: true, color: "#000080" });
+    expect(cfg.roles["lyrics"]).toMatchObject({ font: "Arial Narrow" });
+  });
+
+  it("merges stored partial roles field-by-field, not wholesale", () => {
+    const cfg = mergePrintConfig({ roles: { chords: { font: "JetBrains Mono" } as never } });
+    expect(cfg.roles["chords"]).toMatchObject({ font: "JetBrains Mono", bold: true, color: "#000080", size: 11 });
+    expect(cfg.roles["lyrics"]).toMatchObject({ font: "Arial Narrow" }); // defaults survive
   });
 });
 
