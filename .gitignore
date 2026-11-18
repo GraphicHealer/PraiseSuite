@@ -12,3 +12,7 @@ Thumbs.db
 .electron-cache/
 apps/web/dist
 NUL
+
+# Local review notes — never committed
+reveiws/
+reviews/
