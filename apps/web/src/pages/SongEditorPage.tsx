@@ -290,59 +290,32 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
   if (!song) return <div className="p-6 text-sm text-zinc-500">Loading…</div>;
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-2 p-3">
-      {/* Toolbar */}
-      <div className="flex items-center gap-2">
-        {onBack && <button onClick={onBack} className={btn}>←</button>}
-        <button
-          onClick={() => setTab("general")}
-          className={`${btn} ${tab === "general" ? "bg-indigo-100 dark:bg-indigo-950" : ""}`}
-        >
-          General
-        </button>
-        <button
-          onClick={() => setTab("advanced")}
-          className={`${btn} ${tab === "advanced" ? "bg-indigo-100 dark:bg-indigo-950" : ""}`}
-        >
-          Advanced
-        </button>
-        <button
-          onClick={() => setTab("backgrounds")}
-          className={`${btn} ${tab === "backgrounds" ? "bg-indigo-100 dark:bg-indigo-950" : ""}`}
-        >
-          Backgrounds
-        </button>
-        <div className="ml-auto flex items-center gap-2">
-          {dirty && <button onClick={() => void reload()} className={btn} title="Discard edits and reload">Revert</button>}
-          {onPresent && <button onClick={() => void save().then(() => onPresent(song))} className={btn}>Present</button>}
-          <span className="text-xs text-zinc-500">Transpose</span>
-          <button onClick={() => transpose(-1)} className={btn}>-♭</button>
-          <button onClick={() => transpose(1)} className={btn}>+♯</button>
+    <div className="flex h-full min-h-0 gap-2 p-3">
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        {/* Toolbar: navigation + editor tabs only */}
+        <div className="flex items-center gap-2">
+          {onBack && <button onClick={onBack} className={btn}>←</button>}
           <button
-            onClick={() => setPrintUrl(api.printUrl(`/api/v1/print/song/${encodeURIComponent(song.id)}?mode=chord`))}
-            className={btn}
-            title="Chord sheet"
+            onClick={() => setTab("general")}
+            className={`${btn} ${tab === "general" ? "bg-indigo-100 dark:bg-indigo-950" : ""}`}
           >
-            Print
+            General
           </button>
           <button
-            onClick={() => setPrintUrl(api.printUrl(`/api/v1/print/song/${encodeURIComponent(song.id)}?mode=lyrics`))}
-            className={btn}
-            title="Lyrics sheet"
+            onClick={() => setTab("advanced")}
+            className={`${btn} ${tab === "advanced" ? "bg-indigo-100 dark:bg-indigo-950" : ""}`}
           >
-            Print lyrics
+            Advanced
           </button>
-          <button onClick={() => void save()} className="rounded bg-indigo-600 px-3 py-1 text-sm text-white hover:bg-indigo-500">
-            {dirty ? "Save" : "Saved"}
+          <button
+            onClick={() => setTab("backgrounds")}
+            className={`${btn} ${tab === "backgrounds" ? "bg-indigo-100 dark:bg-indigo-950" : ""}`}
+          >
+            Backgrounds
           </button>
-          <button onClick={() => void rename()} className={btn} title="Rename song">Rename</button>
-          <button onClick={exportXml} className={btn} title="Export as OpenSong XML">Export</button>
-          <button onClick={() => void copy()} className={btn} title="Duplicate this song">Copy</button>
-          <button onClick={() => void move()} className={btn} title="Move to folder">Move</button>
-          <button onClick={() => void remove()} className={`${btn} text-red-600`}>Delete</button>
+          <span className="ml-auto text-xs text-zinc-500">Chord/Lyrics</span>
         </div>
-      </div>
-      {status && <p className="text-xs text-zinc-500">{status}</p>}
+        {status && <p className="text-xs text-zinc-500">{status}</p>}
 
       {tab === "general" && (
         <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-4">
@@ -432,17 +405,6 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
         </div>
       )}
 
-      {/* Chord/Lyrics */}
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-medium">Chord/Lyrics:</span>
-        <span className="text-xs text-zinc-500">Insert:</span>
-        <button onClick={ins.lyrics} className={btn}>Lyrics</button>
-        <button onClick={ins.comment} className={btn}>Comment</button>
-        <button onClick={ins.column} className={btn}>Column</button>
-        <button onClick={ins.page} className={btn}>Page</button>
-        <button onClick={ins.multiVerse} className={btn}>Multi-Verse</button>
-        <button onClick={ins.section} className={btn}>Section</button>
-      </div>
       <div className="min-h-0 flex-1 overflow-hidden rounded border border-zinc-300 dark:border-zinc-700">
         <CodeMirror
           value={source}
@@ -456,6 +418,74 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
             setDirty(true);
           }}
         />
+      </div>
+      </div>
+
+      {/* Right action column (OpenSong's vertical button stack) */}
+      <div className="flex w-36 shrink-0 flex-col gap-2">
+        <fieldset className="rounded border border-zinc-300 p-1.5 dark:border-zinc-700">
+          <legend className="px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Song</legend>
+          <div className="flex flex-col gap-1">
+            <button onClick={() => void save()} className="rounded bg-indigo-600 px-2 py-1 text-sm text-white hover:bg-indigo-500">
+              {dirty ? "Save" : "Saved"}
+            </button>
+            {dirty && (
+              <button onClick={() => void reload()} className={btn} title="Discard edits and reload">Revert</button>
+            )}
+            {onPresent && (
+              <button onClick={() => void save().then(() => onPresent(song))} className={btn}>Present</button>
+            )}
+          </div>
+        </fieldset>
+
+        <fieldset className="rounded border border-zinc-300 p-1.5 dark:border-zinc-700">
+          <legend className="px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Transpose</legend>
+          <div className="flex gap-1">
+            <button onClick={() => transpose(-1)} className={`${btn} flex-1`} title="Down a half step">-♭</button>
+            <button onClick={() => transpose(1)} className={`${btn} flex-1`} title="Up a half step">+♯</button>
+          </div>
+        </fieldset>
+
+        <fieldset className="rounded border border-zinc-300 p-1.5 dark:border-zinc-700">
+          <legend className="px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Print</legend>
+          <div className="flex flex-col gap-1">
+            <button
+              onClick={() => setPrintUrl(api.printUrl(`/api/v1/print/song/${encodeURIComponent(song.id)}?mode=chord`))}
+              className={btn}
+            >
+              Chord sheet
+            </button>
+            <button
+              onClick={() => setPrintUrl(api.printUrl(`/api/v1/print/song/${encodeURIComponent(song.id)}?mode=lyrics`))}
+              className={btn}
+            >
+              Lyrics sheet
+            </button>
+          </div>
+        </fieldset>
+
+        <fieldset className="rounded border border-zinc-300 p-1.5 dark:border-zinc-700">
+          <legend className="px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Insert</legend>
+          <div className="flex flex-col gap-1">
+            <button onClick={ins.lyrics} className={btn}>Lyrics</button>
+            <button onClick={ins.comment} className={btn}>Comment</button>
+            <button onClick={ins.column} className={btn}>Column</button>
+            <button onClick={ins.page} className={btn}>Page</button>
+            <button onClick={ins.multiVerse} className={btn}>Multi-Verse</button>
+            <button onClick={ins.section} className={btn}>Section</button>
+          </div>
+        </fieldset>
+
+        <fieldset className="rounded border border-zinc-300 p-1.5 dark:border-zinc-700">
+          <legend className="px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">File</legend>
+          <div className="flex flex-col gap-1">
+            <button onClick={() => void rename()} className={btn} title="Rename song">Rename</button>
+            <button onClick={exportXml} className={btn} title="Export as OpenSong XML">Export</button>
+            <button onClick={() => void copy()} className={btn} title="Duplicate this song">Copy</button>
+            <button onClick={() => void move()} className={btn} title="Move to folder">Move</button>
+            <button onClick={() => void remove()} className={`${btn} text-red-600`}>Delete</button>
+          </div>
+        </fieldset>
       </div>
     </div>
   );
