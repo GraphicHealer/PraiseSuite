@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { SlideCanvas } from "../components/SlideCanvas.js";
+import { api, type PresentMode } from "../api.js";
 import type { SlideStyle } from "../slide-types";
+
+type OutputPlanSlide = { index: number; itemId: string; sectionLabel: string | null; prefix: string | null };
+type OutputPlan = { slides: OutputPlanSlide[]; current: number };
 
 interface SlidePayload {
   index: number;
@@ -112,6 +116,99 @@ export function ReceiverPage(): ReactNode {
     return () => clearInterval(t);
   }, [state?.slide?.loopSeconds, state?.slide?.index]);
 
+  // Single-screen mode: this window IS the output (Electron), so the
+  // OpenSong keymap drives the session directly — no helper needed.
+  const planRef = useRef<OutputPlan | null>(null);
+  const stateRef = useRef<SlideState | null>(null);
+  const [escArmed, setEscArmed] = useState(false);
+  const escArmedRef = useRef(false);
+  const escTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => { stateRef.current = state; }, [state]);
+  useEffect(() => {
+    if (!sessionId) return;
+    const ps = (window as { ps?: { isOutput?: () => Promise<boolean>; toggleOutput?: () => Promise<string> } }).ps;
+    let installed = false;
+    const armEsc = () => {
+      escArmedRef.current = true;
+      setEscArmed(true);
+      if (escTimer.current) clearTimeout(escTimer.current);
+      escTimer.current = setTimeout(() => { escArmedRef.current = false; setEscArmed(false); }, 3000);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      const s = stateRef.current;
+      if (!s) return;
+      const plan = planRef.current;
+      const cur = s.slide?.index ?? 0;
+      const jump = (idx: number) => void api.navigate(s.sessionId, "jump", idx).catch(() => {});
+      const jumpItem = (delta: number) => {
+        if (!plan) return;
+        const items = [...new Set(plan.slides.map((x) => x.itemId))];
+        const i = items.indexOf(plan.slides.find((x) => x.index === cur)?.itemId ?? "");
+        const t = items[Math.max(0, Math.min(items.length - 1, i + delta))];
+        const slide = plan.slides.find((x) => x.itemId === t);
+        if (slide) jump(slide.index);
+      };
+      const jumpSection = (match: (x: OutputPlanSlide) => boolean) => {
+        const after = plan?.slides.find((x) => x.index > cur && match(x));
+        const target = after ?? plan?.slides.find(match);
+        if (target) jump(target.index);
+      };
+      const prevSection = () => {
+        if (!plan) return api.navigate(s.sessionId, "prev").catch(() => {});
+        const curItem = plan.slides.find((x) => x.index === cur)?.itemId;
+        const items = [...new Set(plan.slides.map((x) => x.itemId))];
+        const i = items.indexOf(curItem ?? "");
+        const first = plan.slides.find((x) => x.itemId === curItem);
+        const prev = i > 0 ? plan.slides.find((x) => x.itemId === items[i - 1]) : undefined;
+        const target = first && first.index < cur ? first : prev ?? first;
+        if (target) jump(target.index);
+      };
+      const toggle = (m: PresentMode) => void api.setMode(s.sessionId, s.mode === m ? "normal" : m).catch(() => {});
+      let handled = true;
+      const key = e.key;
+      if (key === " " || key === "ArrowDown" || key === "PageDown") void api.navigate(s.sessionId, "next").catch(() => {});
+      else if (key === "ArrowUp" || key === "PageUp") void api.navigate(s.sessionId, "prev").catch(() => {});
+      else if (key === "Home") { const f = plan?.slides[0]; if (f) jump(f.index); else handled = false; }
+      else if (key === "End") { const l = plan?.slides[plan.slides.length - 1]; if (l) jump(l.index); else handled = false; }
+      else if (key === "ArrowRight") jumpItem(1);
+      else if (key === "ArrowLeft" || key === "Backspace") prevSection();
+      else if (key === "Escape") {
+        if (escArmedRef.current) void api.endSession(s.sessionId).catch(() => {});
+        else armEsc();
+      } else if (/^F(\d|1[0-5])$/.test(key)) {
+        const items = [...new Set((plan?.slides ?? []).map((x) => x.itemId))];
+        const slide = plan?.slides.find((x) => x.itemId === items[parseInt(key.slice(1), 10) - 1]);
+        if (slide) jump(slide.index);
+      } else if (/^[1-9]$/.test(key)) {
+        jumpSection((x) => x.prefix === key || x.sectionLabel?.toLowerCase() === `v${key}`);
+      } else {
+        switch (key.toLowerCase()) {
+          case "n": void api.setMode(s.sessionId, "normal").catch(() => {}); break;
+          case "k": toggle("blank"); break;
+          case "w": toggle("white"); break;
+          case "h": toggle("hidden"); break;
+          case "l": toggle("logo"); break;
+          case "f": toggle("freeze"); break;
+          case "m": void ps?.toggleOutput?.(); break;
+          case "`":
+          case "c": jumpSection((x) => x.sectionLabel?.toLowerCase().startsWith("c") ?? false); break;
+          case "p": jumpSection((x) => x.sectionLabel?.toLowerCase().startsWith("p") ?? false); break;
+          case "b": jumpSection((x) => x.sectionLabel?.toLowerCase().startsWith("b") ?? false); break;
+          case "t": jumpSection((x) => x.sectionLabel?.toLowerCase().startsWith("t") ?? false); break;
+          default: handled = false;
+        }
+      }
+      if (handled) e.preventDefault();
+    };
+    void ps?.isOutput?.().then((yes) => {
+      if (!yes) return;
+      installed = true;
+      void api.sessionPlan(sessionId).then((p) => { planRef.current = p as OutputPlan; }).catch(() => {});
+      window.addEventListener("keydown", onKey);
+    });
+    return () => { if (installed) window.removeEventListener("keydown", onKey); };
+  }, [sessionId]);
+
   if (!sessionId || !token) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-black text-zinc-600">
@@ -151,6 +248,13 @@ export function ReceiverPage(): ReactNode {
       />
       {!connected && (
         <span className="fixed bottom-2 right-3 text-xs text-zinc-700">connecting…</span>
+      )}
+      {escArmed && (
+        <div className="fixed inset-x-0 bottom-8 flex justify-center">
+          <span className="rounded bg-zinc-900/90 px-4 py-2 text-sm text-zinc-200">
+            Exit Presenter? Press Esc again to end.
+          </span>
+        </div>
       )}
     </div>
   );

@@ -130,12 +130,15 @@ ipcMain.handle("ps:print-pdf", async (e, { url, filename }) => {
 });
 
 /**
- * Presentation output modes (OpenSong Present → single/dual/preview):
- *   auto    — dual_screen when a second display exists, else preview.
- *   dual    — fullscreen borderless on the first non-primary display;
- *             a resizable window on the primary when there is only one.
- *   single  — a resizable receiver window on the primary display.
- *   preview — no output window; the helper's previews are the output.
+ * Presentation output modes (OpenSong monitor_mode):
+ *   auto    — dual when a second display exists, else preview.
+ *   dual    — fullscreen output on the first non-primary display;
+ *             falls back to preview when only one display is present.
+ *   single  — fullscreen output window on the primary display; controlled
+ *             by the OpenSong keymap (handled by the receiver page itself).
+ *   preview — dual-screen test: no output window, the helper's Current/Next
+ *             previews act as the output.
+ *   network — no local output window; remote devices open /receiver over LAN.
  */
 let displayMode = "auto";
 
@@ -155,30 +158,24 @@ function openOutputWindow() {
   const target = displays.find((d) => d.id !== primary.id);
   const mode = displayMode === "auto" ? (target ? "dual" : "preview") : displayMode;
 
-  if (mode === "preview") {
-    console.log("preview mode — helper window previews are the output");
+  if (mode === "preview" || mode === "network" || (mode === "dual" && !target)) {
+    console.log(`${mode} mode — no local output window`);
     return;
   }
 
-  if (mode === "dual" && target) {
-    outputWindow = new BrowserWindow({
-      x: target.bounds.x,
-      y: target.bounds.y,
-      fullscreen: true,
-      frame: false,
-      backgroundColor: "#000000",
-      webPreferences: { contextIsolation: true },
-    });
-  } else {
-    // single (or dual with only one display): resizable window on primary.
-    outputWindow = new BrowserWindow({
-      width: 960,
-      height: 540,
-      backgroundColor: "#000000",
-      webPreferences: { contextIsolation: true },
-    });
-    outputWindow.setMenuBarVisibility(false);
-  }
+  // dual → fullscreen on the second display; single → fullscreen on primary.
+  const bounds = mode === "dual" && target ? target.bounds : primary.bounds;
+  outputWindow = new BrowserWindow({
+    x: bounds.x,
+    y: bounds.y,
+    fullscreen: true,
+    frame: false,
+    backgroundColor: "#000000",
+    webPreferences: {
+      contextIsolation: true,
+      preload: path.join(dir, "preload.mjs"),
+    },
+  });
   outputWindow.loadURL(`${BASE}/receiver`);
   outputWindow.on("closed", () => (outputWindow = null));
 }
@@ -194,6 +191,13 @@ ipcMain.handle("ps:toggle-output", () => {
   outputWindow.setFullScreen(!fs);
   return fs ? "windowed" : "fullscreen";
 });
+
+// True when the calling webContents is the presentation output window —
+// lets /receiver drive the session with the OpenSong keymap locally.
+ipcMain.handle("ps:is-output", (e) => outputWindow !== null && e.sender === outputWindow.webContents);
+
+// Display count so Settings can disable Dual Screen on single-monitor rigs.
+ipcMain.handle("ps:display-count", () => screen.getAllDisplays().length);
 
 app.whenReady().then(async () => {
   startServer();

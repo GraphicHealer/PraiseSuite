@@ -278,6 +278,8 @@ export function PresentPage({
       let handled = true;
       if (key === "ArrowDown" || key === " " || key === "PageDown") void doNavigate("next");
       else if (key === "ArrowUp" || key === "PageUp") void doNavigate("prev");
+      else if (key === "Home") { if (plan?.slides[0]) void doNavigate("jump", plan.slides[0].index); }
+      else if (key === "End") { const last = plan?.slides[plan.slides.length - 1]; if (last) void doNavigate("jump", last.index); }
       else if (key === "ArrowRight") jumpToItem(1);
       else if (key === "ArrowLeft" || key === "Backspace") prevSection();
       else if (key === "Escape") confirmEnd();
@@ -290,17 +292,21 @@ export function PresentPage({
       } else if (/^[1-9]$/.test(key)) {
         jumpToSection((s) => s.prefix === key || s.sectionLabel?.toLowerCase() === `v${key}`);
       } else {
-        switch (key.toLowerCase()) {
+        // OpenSong mode keys are toggles — pressing the active mode's key returns to normal.
+        const toggle = (m: PresentMode) => setMode(session.mode === m ? "normal" : m);
+        const mk = key.toLowerCase();
+        switch (mk) {
           case "n": setMode("normal"); break;
-          case "k": setMode("blank"); break;
-          case "w": setMode("white"); break;
-          case "h": setMode("hidden"); break;
-          case "l": setMode("logo"); break;
-          case "f": setMode("freeze"); break;
+          case "k": toggle("blank"); break;
+          case "w": toggle("white"); break;
+          case "h": toggle("hidden"); break;
+          case "l": toggle("logo"); break;
+          case "f": toggle("freeze"); break;
           case "a": alertRef.current?.focus(); break;
           case "q": openAdd("song"); break;
           case "s": openAdd("scripture"); break;
           case "m": toggleFullscreen(); break;
+          case "`": // backtick = Chorus, same as C
           case "c": jumpToSection((s) => s.sectionLabel?.toLowerCase().startsWith("c") ?? false); break;
           case "p": jumpToSection((s) => s.sectionLabel?.toLowerCase().startsWith("p") ?? false); break;
           case "b": jumpToSection((s) => s.sectionLabel?.toLowerCase().startsWith("b") ?? false); break;
@@ -567,7 +573,7 @@ export function PresentPage({
           </fieldset>
 
           <pre className="rounded border border-zinc-300 p-1.5 text-[10px] leading-snug whitespace-pre-wrap text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
-{"- Keys -\nDown: Next Slide\nUp: Previous Slide\nRight: Next Section\nLeft: Previous Section\nF1-F15: Song\n1-9: Verse\nC: Chorus\nP: Pre-chorus\nB: Bridge\nT: Tag"}
+{"- Keys -\nSpace/Down/PgDn: Next\nUp/PgUp: Previous\nRight: Next Section\nLeft/Backspace: Prev Section\nHome/End: First/Last Slide\nF1-F15: Song\n1-9: Verse\nC/`: Chorus\nP: Pre-chorus\nB: Bridge\nT: Tag\nK/W/H/L/F: Black/White/Hide/Logo/Freeze\nN: Normal\nA: Alert\nQ: Add Song\nS: Scripture\nM: Full Screen\nEsc: End"}
           </pre>
         </div>
       </div>

@@ -12,4 +12,8 @@ contextBridge.exposeInMainWorld("ps", {
   openPrintWindow: (query) => ipcRenderer.invoke("ps:open-print", query),
   /** Toggle the presentation output window fullscreen/windowed. */
   toggleOutput: () => ipcRenderer.invoke("ps:toggle-output"),
+  /** True when this webContents IS the presentation output window. */
+  isOutput: () => ipcRenderer.invoke("ps:is-output"),
+  /** Number of connected displays. */
+  displayCount: () => ipcRenderer.invoke("ps:display-count"),
 });

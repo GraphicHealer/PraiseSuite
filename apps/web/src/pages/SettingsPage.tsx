@@ -94,6 +94,7 @@ export function SettingsPage(): ReactNode {
   const [net, setNet] = useState<{ lanEnabled: boolean; addresses: string[] } | null>(null);
   const [syncAddr, setSyncAddr] = useState("");
   const [displayMode, setDisplayMode] = useState<string>("auto");
+  const [displayCount, setDisplayCount] = useState<number | null>(null);
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
@@ -101,6 +102,7 @@ export function SettingsPage(): ReactNode {
     void api.bibles().then(setBibles).catch(() => {});
     void api.network().then(setNet).catch(() => {});
     void api.setting<string>("present.displayMode").then((s) => setDisplayMode(s.value ?? "auto")).catch(() => {});
+    void (window as { ps?: { displayCount?: () => Promise<number> } }).ps?.displayCount?.().then(setDisplayCount).catch(() => {});
   }, []);
 
   const importBible = async (files: FileList | null) => {
@@ -232,14 +234,44 @@ export function SettingsPage(): ReactNode {
             >
               <option value="auto">Automatic</option>
               <option value="single">Single Screen</option>
-              <option value="dual">Dual Screen</option>
-              <option value="preview">Preview Dual Screen</option>
+              <option value="dual" disabled={displayCount !== null && displayCount < 2}>
+                Dual Screen{displayCount !== null && displayCount < 2 ? " (no second display)" : ""}
+              </option>
+              <option value="preview">Dual-Screen Test</option>
+              <option value="network">Network</option>
             </select>
           </label>
           <p className="text-zinc-500">
-            Dual puts fullscreen output on a projector; single opens a resizable output window;
-            preview uses only the helper&apos;s slide previews. Applies on next launch.
+            Single shows a fullscreen output on this screen controlled by keys or a remote; dual puts
+            the helper here and fullscreen output on a second display; dual-screen test previews both
+            windows inline; network leaves the screen to a device on your LAN. Applies on next launch.
           </p>
+          {displayMode === "network" && (
+            <div className="w-full rounded border border-zinc-300 p-2 dark:border-zinc-700">
+              <p className="font-medium">Network output</p>
+              <p className="mt-1 text-zinc-500">
+                On the remote device (projector PC, Chromecast browser, tablet), open:
+              </p>
+              {net?.lanEnabled && net.addresses.length > 0 ? (
+                <ul className="mt-1 list-inside list-disc font-mono">
+                  {net.addresses.map((a) => (
+                    <li key={a}>http://{a}:{window.location.port || "7729"}/receiver</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-1 font-mono">http://&lt;this-machine-ip&gt;:{window.location.port || "7729"}/receiver</p>
+              )}
+              {!net?.lanEnabled && (
+                <p className="mt-1 text-amber-600 dark:text-amber-400">
+                  Enable &quot;Allow LAN access&quot; below so other devices can reach this machine.
+                </p>
+              )}
+              <p className="mt-1 text-zinc-500">
+                The receiver picks up the live session automatically — run the helper on this machine
+                as usual.
+              </p>
+            </div>
+          )}
         </div>
       </fieldset>
 
