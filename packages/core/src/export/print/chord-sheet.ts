@@ -291,11 +291,13 @@ export function chordSheetHtml(song: Song, opts: SheetOptions = {}): string {
     const bilingual = section.options["L"] !== undefined;
     parts.push(`<div class="sec" style="margin-top:${secSpace.before}pt">`);
     const head = esc(headingName(section.label));
-    parts.push(
-      cfg.headerAdornment
-        ? `<div style="break-inside:avoid;margin-bottom:${secSpace.after}pt"><span style="${roleCss(roles["heading"])};border:${cfg.borderThickness}px solid #888;border-radius:1em;padding:0 6pt;display:inline-block">${head}</span></div>`
-        : `<div style="${roleCss(roles["heading"])};margin-bottom:${secSpace.after}pt">${head}</div>`,
-    );
+    if (head !== "") {
+      parts.push(
+        cfg.headerAdornment
+          ? `<div style="break-inside:avoid;margin-bottom:${secSpace.after}pt"><span style="${roleCss(roles["heading"])};border:${cfg.borderThickness}px solid #888;border-radius:1em;padding:0 6pt;display:inline-block">${head}</span></div>`
+          : `<div style="${roleCss(roles["heading"])};margin-bottom:${secSpace.after}pt">${head}</div>`,
+      );
+    }
 
     const items = sectionItems(section, vis?.hideLang2 === true);
     for (let i = 0; i < items.length; i++) {
@@ -383,8 +385,11 @@ export function lyricsSheetHtml(song: Song, opts: SheetOptions = {}): string {
   for (const section of song.sections) {
     const bilingual = section.options["L"] !== undefined;
     const chorus = section.label.charAt(0).toUpperCase() === "C" && cfg.highlightChorus;
-    parts.push(`<div class="sec" style="break-inside:avoid;margin-top:${secSpace.before + 6}pt">`);
-    parts.push(`<div style="${roleCss(roles["heading"])};margin-bottom:${secSpace.after}pt">${esc(headingName(section.label))}</div>`);
+    parts.push(`<div class="sec" style="break-inside:avoid;margin-top:${secSpace.before}pt">`);
+    const head = esc(headingName(section.label));
+    if (head !== "") {
+      parts.push(`<div style="${roleCss(roles["heading"])};margin-bottom:${secSpace.after}pt">${head}</div>`);
+    }
     let rowIdx = 0;
     for (const item of sectionItems(section, cfg.options?.hideLang2 === true)) {
       if (item.type === "line") {

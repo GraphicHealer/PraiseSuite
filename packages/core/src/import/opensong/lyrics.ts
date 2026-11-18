@@ -134,9 +134,6 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
     if (!section) {
       section = { type: "other", label: "", lines: [], options: {} };
       sections.push(section);
-      warnings.push(
-        "Lyric content found before the first [section] tag; wrapped in an implicit section.",
-      );
     }
     return section;
   };
@@ -231,6 +228,20 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
   if (pendingChords.length > 0) {
     warnings.push(
       "Chord line(s) at end of lyrics had no lyric line beneath them; chords dropped.",
+    );
+  }
+  // Pre-tag content is legal OpenSong (untagged songs, comment preambles) —
+  // only flag it when actual lyric lines float in front of tagged sections,
+  // which usually means a missing [tag].
+  const first = sections[0];
+  if (
+    sections.length > 1 &&
+    first !== undefined &&
+    first.label === "" &&
+    first.lines.some((l) => l.kind === "lyric")
+  ) {
+    warnings.push(
+      "Lyric lines found before the first [section] tag; wrapped in an implicit section.",
     );
   }
   return { sections, warnings };
