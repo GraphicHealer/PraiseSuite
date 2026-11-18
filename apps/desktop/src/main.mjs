@@ -19,17 +19,22 @@ let controlWindow = null;
  */
 function startServer() {
   const serverDir = path.join(ROOT, "apps", "server");
-  const isWin = process.platform === "win32";
-  const cmd = isWin ? "pnpm.cmd" : "pnpm";
-  serverProc = spawn(cmd, ["exec", "tsx", "src/index.ts"], {
+  // Prefer a system Node for dev — better-sqlite3's native module is built
+  // against Node's ABI there. Packaged builds can force Electron's runtime
+  // (ELECTRON_RUN_AS_NODE) with an electron-rebuilt module.
+  const tsxCli = path.join(serverDir, "node_modules", "tsx", "dist", "cli.mjs");
+  const runtime = process.env.PRAISESUITE_SERVER_RUNTIME ?? "node";
+  const cmd = runtime === "electron" ? process.execPath : runtime;
+  const env = {
+    ...process.env,
+    PORT: String(PORT),
+    PRAISESUITE_DATA: path.join(app.getPath("userData"), "data"),
+    PRAISESUITE_WEB_ROOT: path.join(ROOT, "apps", "web", "dist"),
+  };
+  if (runtime === "electron") env.ELECTRON_RUN_AS_NODE = "1";
+  serverProc = spawn(cmd, [tsxCli, "src/index.ts"], {
     cwd: serverDir,
-    env: {
-      ...process.env,
-      PORT: String(PORT),
-      PRAISESUITE_DATA: path.join(app.getPath("userData"), "data"),
-      PRAISESUITE_WEB_ROOT: path.join(ROOT, "apps", "web", "dist"),
-      ELECTRON_RUN_AS_NODE: "1",
-    },
+    env,
     stdio: ["ignore", "pipe", "pipe"],
   });
   serverProc.stdout.on("data", (d) => process.stdout.write(`[server] ${d}`));
