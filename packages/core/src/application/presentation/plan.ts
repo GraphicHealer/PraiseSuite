@@ -46,8 +46,9 @@ function slicesOfSection(section: SongSection): string[][] {
       slices[slices.length - 1]!.length > 0
     )
       slices.push([]);
-    // "_" pads syllables for chord alignment; display as non-breaking space.
-    slices[slices.length - 1]!.push(line.text.replace(/_/g, " "));
+    // OpenSong slide text: "_" deleted outright (chord-sheet padding),
+    // multi-spaces squeezed, left-trimmed ("choo___sing" -> "choosing").
+    slices[slices.length - 1]!.push(line.text.replace(/_/g, "").replace(/ {2,}/g, " ").replace(/^ +/, ""));
   }
   while (slices.length > 1 && slices[slices.length - 1]!.length === 0) slices.pop();
   return slices.length === 0 ? [[]] : slices;

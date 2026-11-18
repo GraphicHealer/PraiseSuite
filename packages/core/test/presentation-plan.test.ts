@@ -109,6 +109,22 @@ describe("buildPlan", () => {
     expect(p.slides.map((sl) => sl.lines)).toEqual([["v1a", "v1b"], ["v2a"]]);
   });
 
+  it("strips underscores and squeezes spaces like OpenSong slides", () => {
+    const s = song("song3");
+    s.sections = [
+      {
+        id: "su" as Song["sections"][0]["id"], type: "verse", label: "V", options: {},
+        lines: [{ text: "choo___sing  a   mighty  fort_re__ss", chords: [], breakBefore: "none", prefix: "1", kind: "lyric", lang: null }],
+      },
+    ];
+    s.arrangements[0]!.sequence = [
+      { id: "p1" as Song["arrangements"][0]["sequence"][0]["id"], sectionId: "su" as Song["sections"][0]["id"], repeats: 1, prefix: null },
+    ];
+    const svc = { ...service, items: [service.items[0]!] };
+    const p = buildPlan(svc, new Map([["song1" as Song["id"], s]]));
+    expect(p.slides[0]!.lines).toEqual(["choosing a mighty fortress"]);
+  });
+
   it("navigates with clamping", () => {
     const sess = "sess" as never;
     const p0 = positionOfSlide(plan, 0, sess);
