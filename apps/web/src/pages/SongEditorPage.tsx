@@ -222,6 +222,13 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
           <span className="text-xs text-zinc-500">Transpose</span>
           <button onClick={() => transpose(-1)} className={btn}>-♭</button>
           <button onClick={() => transpose(1)} className={btn}>+♯</button>
+          <button
+            onClick={() => window.open(api.printUrl(`/api/v1/print/song/${encodeURIComponent(song.id)}?mode=chord`), "_blank")}
+            className={btn}
+            title="Chord sheet (Ctrl+P to save as PDF)"
+          >
+            Print
+          </button>
           <button onClick={() => void save()} className="rounded bg-indigo-600 px-3 py-1 text-sm text-white hover:bg-indigo-500">
             {dirty ? "Save" : "Saved"}
           </button>

@@ -57,6 +57,13 @@ export function LibraryPage({ onOpenSong }: { onOpenSong: (id: string) => void }
             className="w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
           />
           <button
+            onClick={() => window.open(api.printUrl("/api/v1/print/songbook"), "_blank")}
+            className="shrink-0 rounded border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            title="Songbook / table of contents"
+          >
+            Songbook
+          </button>
+          <button
             onClick={() => void api.createSong("New Song").then((s) => onOpenSong(s.id))}
             className="shrink-0 rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500"
           >

@@ -91,7 +91,7 @@ export function dispatch(routes: Route[], authService: AuthService, isOpenLocal:
       const params = matchPath(route.path, url.pathname);
       if (params === null) continue;
 
-      const token = tokenFromRequest(req.headers.authorization);
+      const token = tokenFromRequest(req.headers.authorization) ?? url.searchParams.get("token");
       const auth = (token ? authService.verify(token) : null) ?? (isOpenLocal() ? LOCAL_ADMIN : null);
       if (route.access !== "public" && auth === null) {
         sendError(res, 401, "unauthorized", "Valid bearer token required");

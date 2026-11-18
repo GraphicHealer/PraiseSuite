@@ -106,6 +106,11 @@ class Api {
   };
   logout = () => this.setToken(null);
 
+  /** Absolute URL for a server-side rendered document (print pages). */
+  printUrl(path: string): string {
+    return this.token ? `${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(this.token)}` : path;
+  }
+
   // server network / sync
   network = () => this.req<{ lanEnabled: boolean; addresses: string[] }>("/api/v1/server/network");
   setNetwork = (lanEnabled: boolean) =>

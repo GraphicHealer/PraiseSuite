@@ -94,6 +94,26 @@ describe("api v1", () => {
     expect((await res.json()) as { title: string }).toMatchObject({ title: "Amazing Grace" });
   });
 
+  it("print endpoints serve HTML documents", async () => {
+    let res = await api("/api/v1/songs", {
+      method: "POST",
+      body: JSON.stringify({ title: "Printable Song", authors: ["Author A"] }),
+    });
+    const created = (await res.json()) as { id: string };
+
+    res = await api(`/api/v1/print/song/${created.id}?mode=chord`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    expect(await res.text()).toContain("Printable Song");
+
+    res = await api(`/api/v1/print/song/${created.id}?mode=lyrics`);
+    expect(res.status).toBe(200);
+
+    res = await api("/api/v1/print/songbook");
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("Printable Song");
+  });
+
   it("guest tokens are session-scoped", async () => {
     const session = {
       id: "sess-1",

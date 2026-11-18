@@ -21,6 +21,7 @@ import {
   analyzeImport,
   applyImport,
   buildPlan,
+  chordSheetHtml,
   defaultSlideStyle,
   existingInfo,
   indexOfPosition,
@@ -32,6 +33,9 @@ import {
   positionOfSlide,
   resolveSlideStyle,
   scriptureSlideGroup,
+  setListHtml,
+  songbookHtml,
+  lyricsSheetHtml,
   type BibleTranslation,
   type ImportFile,
 } from "@praisesuite/core";
@@ -518,6 +522,36 @@ export function buildRoutes(deps: AppDeps): Route[] {
       return null;
     }),
 
+    // M8 — print/export: raw HTML documents (browser print -> PDF).
+    r("GET", "/api/v1/print/song/:id", "admin", "Song sheet: ?mode=chord|lyrics, &transpose=N, &capo=N", async (ctx) => {
+      const song = await deps.repos.songs.get(ctx.params["id"]! as SongId);
+      if (!song) throw new ApiError(404, "not_found", "Song not found");
+      const roles = printRoles(deps.storage);
+      const mode = ctx.query.get("mode") ?? "chord";
+      const tr = Number.parseInt(ctx.query.get("transpose") ?? "0", 10) || 0;
+      const capoRaw = ctx.query.get("capo");
+      const capo = capoRaw === null ? undefined : Number.parseInt(capoRaw, 10) || 0;
+      const html = mode === "lyrics"
+        ? lyricsSheetHtml(song, { roles })
+        : chordSheetHtml(song, { roles, transpose: tr, capo });
+      ctx.res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      ctx.res.end(html);
+      return undefined;
+    }),
+    r("GET", "/api/v1/print/service/:id", "admin", "Service set list", async (ctx) => {
+      const svc = await deps.repos.services.get(ctx.params["id"]! as Service["id"]);
+      if (!svc) throw new ApiError(404, "not_found", "Service not found");
+      ctx.res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      ctx.res.end(setListHtml(svc, printRoles(deps.storage)));
+      return undefined;
+    }),
+    r("GET", "/api/v1/print/songbook", "admin", "Songbook / TOC grouped by theme", async (ctx) => {
+      const songs = await deps.repos.songs.list();
+      ctx.res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      ctx.res.end(songbookHtml(songs, printRoles(deps.storage)));
+      return undefined;
+    }),
+
     r("GET", "/api/v1/receiver/join", "public", "Join the most recent live session as a viewer", async () => {
       const sessions = await deps.repos.sessions.listActive();
       const live = sessions
@@ -595,6 +629,15 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
 }
 
 /** Installed translations index (settings key `bibles.index`). */
+/** Imported PrintSettings roles (style.print setting) for the print engine. */
+function printRoles(storage: SqliteStorage): Record<string, import("@praisesuite/core").TextStyle> {
+  try {
+    return JSON.parse(storage.getSetting("style.print") ?? "{}") as Record<string, import("@praisesuite/core").TextStyle>;
+  } catch {
+    return {};
+  }
+}
+
 function biblesIndex(storage: SqliteStorage): { id: string; name: string; abbreviation: string; books: number; copyright: string | null }[] {
   try {
     return JSON.parse(storage.getSetting("bibles.index") ?? "[]") as ReturnType<typeof biblesIndex>;

@@ -131,6 +131,13 @@ export function ServicesPage({ onOpenSong }: { onOpenSong: (id: string) => void 
         <button onClick={() => { setCurrent(null); setDirty(false); }} className={btn}>← Services</button>
         <input className={`${input} text-lg font-semibold`} value={current.name} onChange={(e) => patch({ name: e.target.value })} />
         <input type="date" className={input} value={current.date ?? ""} onChange={(e) => patch({ date: e.target.value || null })} />
+        <button
+          onClick={() => window.open(api.printUrl(`/api/v1/print/service/${encodeURIComponent(current.id)}`), "_blank")}
+          className={btn}
+          title="Printable set list"
+        >
+          Print set
+        </button>
         <button onClick={() => void save()} className="ml-auto rounded bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-500">
           {dirty ? "Save" : "Saved"}
         </button>
