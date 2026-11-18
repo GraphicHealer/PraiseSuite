@@ -46,7 +46,8 @@ function slicesOfSection(section: SongSection): string[][] {
       slices[slices.length - 1]!.length > 0
     )
       slices.push([]);
-    slices[slices.length - 1]!.push(line.text);
+    // "_" pads syllables for chord alignment; display as non-breaking space.
+    slices[slices.length - 1]!.push(line.text.replace(/_/g, " "));
   }
   while (slices.length > 1 && slices[slices.length - 1]!.length === 0) slices.pop();
   return slices.length === 0 ? [[]] : slices;
