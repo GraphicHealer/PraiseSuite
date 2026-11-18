@@ -81,21 +81,24 @@ function openOutputWindow() {
   const primary = screen.getPrimaryDisplay();
   const target = displays.find((d) => d.id !== primary.id);
 
-  const opts = target
-    ? { x: target.bounds.x, y: target.bounds.y, fullscreen: true, frame: false, alwaysOnTop: false }
-    : { width: 960, height: 540, frame: true };
+  // Single display: skip the output window — the presenter can open
+  // /receiver in a tab or plug in a projector to auto-attach.
+  if (!target) {
+    console.log("single display — no output window (plug in a projector for fullscreen output)");
+    return;
+  }
 
   outputWindow = new BrowserWindow({
-    ...opts,
+    x: target.bounds.x,
+    y: target.bounds.y,
+    fullscreen: true,
+    frame: false,
+    alwaysOnTop: false,
     backgroundColor: "#000000",
     webPreferences: { contextIsolation: true },
   });
   outputWindow.loadURL(`${BASE}/receiver`);
   outputWindow.on("closed", () => (outputWindow = null));
-
-  if (!target) {
-    console.log("single display detected — output opened as a window (plug in a projector for fullscreen)");
-  }
 }
 
 app.whenReady().then(async () => {

@@ -67,7 +67,14 @@ export function sendError(res: ServerResponse, status: number, code: string, mes
   send(res, status, { error: { code, message } });
 }
 
-export function dispatch(routes: Route[], authService: AuthService) {
+/**
+ * Local trust: when LAN access is disabled the server only listens on
+ * localhost, so requests are treated as the local admin — no token needed.
+ * Enabling LAN re-arms token auth (TAS 15.3).
+ */
+const LOCAL_ADMIN: TokenPayload = { sub: "admin", jti: "local", scopes: [], sessionId: null, iat: 0, exp: 0 };
+
+export function dispatch(routes: Route[], authService: AuthService, isOpenLocal: () => boolean = () => false) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const url = new URL(req.url ?? "/", "http://localhost");
     res.setHeader("access-control-allow-origin", "*");
@@ -85,7 +92,7 @@ export function dispatch(routes: Route[], authService: AuthService) {
       if (params === null) continue;
 
       const token = tokenFromRequest(req.headers.authorization);
-      const auth = token ? authService.verify(token) : null;
+      const auth = (token ? authService.verify(token) : null) ?? (isOpenLocal() ? LOCAL_ADMIN : null);
       if (route.access !== "public" && auth === null) {
         sendError(res, 401, "unauthorized", "Valid bearer token required");
         return;

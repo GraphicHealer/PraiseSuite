@@ -65,7 +65,7 @@ export function createApp(options: AppOptions): PraiseSuiteApp {
   });
 
   const server = createServer();
-  const channel = new SessionChannel(server, auth);
+  const channel = new SessionChannel(server, auth, () => !lanEnabled);
   const webRoot = options.webRoot ? resolve(options.webRoot) : null;
 
   const routes = buildRoutes({
@@ -81,7 +81,9 @@ export function createApp(options: AppOptions): PraiseSuiteApp {
     },
     getLanEnabled: () => lanEnabled,
   });
-  const handler = dispatch(routes, auth);
+  // LAN off = localhost-only = trusted local user, no token needed.
+  const isOpenLocal = () => !lanEnabled;
+  const handler = dispatch(routes, auth, isOpenLocal);
 
   server.on("request", async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");

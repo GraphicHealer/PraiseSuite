@@ -49,12 +49,20 @@ export function LibraryPage({ onOpenSong }: { onOpenSong: (id: string) => void }
         ))}
       </aside>
       <div className="min-w-0 flex-1">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search titles, authors, lyrics..."
-          className="mb-3 w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-        />
+        <div className="mb-3 flex gap-2">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search titles, authors, lyrics..."
+            className="w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          />
+          <button
+            onClick={() => void api.createSong("New Song").then((s) => onOpenSong(s.id))}
+            className="shrink-0 rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+          >
+            + New song
+          </button>
+        </div>
         {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
         <ul className="divide-y divide-zinc-200 rounded border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
           {filtered.map((s) => (

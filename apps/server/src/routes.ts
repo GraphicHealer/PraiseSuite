@@ -74,6 +74,8 @@ export function buildRoutes(deps: AppDeps): Route[] {
     r("GET", "/api/v1/health", "public", "Service health + API version", async () => ({
       status: "ok",
       apiVersion: API_VERSION,
+      /** Local mode (LAN off) trusts localhost — no login needed. */
+      authRequired: deps.getLanEnabled(),
       appVersion: "0.0.1",
     })),
 

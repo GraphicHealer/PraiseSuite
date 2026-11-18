@@ -67,6 +67,16 @@ export function App(): ReactNode {
   const [songId, setSongId] = useState<string | null>(null);
   const [dark, setDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
 
+  // Local mode (LAN off) needs no login — the server trusts localhost.
+  useEffect(() => {
+    fetch("/api/v1/health")
+      .then((r) => r.json())
+      .then((h: { authRequired?: boolean }) => {
+        if (h.authRequired === false) setAuthed(true);
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
   }, [dark]);

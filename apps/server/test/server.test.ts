@@ -74,10 +74,10 @@ describe("api v1", () => {
     expect(token).toMatch(/^v1\./);
   });
 
-  it("songs CRUD requires admin", async () => {
-    // unauthenticated list is 401 for guests? GET /songs is "guest" access — needs a token.
+  it("songs CRUD (local mode trusts localhost)", async () => {
+    // LAN off → no token needed: localhost requests are treated as admin.
     let res = await api("/api/v1/songs");
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
 
     res = await api("/api/v1/songs", {
       method: "POST",
@@ -168,11 +168,12 @@ describe("api v1", () => {
     ws.close();
   });
 
-  it("rejects WS without a token", async () => {
+  it("accepts tokenless WS in local mode (LAN off)", async () => {
     const port = (app.server.address() as AddressInfo).port;
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
-    const code = await new Promise<number>((resolve) => ws.on("error", (e) => resolve((e as Error & { message: string }).message.includes("401") ? 401 : 0)));
-    expect(code).toBe(401);
+    const hello = await new Promise<string>((resolve) => ws.on("message", (d) => resolve(d.toString())));
+    expect(JSON.parse(hello)).toMatchObject({ type: "hello" });
+    ws.close();
   });
 
   it("navigate/blank/control flow over a real service plan", async () => {
@@ -359,5 +360,13 @@ describe("api v1", () => {
     expect(body.addresses.length).toBeGreaterThan(0);
     // persists in settings
     expect(app.storage.getSetting("server.lanEnabled")).toBe("true");
+
+    // LAN on → token auth is armed again.
+    res = await api("/api/v1/songs");
+    expect(res.status).toBe(401);
+
+    // Reset for other tests.
+    await api("/api/v1/server/network", { method: "POST", body: JSON.stringify({ lanEnabled: false }) }, adminToken);
+    expect((await api("/api/v1/songs")).status).toBe(200);
   });
 });
