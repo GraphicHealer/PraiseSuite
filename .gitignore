@@ -11,3 +11,4 @@ Thumbs.db
 .turbo/
 .electron-cache/
 apps/web/dist
+NUL
