@@ -337,7 +337,12 @@ export function buildRoutes(deps: AppDeps): Route[] {
           sectionLabel: sec?.label ?? null,
           prefix: as?.prefix ?? null,
           /** OpenSong slide @id shown in the list's ID column ("V1", "C"). */
-          slideId: sec !== undefined ? `${sec.label}${as?.prefix ?? ""}` : null,
+          slideId:
+            sec !== undefined
+              ? as?.prefix !== null && as?.prefix !== undefined && as.prefix !== sec.label
+                ? `${sec.label}${as.prefix}`
+                : sec.label
+              : null,
           sectionInstanceId: s.sectionInstanceId,
           loopSeconds: item?.loopSeconds ?? 0,
           itemNotes: item?.notes ?? null,
@@ -534,17 +539,20 @@ export function buildRoutes(deps: AppDeps): Route[] {
       };
       if (body.presentSettings !== undefined) {
         const parsed = parsePresentSettings(body.presentSettings);
-        const style = body.applyStyle === false ? parsed.style : resolveSlideStyle(loadStyle(deps.storage));
-        Object.assign(style, {
-          title: parsed.style.title,
-          body: parsed.style.body,
-          subtitle: parsed.style.subtitle,
-          descriptiveSubtitles: parsed.style.descriptiveSubtitles,
-          highlightChorus: parsed.style.highlightChorus,
-          backgroundColor: parsed.style.backgroundColor,
-          transition: parsed.style.transition,
-          transitionMs: parsed.style.transitionMs,
-        });
+        // applyStyle=false: keep the current style; only media/options import.
+        const style = resolveSlideStyle(loadStyle(deps.storage));
+        if (body.applyStyle !== false) {
+          Object.assign(style, {
+            title: parsed.style.title,
+            body: parsed.style.body,
+            subtitle: parsed.style.subtitle,
+            descriptiveSubtitles: parsed.style.descriptiveSubtitles,
+            highlightChorus: parsed.style.highlightChorus,
+            backgroundColor: parsed.style.backgroundColor,
+            transition: parsed.style.transition,
+            transitionMs: parsed.style.transitionMs,
+          });
+        }
         if (parsed.backgroundData) {
           const m = await storeMedia(deps.storage, deps.ids, {
             data: Buffer.from(parsed.backgroundData, "base64"),
@@ -737,7 +745,9 @@ export function buildRoutes(deps: AppDeps): Route[] {
     r("GET", "/api/v1/export/service/:id", "admin", "Export a service as an OpenSong set", async (ctx) => {
       const svc = await deps.repos.services.get(ctx.params["id"]! as Service["id"]);
       if (!svc) throw new ApiError(404, "not_found", "Service not found");
-      const titles = new Map((await deps.repos.songs.list()).map((s) => [s.id as string, s.title]));
+      const titles = new Map(
+        (await deps.repos.songs.list()).map((s) => [s.id as string, { name: s.title, folder: s.folder }]),
+      );
       const xml = serializeOpenSongSet(svc, (id) => titles.get(id) ?? null);
       ctx.res.writeHead(200, {
         "content-type": "application/xml; charset=utf-8",

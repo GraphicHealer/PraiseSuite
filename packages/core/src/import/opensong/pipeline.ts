@@ -1,8 +1,10 @@
 import { strFromU8, unzipSync } from "fflate";
 import type { IdGenerator, Repositories } from "../../ports/index.js";
 import type { Song } from "../../domain/songs/types.js";
+import type { Service } from "../../domain/services/types.js";
+import type { RevisionId, ServiceId, ServiceItemId, SongId } from "../../ids.js";
 import { materializeSong, parseOpenSongSong, type ParsedSong } from "./song.js";
-import { parseOpenSongSet, type ParsedServiceItem } from "./set.js";
+import { parseOpenSongSet, resolveSongRefs, type ParsedServiceItem } from "./set.js";
 import {
   detectDuplicates,
   existingInfo,
@@ -118,7 +120,7 @@ export interface ImportReport {
 export async function applyImport(
   analysis: ImportAnalysis,
   ids: IdGenerator,
-  repos: Pick<Repositories, "songs">,
+  repos: Pick<Repositories, "songs" | "services">,
   options: {
     onDuplicate?: (match: DuplicateMatch) => DuplicateAction;
     /** Persist embedded media (e.g. background <image> base64) -> storage key. */
@@ -137,6 +139,20 @@ export async function applyImport(
   for (const m of analysis.duplicates) {
     dupActions.set(m.incomingIndex, options.onDuplicate?.(m) ?? "import");
   }
+
+  // Song-ref resolution map for set import: title, file name, and
+  // folder-qualified variants (OpenSong refs are file names + path attr).
+  const byKey = new Map<string, SongId>();
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+  const addKeys = (id: SongId, title: string, folder: string | null, fileName?: string) => {
+    byKey.set(norm(title), id);
+    if (fileName) byKey.set(norm(fileName), id);
+    if (folder) {
+      byKey.set(norm(`${folder}/${title}`), id);
+      if (fileName) byKey.set(norm(`${folder}/${fileName}`), id);
+    }
+  };
+  for (const s of await repos.songs.list()) addKeys(s.id, s.title, s.folder);
 
   let parsedIdx = 0;
   for (const analyzed of analysis.songs) {
@@ -165,14 +181,52 @@ export async function applyImport(
     }
     const song = materializeSong(analyzed.song, ids);
     // OpenSong Songs/ subfolders -> library folder (from the import path).
-    const slash = analyzed.path.replaceAll("\\", "/").lastIndexOf("/");
-    if (slash > 0) song.folder = analyzed.path.slice(0, slash);
+    // A leading "Songs/" is the OpenSong library root itself — strip it (D6).
+    let dir = analyzed.path.replaceAll("\\", "/");
+    const slash = dir.lastIndexOf("/");
+    dir = slash > 0 ? dir.slice(0, slash) : "";
+    if (dir.toLowerCase() === "songs" || dir.toLowerCase().startsWith("songs/")) {
+      dir = dir.slice(6);
+    }
+    if (dir) song.folder = dir;
+    const fileName = analyzed.path.replaceAll("\\", "/").split("/").pop();
     await repos.songs.save(song);
+    addKeys(song.id, song.title, song.folder, fileName);
     report.importedSongs++;
     report.warnings.push(...analyzed.warnings.map((w) => `${analyzed.path}: ${w}`));
   }
 
-  report.importedSets = analysis.sets.length;
+  // Persist imported sets: resolve song refs against imported + existing
+  // songs, then save as services (D1).
+  for (const analyzedSet of analysis.sets) {
+    if (!analyzedSet.items) {
+      report.failed.push({ path: analyzedSet.path, error: analyzedSet.error ?? "parse failed" });
+      continue;
+    }
+    const resolved = resolveSongRefs(analyzedSet.items, byKey);
+    for (const item of resolved) {
+      const ref = analyzedSet.items[resolved.indexOf(item)]?.songRef;
+      if (item.kind === "song" && item.songId === null) {
+        report.warnings.push(`${analyzedSet.path}: song "${ref ?? item.title}" not found; kept as placeholder`);
+      }
+    }
+    const service: Service = {
+      id: ids.next() as ServiceId,
+      revision: {
+        id: ids.next() as RevisionId,
+        parentId: null,
+        origin: "import",
+        createdAt: new Date().toISOString(),
+      },
+      name: analyzedSet.name,
+      date: null,
+      description: null,
+      items: resolved.map((item) => ({ ...item, id: ids.next() as ServiceItemId })),
+    };
+    await repos.services.save(service);
+    report.importedSets++;
+    report.warnings.push(...analyzedSet.warnings.map((w) => `${analyzedSet.path}: ${w}`));
+  }
   return report;
 }
 

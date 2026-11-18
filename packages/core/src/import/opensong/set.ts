@@ -54,6 +54,15 @@ export function parseOpenSongSet(xml: string, fallbackName: string): SetParseRes
     const loop = asString(group["@_loop"]) === "true";
     const seconds = Number.parseInt(asString(group["@_seconds"]) || "0", 10) || 0;
 
+    const config: Record<string, unknown> = {};
+    // OpenSong per-item overrides (round-tripped on export).
+    const presentation = asString(group["@_presentation"]);
+    if (presentation) config["presentation"] = presentation;
+    const print = asString(group["@_print"]);
+    if (print) config["print"] = print;
+    const transition = asString(group["@_transition"]);
+    if (transition) config["transition"] = transition;
+
     const base = {
       kind: "custom-slides" as ServiceItem["kind"],
       songRef: null as string | null,
@@ -63,13 +72,19 @@ export function parseOpenSongSet(xml: string, fallbackName: string): SetParseRes
       notes,
       slides: slidesOf(group),
       loopSeconds: loop ? seconds : 0,
-      config: {},
+      config,
     };
 
     if (type === "song") {
-      items.push({ ...base, kind: "song", songRef: name, slides: [] });
+      // `name` = file name; `path` attr = Songs subfolder (D9).
+      const path = asString(group["@_path"]);
+      items.push({ ...base, kind: "song", songRef: path ? `${path}/${name}` : name, slides: [] });
     } else if (type === "scripture") {
       items.push({ ...base, kind: "scripture" });
+    } else if (type === "image") {
+      config["openSongType"] = "image";
+      config["imagePath"] = name;
+      items.push({ ...base, kind: "media" });
     } else if (type === "custom") {
       items.push(base);
     } else {
@@ -81,16 +96,25 @@ export function parseOpenSongSet(xml: string, fallbackName: string): SetParseRes
   return { name: fallbackName, items, warnings };
 }
 
-/** Resolve song name/path references to imported songs (title match). */
+function normKey(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Resolve OpenSong song references. `byKey` is keyed by normalized title,
+ * file name, `folder/title` and `folder/fileName`; refs are tried as
+ * `path/name` first, then bare `name` (D9).
+ */
 export function resolveSongRefs(
   items: ParsedServiceItem[],
-  byTitle: ReadonlyMap<string, Song["id"]>,
+  byKey: ReadonlyMap<string, Song["id"]>,
 ): ServiceItem[] {
   return items.map((item, i) => {
     let songId = null;
     if (item.songRef) {
-      const title = item.songRef.split("/").pop() ?? item.songRef;
-      songId = byTitle.get(title) ?? null;
+      const ref = normKey(item.songRef);
+      const base = normKey(item.songRef.split("/").pop() ?? item.songRef);
+      songId = byKey.get(ref) ?? byKey.get(base) ?? null;
     }
     return { ...item, id: `pending-${i}` as ServiceItem["id"], songId, arrangementId: null };
   });

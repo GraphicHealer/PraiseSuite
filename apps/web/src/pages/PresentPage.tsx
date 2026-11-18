@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { PresentationSession, Service, ServiceItem } from "@praisesuite/core";
 import { AddItemDialog, type AddItemTab } from "../components/AddItemDialog.js";
+import { useDialog } from "../components/Dialog.js";
 import { SlideCanvas } from "../components/SlideCanvas.js";
 import { api, type PresentMode, type SlideResponse } from "../api.js";
 
@@ -29,6 +30,7 @@ type Plan = { slides: PlanSlide[]; current: number; total: number };
  * Mode/Actions/keys column, and the full OpenSong key map.
  */
 export function PresentPage({ startService, startItemId }: { startService?: Service | null; startItemId?: string | null }): ReactNode {
+  const dlg = useDialog();
   const [sessions, setSessions] = useState<PresentationSession[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [session, setSession] = useState<PresentationSession | null>(null);
@@ -224,6 +226,16 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
     [session, sessions, leave],
   );
 
+  /** OpenSong chk_style_exit_prompt — "Exit Presenter?" before ending. */
+  const confirmEnd = useCallback(
+    (id?: string) => {
+      void (async () => {
+        if (await dlg.confirm("Exit Presenter?")) await endSession(id);
+      })();
+    },
+    [dlg, endSession],
+  );
+
   useEffect(() => {
     if (!session || !controlling) return;
     const onKey = (e: KeyboardEvent) => {
@@ -235,7 +247,7 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
       else if (key === "ArrowUp" || key === "Backspace" || key === "PageUp") void doNavigate("prev");
       else if (key === "ArrowRight") jumpToItem(1);
       else if (key === "ArrowLeft") jumpToItem(-1);
-      else if (key === "Escape") void endSession();
+      else if (key === "Escape") confirmEnd();
       else if (/^F(\d|1[0-5])$/.test(key)) {
         const n = parseInt(key.slice(1), 10);
         const ids = [...new Set((plan?.slides ?? []).map((s) => s.itemId))];
@@ -267,7 +279,7 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [session, controlling, plan, doNavigate, jumpToItem, jumpToSection, setMode, toggleFullscreen, leave, endSession, openAdd]);
+  }, [session, controlling, plan, doNavigate, jumpToItem, jumpToSection, setMode, toggleFullscreen, leave, confirmEnd, openAdd]);
 
   const takeControl = async () => {
     if (!session) return;
@@ -329,7 +341,7 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
                       <span className="text-xs text-zinc-500">{s.status}</span>
                     </button>
                     <button
-                      onClick={() => void endSession(s.id)}
+                      onClick={() => confirmEnd(s.id)}
                       className="mr-2 rounded bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-500"
                     >
                       End
@@ -417,7 +429,7 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
           <button onClick={() => void makeReceiverUrl()} className={btn}>Receiver link</button>
           <a href="/stage" target="_blank" rel="noreferrer" className={btn}>Stage view</a>
           <button
-            onClick={() => void endSession()}
+            onClick={() => confirmEnd()}
             className="rounded bg-red-600 px-3 py-1 text-xs text-white hover:bg-red-500"
           >
             End
@@ -568,7 +580,7 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
                 [S] Scripture
               </button>
               <button onClick={toggleFullscreen} className={btn}>[M] {fullscreen ? "Normal Screen" : "Full Screen"}</button>
-              <button onClick={() => void endSession()} className={btn}>[Esc] End</button>
+              <button onClick={() => confirmEnd()} className={btn}>[Esc] End</button>
             </div>
           </fieldset>
 

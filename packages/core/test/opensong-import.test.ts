@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   analyzeImport,
+  applyImport,
   detectDuplicates,
   existingInfo,
   expandZip,
@@ -13,7 +14,9 @@ import {
   serializeOpenSongSong,
   transposeSourceText,
   type IdGenerator,
+  type Service,
   type Song,
+  type SongSummary,
 } from "../src/index.js";
 import { strToU8, zipSync } from "fflate";
 
@@ -268,6 +271,45 @@ describe("duplicates + pipeline", () => {
     const files = expandZip(zipped);
     expect(files).toHaveLength(1);
     expect(files[0]!.path).toBe("Songs/Amazing Grace");
+  });
+
+  it("applyImport persists sets, resolves song refs, and strips the Songs/ root (D1/D6)", async () => {
+    const songs = new Map<string, Song>();
+    const services = new Map<string, Service>();
+    const repos = {
+      songs: {
+        get: async (id: Song["id"]) => songs.get(id) ?? null,
+        save: async (s: Song) => void songs.set(s.id, s),
+        delete: async () => {},
+        list: async (): Promise<SongSummary[]> =>
+          [...songs.values()].map((s) => ({ id: s.id, title: s.title, authors: s.authors, theme: s.theme, folder: s.folder })),
+        search: async () => [],
+      },
+      services: {
+        get: async (id: Service["id"]) => services.get(id) ?? null,
+        save: async (s: Service) => void services.set(s.id, s),
+        delete: async () => {},
+        list: async () => [...services.values()],
+      },
+    };
+    const files = [
+      { path: "Songs/Amazing Grace", text: fixtureSong("Amazing Grace") },
+      { path: "Songs/Hymns/And Can It Be", text: fixtureSong("And Can It Be") },
+      { path: "Sets/Example", text: readFileSync(join(SETS_DIR, "Example"), "utf8") },
+    ];
+    const report = await applyImport(analyzeImport(files), ids, repos);
+    expect(report.importedSongs).toBe(2);
+    expect(report.importedSets).toBe(1);
+    // "Songs" root stripped; real subfolder kept.
+    const folders = [...songs.values()].map((s) => s.folder).sort();
+    expect(folders).toEqual(["Hymns", null]);
+    // Set persisted with the resolvable song linked, unresolved as placeholder.
+    const svc = [...services.values()][0]!;
+    expect(svc.items).toHaveLength(7);
+    const resolved = svc.items.filter((i) => i.kind === "song" && i.songId !== null);
+    expect(resolved).toHaveLength(1);
+    expect(svc.items.filter((i) => i.kind === "song" && i.songId === null)).toHaveLength(3);
+    expect(report.warnings.some((w) => w.includes("not found"))).toBe(true);
   });
 });
 

@@ -112,6 +112,22 @@ export interface Song extends Revisioned {
    */
   backgrounds: SongBackgrounds | null;
   notes: string | null;
+  /** OpenSong hymn_number (searchable, subtitle option, print header). */
+  hymnNumber: string | null;
+  /**
+   * The source `<presentation>` order verbatim, or null when the file had
+   * none/empty — needed to distinguish "explicit order equal to the default"
+   * from "no order" on export.
+   */
+  presentationRaw: string | null;
+  /** OpenSong linked_songs — related songs offered when adding to a set. */
+  linkedSongs: string[];
+  /**
+   * Raw XML fragments of top-level song elements PraiseSuite does not model
+   * (e.g. <style>, <pitch>, <restrictions>) — preserved verbatim so a
+   * PS→OpenSong round trip never loses data.
+   */
+  extras: string[];
 }
 
 export interface SongBackgrounds {

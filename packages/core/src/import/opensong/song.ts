@@ -60,6 +60,27 @@ function str(v: unknown): string | null {
   return s === "" ? null : s;
 }
 
+/** Top-level <song> elements PraiseSuite models — anything else is kept raw in extras. */
+const KNOWN_SONG_TAGS = new Set([
+  "title", "author", "copyright", "presentation", "capo", "tempo", "timesig",
+  "time_sig", "ccli", "theme", "alttheme", "aka", "key", "key_line",
+  "user1", "user2", "user3", "background", "backgrounds", "lyrics",
+  "hymn_number", "linked_songs", "notes",
+]);
+
+/** Raw `<tag>…</tag>` fragments of unmodeled top-level elements (<style>, <pitch>, …). */
+function extractExtras(xml: string, root: Record<string, unknown>): string[] {
+  const extras: string[] = [];
+  for (const key of Object.keys(root)) {
+    if (key.startsWith("@_") || key.startsWith("#") || KNOWN_SONG_TAGS.has(key)) continue;
+    const tag = key.replace(/[^\w-]/g, "");
+    if (tag === "") continue;
+    const m = new RegExp(`<${tag}(\\s[^>]*)?\\s*/>|<${tag}(\\s[^>]*)?>[\\s\\S]*?</${tag}>`).exec(xml);
+    if (m) extras.push(m[0]);
+  }
+  return extras;
+}
+
 /**
  * Parse an OpenSong song XML document into the canonical model:
  * metadata fields, lyrics -> offset-anchored sections, `<presentation>`
@@ -112,7 +133,21 @@ export function parseOpenSongSong(xml: string): SongParseResult {
       sequence.push({ sectionIndex: idx, repeats: 1, prefix });
     }
   } else {
-    sections.forEach((_s, idx) => sequence.push({ sectionIndex: idx, repeats: 1, prefix: null }));
+    // Empty <presentation>: OpenSong's LyricsToSections order expands each
+    // verse prefix as its own slide node ("V1 V2 C"), not one whole section.
+    sections.forEach((s, idx) => {
+      const prefixes: string[] = [];
+      for (const l of s.lines) {
+        if (l.kind === "lyric" && l.prefix !== null && !prefixes.includes(l.prefix)) {
+          prefixes.push(l.prefix);
+        }
+      }
+      if (prefixes.length > 0) {
+        prefixes.forEach((prefix) => sequence.push({ sectionIndex: idx, repeats: 1, prefix }));
+      } else {
+        sequence.push({ sectionIndex: idx, repeats: 1, prefix: null });
+      }
+    });
   }
 
   const arrangements: ParsedArrangement[] = [
@@ -120,7 +155,7 @@ export function parseOpenSongSong(xml: string): SongParseResult {
       name: "Default",
       key: str(root["key"]),
       tempo: str(root["tempo"]),
-      timeSignature: str(root["timesig"]),
+      timeSignature: str(root["timesig"]) ?? str(root["time_sig"]),
       capo,
       capoPrint,
       notes: null,
@@ -138,7 +173,7 @@ export function parseOpenSongSong(xml: string): SongParseResult {
       ccliNumber: str(root["ccli"]),
       defaultKey: str(root["key"]),
       tempo: str(root["tempo"]),
-      timeSignature: str(root["timesig"]),
+      timeSignature: str(root["timesig"]) ?? str(root["time_sig"]),
       aka: str(root["aka"]),
       keyLine: str(root["key_line"]),
       theme: str(root["theme"]),
@@ -151,7 +186,14 @@ export function parseOpenSongSong(xml: string): SongParseResult {
       },
       background: str(root["background"]),
       backgrounds: parseBackgrounds(root["backgrounds"]),
-      notes: null,
+      notes: str(root["notes"]),
+      hymnNumber: str(root["hymn_number"]),
+      presentationRaw: presentation === "" ? null : presentation,
+      linkedSongs: asString(root["linked_songs"])
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter((s) => s !== ""),
+      extras: extractExtras(xml, root),
       sections,
       arrangements,
     },

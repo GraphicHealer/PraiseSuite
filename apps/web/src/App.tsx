@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { Service } from "@praisesuite/core";
 import { api, ApiError } from "./api.js";
 import { MainPage } from "./pages/MainPage.js";
+import { DialogProvider } from "./components/Dialog.js";
 import { ImportPage } from "./pages/ImportPage.js";
 import { PresentPage } from "./pages/PresentPage.js";
 import { SettingsPage } from "./pages/SettingsPage.js";
@@ -145,16 +146,18 @@ export function App(): ReactNode {
         </div>
       </header>
       <main className="flex-1">
-        {page === "main" && <MainPage onPresentService={present} onImport={() => setPage("import")} />}
-        {page === "import" && <ImportPage />}
-        {page === "present" && (
-          <PresentPage
-            key={presentReq ? `${presentReq.service.id}:${presentReq.itemId ?? ""}` : "pick"}
-            startService={presentReq?.service ?? null}
-            startItemId={presentReq?.itemId ?? null}
-          />
-        )}
-        {page === "settings" && <SettingsPage />}
+        <DialogProvider>
+          {page === "main" && <MainPage onPresentService={present} onImport={() => setPage("import")} />}
+          {page === "import" && <ImportPage />}
+          {page === "present" && (
+            <PresentPage
+              key={presentReq ? `${presentReq.service.id}:${presentReq.itemId ?? ""}` : "pick"}
+              startService={presentReq?.service ?? null}
+              startItemId={presentReq?.itemId ?? null}
+            />
+          )}
+          {page === "settings" && <SettingsPage />}
+        </DialogProvider>
       </main>
     </div>
   );

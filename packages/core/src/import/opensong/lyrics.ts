@@ -126,24 +126,40 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
     .split("\n")
     .map((l) => l.trimEnd());
 
+  // Tagged sections collect in order; untagged (pre-[tag]) content uses
+  // SongML's LyricsToSections dict model: a digit-prefixed line starts/extends
+  // subsection "1".."9", everything else accumulates in "" (the default
+  // subsection). Subsections keep first-appearance order and merge
+  // non-consecutive same-key lines, exactly like OpenSong's dict.
   let section: ParsedSection | null = null;
-  let pendingChords: ChordAnnotation[] = [];
-  let pendingBreak = false;
-
-  const ensureSection = (): ParsedSection => {
-    if (!section) {
-      section = { type: "other", label: "", lines: [], options: {} };
-      sections.push(section);
+  const defaultDict = new Map<string, ParsedSection>();
+  const defaultOrder: string[] = [];
+  let lastDefaultKey = "";
+  const defaultSection = (key: string): ParsedSection => {
+    let s = defaultDict.get(key);
+    if (!s) {
+      s = { type: "other", label: key, lines: [], options: {} };
+      defaultDict.set(key, s);
+      defaultOrder.push(key);
     }
-    return section;
+    lastDefaultKey = key;
+    return s;
   };
 
-  const pushLine = (line: LyricLine) => {
+  let pendingChords: ChordAnnotation[] = [];
+  let pendingBreak = false;
+  // SongML FindLyricLineCount: one chord line covers every consecutive
+  // digit-prefixed line, or one space-prefixed line (+1 when bilingual).
+  let chordCover: "armed" | "digits" | "space" | "none" = "none";
+  let coverSpaceLeft = 0;
+
+  const pushLine = (line: LyricLine, defaultKey?: string) => {
     if (pendingBreak && line.breakBefore === "none") {
       line.breakBefore = "slide";
     }
     pendingBreak = false;
-    ensureSection().lines.push(line);
+    const target = section ?? defaultSection(defaultKey ?? lastDefaultKey);
+    target.lines.push(line);
   };
 
   for (const line of raw) {
@@ -151,6 +167,7 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
     if (line === "" || /^\|+$/.test(line)) {
       pendingBreak = true;
       pendingChords = []; // a blank/break line ends a chord block (SongML line-group rule)
+      chordCover = "none";
       continue;
     }
     if (c0 === "[") {
@@ -167,11 +184,16 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
       };
       sections.push(section);
       pendingBreak = false;
+      pendingChords = [];
+      chordCover = "none";
       continue;
     }
     if (c0 === ".") {
-      // A chord line annotates the lyric line(s) that follow it.
-      pendingChords = pendingChords.concat(chordAnnotations(line));
+      // A chord line annotates the lyric line(s) that follow it. Only
+      // consecutive "." lines accumulate; a new "." after a consumed block
+      // starts a fresh row.
+      pendingChords = (chordCover === "armed" ? pendingChords : []).concat(chordAnnotations(line));
+      chordCover = "armed";
       continue;
     }
     if (c0 === ";") {
@@ -183,6 +205,8 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
         kind: "comment",
         lang: null,
       });
+      pendingChords = [];
+      chordCover = "none";
       continue;
     }
     if (c0 === "-") {
@@ -194,25 +218,60 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
         kind: "directive",
         lang: null,
       });
+      pendingChords = [];
+      chordCover = "none";
       continue;
     }
 
     const isDigitPrefix = c0 >= "1" && c0 <= "9";
     const prefix = isDigitPrefix ? c0 : null;
     const text = isDigitPrefix || c0 === " " ? line.slice(1) : line;
-    const pieces = splitOnBreaks(text, pendingChords);
-    pendingChords = [];
+
+    // Chord coverage: does this lyric line inherit the pending chord row?
+    let covered = false;
+    if (chordCover === "armed") {
+      covered = true;
+      if (isDigitPrefix) {
+        chordCover = "digits";
+      } else if (c0 === " ") {
+        chordCover = "space";
+        coverSpaceLeft = section !== null && "L" in section.options ? 1 : 0;
+      } else {
+        chordCover = "none";
+      }
+    } else if (chordCover === "digits" && isDigitPrefix) {
+      covered = true;
+    } else if (chordCover === "space" && c0 === " " && coverSpaceLeft > 0) {
+      covered = true;
+      coverSpaceLeft--;
+      if (coverSpaceLeft === 0) chordCover = "none";
+    } else {
+      chordCover = "none";
+    }
+    const lineChords = covered ? pendingChords : [];
+    if (!covered) pendingChords = [];
+    // Once the block is fully consumed, clear for the next '.' line.
+    if (chordCover === "none") pendingChords = [];
+
+    const pieces = splitOnBreaks(text, lineChords);
     pieces.forEach((piece, idx) => {
-      pushLine({
-        text: piece.text,
-        chords: piece.chords,
-        breakBefore: idx > 0 ? "inline" : "none",
-        prefix: idx === 0 ? prefix : null,
-        kind: "lyric",
-        lang: null,
-      });
+      pushLine(
+        {
+          text: piece.text,
+          chords: piece.chords,
+          breakBefore: idx > 0 ? "inline" : "none",
+          prefix: idx === 0 ? prefix : null,
+          kind: "lyric",
+          lang: null,
+        },
+        prefix ?? "",
+      );
     });
   }
+
+  // Assemble: untagged subsections in first-appearance order, then tagged.
+  const untagged = defaultOrder.map((k) => defaultDict.get(k)!);
+  sections.unshift(...untagged);
 
   // Second pass: interleaved lang 1/2 within bilingual (L) sections.
   for (const s of sections) {
@@ -225,7 +284,7 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
     }
   }
 
-  if (pendingChords.length > 0) {
+  if (pendingChords.length > 0 && chordCover === "armed") {
     warnings.push(
       "Chord line(s) at end of lyrics had no lyric line beneath them; chords dropped.",
     );

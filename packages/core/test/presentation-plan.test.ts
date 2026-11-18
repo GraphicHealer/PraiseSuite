@@ -47,6 +47,10 @@ function song(id: string): Song {
     background: null,
     backgrounds: null,
     notes: null,
+    hymnNumber: null,
+    presentationRaw: null,
+    linkedSongs: [],
+    extras: [],
   };
 }
 

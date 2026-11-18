@@ -12,6 +12,7 @@ import {
   type ArrangementSectionId,
 } from "@praisesuite/core";
 import { api } from "../api.js";
+import { useDialog } from "../components/Dialog.js";
 import { opensongLanguage } from "../opensong-language.js";
 import { useDark } from "../use-dark.js";
 import { openPrintPreview } from "../PrintPreview.js";
@@ -59,6 +60,7 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
   onPresent?: (song: Song) => void;
   onCopied?: (id: string) => void;
 }): ReactNode {
+  const dlg = useDialog();
   const [song, setSong] = useState<Song | null>(null);
   const [tab, setTab] = useState<"general" | "advanced" | "backgrounds">("general");
   const [source, setSource] = useState("");
@@ -166,7 +168,7 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
   };
 
   const remove = async () => {
-    if (!song || !confirm(`Delete "${song.title}"?`)) return;
+    if (!song || !(await dlg.confirm(`Delete "${song.title}"?`))) return;
     await api.deleteSong(song.id);
     onBack?.();
   };
@@ -174,7 +176,7 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
   /** OpenSong "Selected Song" group actions. */
   const rename = async () => {
     if (!song) return;
-    const title = prompt("Rename song:", song.title);
+    const title = await dlg.prompt("Rename song:", song.title);
     if (title && title !== song.title) {
       update({ title });
       await save();
@@ -182,7 +184,7 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
   };
   const move = async () => {
     if (!song) return;
-    const folder = prompt("Move to folder (blank = library root):", song.folder ?? "");
+    const folder = await dlg.prompt("Move to folder (blank = library root):", song.folder ?? "");
     if (folder === null) return;
     update({ folder: folder.trim() || null });
     await save();
@@ -255,23 +257,23 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
   };
 
   const ins = {
-    lyrics: () => {
-      const n = Number.parseInt(prompt("Number of lines:", "4") ?? "0", 10) || 0;
+    lyrics: async () => {
+      const n = Number.parseInt((await dlg.prompt("Number of lines:", "4")) ?? "0", 10) || 0;
       if (n > 0) insertAtCursor("\n" + " \n".repeat(n));
     },
     comment: () => insertAtCursor("; "),
     column: () => insertAtCursor("|"),
     page: () => insertAtCursor("\n\n"),
-    multiVerse: () => {
-      const lines = Number.parseInt(prompt("Number of lines:", "2") ?? "0", 10) || 0;
-      const verses = Number.parseInt(prompt("Number of verses:", "2") ?? "0", 10) || 0;
+    multiVerse: async () => {
+      const lines = Number.parseInt((await dlg.prompt("Number of lines:", "2")) ?? "0", 10) || 0;
+      const verses = Number.parseInt((await dlg.prompt("Number of verses:", "2")) ?? "0", 10) || 0;
       if (lines < 1 || verses < 1 || verses > 9) return;
       let out = "\n";
       for (let l = 0; l < lines; l++) for (let v = 1; v <= verses; v++) out += `${v} \n`;
       insertAtCursor(out);
     },
-    section: () => {
-      const name = prompt("Section name:", `V${(song?.sections.length ?? 0) + 1}`);
+    section: async () => {
+      const name = await dlg.prompt("Section name:", `V${(song?.sections.length ?? 0) + 1}`);
       if (name) insertAtCursor(`\n[${name}]\n`);
     },
   };

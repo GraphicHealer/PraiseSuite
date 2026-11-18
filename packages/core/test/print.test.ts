@@ -56,6 +56,7 @@ function song(): Song {
     ],
     background: null,
     backgrounds: null, notes: null,
+    hymnNumber: null, presentationRaw: null, linkedSongs: [], extras: [],
   };
 }
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Service, ServiceItem, ServiceItemId, SongSummary } from "@praisesuite/core";
 import { api } from "../api.js";
 import { AddItemDialog, type AddItemTab } from "../components/AddItemDialog.js";
+import { useDialog } from "../components/Dialog.js";
 import { openPrintPreview } from "../PrintPreview.js";
 import { SongEditorPage } from "./SongEditorPage.js";
 
@@ -11,6 +12,8 @@ const input =
   "rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800";
 const grp = "flex flex-col gap-1 rounded border border-zinc-200 p-2 dark:border-zinc-800";
 const grpLabel = "text-xs font-semibold uppercase tracking-wide text-zinc-500";
+/** Reused service for ad-hoc "Present song" — one entry in Sets, not one per song. */
+const SCRATCH_SET_NAME = "(Presented Song)";
 
 /**
  * OpenSong MainWindow parity: Songs/Sets mode toggle with the song editor
@@ -69,6 +72,7 @@ function SongsMode({
   onImport: () => void;
   setPrintUrl: (url: string | null) => void;
 }): ReactNode {
+  const dlg = useDialog();
   const [songs, setSongs] = useState<SongSummary[]>([]);
   const [query, setQuery] = useState("");
   const [folder, setFolder] = useState<string | null>(null);
@@ -86,6 +90,13 @@ function SongsMode({
     return () => clearTimeout(t);
   }, [query]);
   useEffect(() => void reloadFolders(), []);
+  // D16: pick up changes made by other clients/windows (import, presenter, receivers).
+  useEffect(() => {
+    const refresh = () => { void reloadSongs(); void reloadFolders(); };
+    window.addEventListener("focus", refresh);
+    const t = setInterval(refresh, 15000);
+    return () => { window.removeEventListener("focus", refresh); clearInterval(t); };
+  }, []);
 
   const allFolders = useMemo(
     () => [...new Set([...folders, ...songs.map((s) => s.folder).filter((f): f is string => f !== null)])].sort(),
@@ -94,14 +105,14 @@ function SongsMode({
   const list = folder === null ? songs : songs.filter((s) => s.folder === folder);
 
   const addFolder = async () => {
-    const name = prompt("New folder name:");
+    const name = await dlg.prompt("New folder name:");
     if (!name?.trim()) return;
     await api.req("/api/v1/folders", { method: "POST", body: { name: name.trim() } }).catch(() => {});
     void reloadFolders();
   };
   const deleteFolder = async () => {
     if (folder === null) return;
-    if (!confirm(`Delete folder "${folder}"? Songs inside move to the library root.`)) return;
+    if (!(await dlg.confirm(`Delete folder "${folder}"? Songs inside move to the library root.`))) return;
     await api.req(`/api/v1/folders/${encodeURIComponent(folder)}`, { method: "DELETE" }).catch(() => {});
     setFolder(null);
     void reloadFolders();
@@ -126,12 +137,18 @@ function SongsMode({
     a.click();
   };
 
-  /** OpenSong "Present" on a song: wrap it in a one-item service and go live. */
+  /** OpenSong "Present" on a song: reuse ONE scratch service (D10 — ad-hoc
+   * presentation shouldn't clutter the Sets list with one-item sets). */
   const presentSong = async (songId: string) => {
     const song = await api.song(songId);
-    const svc = makeService(`${song.title}`, [
+    const existing = await api.services().catch(() => [] as Service[]);
+    const scratch = existing.find((s) => s.name === SCRATCH_SET_NAME);
+    const svc: Service = scratch
+      ? { ...scratch, name: SCRATCH_SET_NAME, items: [] }
+      : makeService(SCRATCH_SET_NAME, []);
+    svc.items = [
       makeItem({ kind: "song", songId: song.id as ServiceItem["songId"], title: song.title }),
-    ]);
+    ];
     await api.saveService(svc);
     onPresentService(svc);
   };
@@ -261,6 +278,7 @@ function SetsMode({
   onPresentService: (service: Service, itemId?: string) => void;
   setPrintUrl: (url: string | null) => void;
 }): ReactNode {
+  const dlg = useDialog();
   const [services, setServices] = useState<Service[]>([]);
   const [current, setCurrent] = useState<Service | null>(null);
   const [sel, setSel] = useState<number | null>(null);
@@ -273,8 +291,21 @@ function SetsMode({
   useEffect(() => {
     void reload();
   }, []);
+  // D16: refresh the set list when the window regains focus (import/external edits).
+  useEffect(() => {
+    const onFocus = () => void reload();
+    window.addEventListener("focus", onFocus);
+    const t = setInterval(onFocus, 20000);
+    return () => { window.removeEventListener("focus", onFocus); clearInterval(t); };
+  }, []);
 
   const open = (s: Service) => { setCurrent(s); setSel(null); setDirty(false); };
+  const openGuarded = (s: Service) => {
+    void (async () => {
+      if (dirty && current?.id !== s.id && !(await dlg.confirm("Discard unsaved changes?"))) return;
+      open(s);
+    })();
+  };
   const patch = (p: Partial<Service>) => { setCurrent((s) => (s ? { ...s, ...p } : s)); setDirty(true); };
   const save = async () => {
     if (!current) return;
@@ -285,7 +316,7 @@ function SetsMode({
 
   // ── Current Set ──
   const createSet = async () => {
-    const name = prompt("Set name:", "Sunday Morning");
+    const name = await dlg.prompt("Set name:", "Sunday Morning");
     if (!name) return;
     const svc = makeService(name, []);
     await api.saveService(svc);
@@ -293,19 +324,19 @@ function SetsMode({
     void reload();
   };
   const deleteSet = async () => {
-    if (!current || !confirm(`Delete set "${current.name}"?`)) return;
+    if (!current || !(await dlg.confirm(`Delete set "${current.name}"?`))) return;
     await api.deleteService(current.id);
     setCurrent(null);
     void reload();
   };
-  const renameSet = () => {
+  const renameSet = async () => {
     if (!current) return;
-    const name = prompt("Rename set:", current.name);
+    const name = await dlg.prompt("Rename set:", current.name);
     if (name) patch({ name });
   };
   const saveAs = async () => {
     if (!current) return;
-    const name = prompt("Save set as:", `${current.name} copy`);
+    const name = await dlg.prompt("Save set as:", `${current.name} copy`);
     if (!name) return;
     const copy = { ...current, id: crypto.randomUUID() as Service["id"], name };
     await api.saveService(copy);
@@ -357,7 +388,7 @@ function SetsMode({
             {services.map((s) => (
               <button
                 key={s.id}
-                onClick={() => open(s)}
+                onClick={() => openGuarded(s)}
                 className={`block w-full rounded px-2 py-1 text-left text-sm ${current?.id === s.id ? "bg-indigo-100 dark:bg-indigo-950" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
               >
                 {s.name}
@@ -406,8 +437,6 @@ function SetsMode({
                 <button onClick={() => setAddTab("scripture")} className={btn}>Scripture…</button>
                 <button onClick={() => setAddTab("custom")} className={btn}>Slides…</button>
                 <button onClick={() => setAddTab("image")} className={btn}>Image…</button>
-                <button onClick={() => setAddTab("style")} className={btn}>Style</button>
-                <button onClick={() => setAddTab("external")} className={btn}>External…</button>
               </div>
             </div>
           </div>
@@ -422,7 +451,7 @@ function SetsMode({
               <span className={grpLabel}>Current set</span>
               <button onClick={() => void presentSet()} className={btn}>Present</button>
               <button onClick={renameSet} className={btn}>Rename</button>
-              <button onClick={() => void save()} className={btn}>{dirty ? "Save" : "Save"}</button>
+              <button onClick={() => void save()} className={btn} disabled={!dirty}>{dirty ? "Save*" : "Save"}</button>
               <button onClick={() => void saveAs()} className={btn}>Save As…</button>
               <button onClick={() => setPrintUrl(api.printUrl(`/api/v1/print/service/${encodeURIComponent(current.id)}/songs`))} className={btn}>Print Songs</button>
               <button onClick={() => setPrintUrl(api.printUrl(`/api/v1/print/service/${encodeURIComponent(current.id)}`))} className={btn}>Print Order</button>

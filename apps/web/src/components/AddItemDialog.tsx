@@ -5,13 +5,12 @@ import { api } from "../api.js";
 
 export type AddItemTab = "song" | "scripture" | "custom" | "image" | "style" | "external";
 
+// Style/External stay in AddItemTab but are hidden until implemented (D15).
 const TABS: [AddItemTab, string][] = [
   ["song", "Songs"],
   ["scripture", "Scripture"],
   ["custom", "Custom"],
   ["image", "Image"],
-  ["style", "Style"],
-  ["external", "External"],
 ];
 
 function makeItem(patch: Partial<ServiceItem>): ServiceItem {

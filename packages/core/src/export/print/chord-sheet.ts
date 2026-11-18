@@ -315,9 +315,15 @@ export function chordSheetHtml(song: Song, opts: SheetOptions = {}): string {
         };
         const firstLyric = chorded ? nextWl() : item.wl;
         if (firstLyric !== undefined && isDigit(firstLyric.prefix)) {
+          const sameChords = (w: WrittenLine) =>
+            w.chords.length === block[0]!.chords.length &&
+            w.chords.every((c, k) => c.offset === block[0]!.chords[k]!.offset && c.display === block[0]!.chords[k]!.display);
           while (j < items.length) {
             const w = nextWl();
-            if (w === undefined || w.chords.length > 0 || !isDigit(w.prefix)) break;
+            // A following line may carry the SAME chord row (numbered-verse
+            // blocks share one ".chord" row — SongML FindLyricLineCount) —
+            // only different chords start a new group.
+            if (w === undefined || !isDigit(w.prefix) || (w.chords.length > 0 && !sameChords(w))) break;
             block.push(w);
             j++;
           }

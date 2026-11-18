@@ -98,7 +98,8 @@ export function ImportPage(): ReactNode {
           )}
           <div className="mb-3 flex items-center gap-2 text-sm">
             <span>Duplicates:</span>
-            {(["skip", "replace", "import"] as const).map((a) => (
+            {/* "replace" hidden until implemented (D5) */}
+            {(["skip", "import"] as const).map((a) => (
               <label key={a} className="flex items-center gap-1">
                 <input type="radio" checked={dupAction === a} onChange={() => setDupAction(a)} />
                 {a}
