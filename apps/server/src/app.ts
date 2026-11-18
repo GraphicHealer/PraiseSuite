@@ -73,6 +73,7 @@ export function createApp(options: AppOptions): PraiseSuiteApp {
     repos: storage.repositories,
     transport,
     auth,
+    ids,
     broadcastToSession: (sid, msg) => channel.broadcast(sid, msg),
     setLanEnabled: (v) => {
       lanEnabled = v;

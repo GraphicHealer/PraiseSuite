@@ -70,6 +70,11 @@ function serializeSection(s: SongSection): string {
   return out.join("\n");
 }
 
+/** Serialize just the lyric block (OpenSong <lyrics> notation) — used by source editors. */
+export function serializeOpenSongLyrics(song: Pick<Song, "sections">): string {
+  return song.sections.map(serializeSection).join("\n\n");
+}
+
 /** Serialize a Song to the OpenSong XML song format. */
 export function serializeOpenSongSong(song: Song): string {
   const arr = song.arrangements[0];

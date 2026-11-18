@@ -10,3 +10,4 @@ Thumbs.db
 *.tsbuildinfo
 .turbo/
 .electron-cache/
+apps/web/dist

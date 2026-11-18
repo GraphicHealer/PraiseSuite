@@ -13,6 +13,12 @@ import type {
 import type { SqliteStorage } from "@praisesuite/storage-sqlite";
 import { ApiError, type Route, type RouteAccess } from "./http.js";
 import type { AuthService } from "./auth.js";
+import {
+  analyzeImport,
+  applyImport,
+  existingInfo,
+  type ImportFile,
+} from "@praisesuite/core";
 
 const SongSchema = z.object({ id: z.string() }).loose();
 const ServiceSchema = z.object({ id: z.string() }).loose();
@@ -22,6 +28,7 @@ export interface AppDeps {
   repos: Repositories;
   transport: LocalTransport;
   auth: AuthService;
+  ids: import("@praisesuite/core").IdGenerator;
   broadcastToSession(sessionId: string, message: unknown): void;
   setLanEnabled(enabled: boolean): void;
   getLanEnabled(): boolean;
@@ -187,6 +194,46 @@ export function buildRoutes(deps: AppDeps): Route[] {
       await deps.repos.sessions.save(updated);
       deps.broadcastToSession(session.id, { type: "position", sessionId: session.id, position: updated.position });
       return updated;
+    }),
+
+    r("POST", "/api/v1/import/opensong/preview", "admin", "Analyze OpenSong files without importing", async (ctx) => {
+      const body = z
+        .object({ files: z.array(z.object({ path: z.string(), text: z.string() })) })
+        .parse(await ctx.body());
+      const analysis = analyzeImport(body.files as ImportFile[]);
+      return {
+        songs: analysis.songs.map((s) => ({
+          path: s.path,
+          title: s.song?.title ?? null,
+          authors: s.song?.authors ?? [],
+          sections: s.song?.sections.length ?? 0,
+          warnings: s.warnings,
+          error: s.error ?? null,
+        })),
+        sets: analysis.sets.map((s) => ({ path: s.path, name: s.name, items: s.items?.length ?? 0, warnings: s.warnings })),
+        skipped: analysis.skipped,
+        duplicates: analysis.duplicates.length,
+      };
+    }),
+
+    r("POST", "/api/v1/import/opensong", "admin", "Import OpenSong songs/sets", async (ctx) => {
+      const body = z
+        .object({
+          files: z.array(z.object({ path: z.string(), text: z.string() })),
+          onDuplicate: z.enum(["skip", "replace", "import"]).optional(),
+        })
+        .parse(await ctx.body());
+      const summaries = await deps.repos.songs.list();
+      const existing = (
+        await Promise.all(summaries.map((s) => deps.repos.songs.get(s.id)))
+      )
+        .filter((s): s is Song => s !== null)
+        .map(existingInfo);
+      const analysis = analyzeImport(body.files as ImportFile[], existing);
+      const report = await applyImport(analysis, deps.ids, deps.repos, {
+        onDuplicate: () => body.onDuplicate ?? "skip",
+      });
+      return report;
     }),
 
     r("GET", "/api/v1/openapi.json", "public", "OpenAPI document", async () => buildOpenApi(deps)),
