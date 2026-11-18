@@ -15,6 +15,7 @@ export type SessionId = Brand<string, "SessionId">;
 export type OutputId = Brand<string, "OutputId">;
 export type DeviceId = Brand<string, "DeviceId">;
 export type MediaAssetId = Brand<string, "MediaAssetId">;
+export type BibleId = Brand<string, "BibleId">;
 export type UserId = Brand<string, "UserId">;
 export type OrganizationId = Brand<string, "OrganizationId">;
 export type RevisionId = Brand<string, "RevisionId">;

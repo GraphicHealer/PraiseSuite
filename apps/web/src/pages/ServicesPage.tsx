@@ -38,12 +38,33 @@ export function ServicesPage({ onOpenSong }: { onOpenSong: (id: string) => void 
   const [current, setCurrent] = useState<Service | null>(null);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState("");
+  const [bibles, setBibles] = useState<{ id: string; name: string; abbreviation: string }[]>([]);
+  const [bibleId, setBibleId] = useState("");
+  const [refText, setRefText] = useState("");
 
   const reload = () => api.services().then(setServices).catch((e) => setError((e as Error).message));
   useEffect(() => {
     void reload();
     api.songs().then(setSongs).catch(() => {});
+    api.bibles().then(setBibles).catch(() => {});
   }, []);
+
+  const addScripture = async () => {
+    if (!current || !bibleId || !refText.trim()) return;
+    try {
+      const p = await api.passage(bibleId, refText.trim());
+      patch({
+        items: [
+          ...current.items,
+          newItem({ kind: "scripture", title: p.title, slides: p.slides }),
+        ],
+      });
+      setRefText("");
+      setError("");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
 
   const create = async () => {
     const name = prompt("Service name:", "Sunday Morning");
@@ -159,6 +180,23 @@ export function ServicesPage({ onOpenSong }: { onOpenSong: (id: string) => void 
           className={btn}
         >
           + Note
+        </button>
+        <span className="mx-1 text-xs text-zinc-500">Scripture:</span>
+        <select className={input} value={bibleId} onChange={(e) => setBibleId(e.target.value)}>
+          <option value="">translation…</option>
+          {bibles.map((b) => (
+            <option key={b.id} value={b.id}>{b.abbreviation} — {b.name}</option>
+          ))}
+        </select>
+        <input
+          className={`${input} w-40`}
+          placeholder="John 3:16-18"
+          value={refText}
+          onChange={(e) => setRefText(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && void addScripture()}
+        />
+        <button disabled={!bibleId || !refText.trim()} onClick={() => void addScripture()} className={`${btn} disabled:opacity-50`}>
+          + Add
         </button>
       </div>
     </div>

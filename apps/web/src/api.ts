@@ -173,6 +173,23 @@ class Api {
       { method: "POST", body: { presentSettings, printSettings } },
     );
 
+  // bibles / media
+  bibles = () => this.req<{ id: string; name: string; abbreviation: string; books: number; copyright: string | null }[]>("/api/v1/bibles");
+  bible = (id: string) => this.req<{ name: string; books: { number: number; name: string; chapters: string[][] }[] }>(`/api/v1/bibles/${encodeURIComponent(id)}`);
+  importBibleXml = (xml: string) =>
+    this.req<{ id: string; name: string }>("/api/v1/bibles", { method: "POST", body: { format: "opensong", xml } });
+  deleteBible = (id: string) =>
+    this.req<{ ok: boolean }>(`/api/v1/bibles/${encodeURIComponent(id)}`, { method: "DELETE" });
+  passage = (id: string, ref: string) =>
+    this.req<{ title: string; slides: { body: string }[]; copyright: string | null }>(
+      `/api/v1/bibles/${encodeURIComponent(id)}/passage?ref=${encodeURIComponent(ref)}`,
+    );
+  uploadMedia = (name: string, mediaType: string, dataBase64: string) =>
+    this.req<{ storageKey: string }>("/api/v1/media", {
+      method: "POST",
+      body: { name, mediaType, dataBase64 },
+    });
+
   // import
   importPreview = (files: ImportFilePayload[]) =>
     this.req<ImportPreview>("/api/v1/import/opensong/preview", { method: "POST", body: { files } });

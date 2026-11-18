@@ -26,6 +26,8 @@ export interface PlanSlide {
   sliceIndex: number;
   title: string;
   lines: string[];
+  /** Storage key for image/video media slides (kind === "media"). */
+  mediaKey: string | null;
 }
 
 export interface PresentationPlan {
@@ -86,12 +88,35 @@ export function buildPlan(
                 sliceIndex,
                 title: `${song.title} — ${section.label}`,
                 lines,
+                mediaKey: null,
               });
             });
           }
         }
         continue;
       }
+    }
+    // Media items (image sets / videos): one slide per asset in config.assetKeys.
+    if (item.kind === "media") {
+      const keys = Array.isArray(item.config["assetKeys"])
+        ? (item.config["assetKeys"] as unknown[]).filter((k): k is string => typeof k === "string")
+        : [];
+      const list = keys.length > 0 ? keys : [null];
+      for (const [i, key] of list.entries()) {
+        slides.push({
+          serviceItemId: item.id,
+          kind: item.kind,
+          songId: null,
+          arrangementId: null,
+          sectionId: null,
+          sectionInstanceId: null,
+          sliceIndex: i,
+          title: item.title,
+          lines: [],
+          mediaKey: key,
+        });
+      }
+      continue;
     }
     // Non-song or unresolved items: inline slides.
     for (const [i, slide] of item.slides.entries()) {
@@ -105,6 +130,7 @@ export function buildPlan(
         sliceIndex: i,
         title: item.title,
         lines: slide.body.split("\n"),
+        mediaKey: null,
       });
     }
     if (item.slides.length === 0) {
@@ -118,6 +144,7 @@ export function buildPlan(
         sliceIndex: 0,
         title: item.title,
         lines: [item.title],
+        mediaKey: null,
       });
     }
   }

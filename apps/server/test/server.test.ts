@@ -315,6 +315,38 @@ describe("api v1", () => {
     expect(media.headers.get("content-type")).toContain("image/");
   });
 
+  it("bible import + passage endpoint", async () => {
+    const xml = `<?xml version="1.0"?><bible biblename="KJV"><b n="43" name="John"><c n="3"><v n="16">For God so loved the world</v><v n="17">For God sent not his Son</v></c></b></bible>`;
+    let res = await api("/api/v1/bibles", { method: "POST", body: JSON.stringify({ format: "opensong", xml }) }, adminToken);
+    expect(res.status).toBe(200);
+    const { id } = (await res.json()) as { id: string };
+
+    res = await api("/api/v1/bibles", {}, adminToken);
+    expect((await res.json()) as unknown[]).toHaveLength(1);
+
+    res = await api(`/api/v1/bibles/${id}/passage?ref=${encodeURIComponent("John 3:16-17")}`, {}, adminToken);
+    const p = (await res.json()) as { title: string; slides: { body: string }[] };
+    expect(p.title).toBe("John 3:16-17 (Bible)");
+    expect(p.slides[0]!.body).toContain("16. For God so loved");
+
+    // bad ref + guest-blocked admin route
+    expect((await api(`/api/v1/bibles/${id}/passage?ref=xyz`, {}, adminToken)).status).toBe(400);
+  });
+
+  it("media upload stores and serves bytes", async () => {
+    const png = Buffer.from("89504e470d0a1a0a", "hex");
+    let res = await api("/api/v1/media", {
+      method: "POST",
+      body: JSON.stringify({ name: "dot.png", mediaType: "image/png", dataBase64: png.toString("base64") }),
+    }, adminToken);
+    const { storageKey } = (await res.json()) as { storageKey: string };
+    expect(storageKey).toMatch(/^media\/[0-9a-f]{64}\.png$/);
+    const file = storageKey.split("/").pop()!;
+    res = await api(`/api/v1/media/${file}`, {}, adminToken);
+    expect(res.status).toBe(200);
+    expect(Buffer.from(await res.arrayBuffer())).toEqual(png);
+  });
+
   it("LAN toggle reports addresses", async () => {
     let res = await api("/api/v1/server/network", {}, adminToken);
     expect((await res.json()) as { lanEnabled: boolean }).toMatchObject({ lanEnabled: false });

@@ -25,12 +25,17 @@ import {
   existingInfo,
   indexOfPosition,
   navigate,
+  parseOpenSongBible,
   parsePresentSettings,
   parsePrintSettings,
+  parseReference,
   positionOfSlide,
   resolveSlideStyle,
+  scriptureSlideGroup,
+  type BibleTranslation,
   type ImportFile,
 } from "@praisesuite/core";
+import type { BibleId } from "@praisesuite/core";
 
 const SongSchema = z.object({ id: z.string() }).loose();
 const ServiceSchema = z.object({ id: z.string() }).loose();
@@ -419,6 +424,78 @@ export function buildRoutes(deps: AppDeps): Route[] {
       return out;
     }),
 
+    r("GET", "/api/v1/bibles", "admin", "List installed Bible translations", async () =>
+      biblesIndex(deps.storage)),
+
+    r("POST", "/api/v1/bibles", "admin", "Import a Bible (OpenSong/Zefania XML or provider JSON)", async (ctx) => {
+      const body = z
+        .object({
+          format: z.enum(["opensong", "zefania", "apibible-json"]),
+          xml: z.string().optional(),
+          json: z.unknown().optional(),
+        })
+        .parse(await ctx.body());
+      const id = deps.ids.next() as BibleId;
+      let bible: BibleTranslation;
+      if (body.format === "apibible-json") {
+        // Provider-fetched canonical JSON (already normalized client-side or by fetch adapter).
+        bible = body.json as BibleTranslation;
+        bible.id = id;
+      } else {
+        if (body.xml === undefined) throw new ApiError(400, "missing_xml", "xml field required");
+        bible = parseOpenSongBible(body.xml, id);
+      }
+      await deps.repos.files.put(`bibles/${id}.json`, new TextEncoder().encode(JSON.stringify(bible)));
+      const index = biblesIndex(deps.storage);
+      index.push({
+        id,
+        name: bible.name,
+        abbreviation: bible.abbreviation,
+        books: bible.books.length,
+        copyright: bible.copyright,
+      });
+      deps.storage.setSetting("bibles.index", JSON.stringify(index));
+      return { id, name: bible.name, abbreviation: bible.abbreviation, books: bible.books.length };
+    }),
+
+    r("GET", "/api/v1/bibles/:id", "admin", "Get a Bible translation", async (ctx) => {
+      const bible = await loadBible(deps.repos, ctx.params["id"]!);
+      if (!bible) throw new ApiError(404, "not_found", "Bible not found");
+      return bible;
+    }),
+
+    r("GET", "/api/v1/bibles/:id/passage", "admin", "Verses + slide group for a scripture reference", async (ctx) => {
+      const bible = await loadBible(deps.repos, ctx.params["id"]!);
+      if (!bible) throw new ApiError(404, "not_found", "Bible not found");
+      const refText = ctx.query.get("ref") ?? "";
+      const ref = parseReference(refText);
+      if (!ref) throw new ApiError(400, "bad_reference", `Cannot parse reference "${refText}"`);
+      const group = scriptureSlideGroup(bible, [ref]);
+      if (group.slides.length === 1 && group.slides[0]!.body === "") {
+        throw new ApiError(404, "not_found", `Reference "${refText}" is outside this translation`);
+      }
+      return { title: group.title, slides: group.slides, copyright: bible.copyright };
+    }),
+
+    r("DELETE", "/api/v1/bibles/:id", "admin", "Remove a Bible translation", async (ctx) => {
+      const id = ctx.params["id"]!;
+      await deps.repos.files.delete(`bibles/${id}.json`);
+      const index = biblesIndex(deps.storage).filter((b) => b.id !== id);
+      deps.storage.setSetting("bibles.index", JSON.stringify(index));
+      return { ok: true };
+    }),
+
+    r("POST", "/api/v1/media", "admin", "Upload a media asset (base64 JSON)", async (ctx) => {
+      const body = z
+        .object({ name: z.string(), mediaType: z.string(), dataBase64: z.string() })
+        .parse(await ctx.body());
+      return storeMedia(deps.storage, deps.ids, {
+        data: Buffer.from(body.dataBase64, "base64"),
+        mediaType: body.mediaType,
+        originalFilename: body.name,
+      });
+    }),
+
     r("GET", "/api/v1/media/:file", "guest", "Serve a stored media file (backgrounds/logos)", async (ctx) => {
       const key = `media/${ctx.params["file"]}`;
       if (!(await deps.repos.files.has(key))) throw new ApiError(404, "not_found", "Media not found");
@@ -428,6 +505,8 @@ export function buildRoutes(deps: AppDeps): Route[] {
       const types: Record<string, string> = {
         ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
         ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp", ".svg": "image/svg+xml",
+        ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime", ".m4v": "video/mp4",
+        ".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg", ".m4a": "audio/mp4",
       };
       ctx.res.writeHead(200, {
         "content-type": types[ext] ?? "application/octet-stream",
@@ -502,6 +581,7 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
     title: slide.title,
     lines: slide.lines,
     kind: slide.kind,
+    mediaKey: slide.mediaKey,
     style,
     /** Per-song background (OpenSong per-verse image) wins over the style background. */
     backgroundKey: song?.background ?? style.backgroundKey,
@@ -510,6 +590,21 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
     loopSeconds: typeof item?.config["loopSeconds"] === "number" ? (item.config["loopSeconds"] as number) : null,
     next: next ? { title: next.title, lines: next.lines } : null,
   };
+}
+
+/** Installed translations index (settings key `bibles.index`). */
+function biblesIndex(storage: SqliteStorage): { id: string; name: string; abbreviation: string; books: number; copyright: string | null }[] {
+  try {
+    return JSON.parse(storage.getSetting("bibles.index") ?? "[]") as ReturnType<typeof biblesIndex>;
+  } catch {
+    return [];
+  }
+}
+
+async function loadBible(repos: Repositories, id: string): Promise<BibleTranslation | null> {
+  const data = await repos.files.get(`bibles/${id}.json`);
+  if (data === null) return null;
+  return JSON.parse(new TextDecoder().decode(data)) as BibleTranslation;
 }
 
 /** TAS 13.4: control requires admin or a guest token with "control" scope + ownership. */

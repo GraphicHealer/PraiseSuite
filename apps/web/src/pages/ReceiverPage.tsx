@@ -8,6 +8,7 @@ interface SlidePayload {
   title: string;
   lines: string[];
   kind: string;
+  mediaKey: string | null;
   style: SlideStyle;
   backgroundKey: string | null;
   logoKey: string | null;
@@ -27,6 +28,9 @@ interface SlideState {
 function mediaUrl(key: string): string {
   return `/api/v1/media/${encodeURIComponent(key.split("/").pop() ?? key)}`;
 }
+
+const VIDEO_EXT = /\.(mp4|webm|mov|m4v|ogv)$/i;
+const isVideo = (key: string) => VIDEO_EXT.test(key);
 
 function textCss(s: TextStyle): CSSProperties {
   return {
@@ -155,19 +159,48 @@ export function ReceiverPage(): ReactNode {
     >
       {!black && style && (
         <>
-          {bg && (
+          {bg && isVideo(slide?.backgroundKey ?? "") ? (
+            <video
+              key={bg}
+              src={bg}
+              autoPlay
+              loop
+              muted
+              playsInline
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          ) : bg ? (
             <img
               src={bg}
               alt=""
               className="absolute inset-0 h-full w-full object-cover transition-opacity"
               style={{ transitionDuration: `${style.transitionMs}ms` }}
             />
-          )}
+          ) : null}
           <div
             className="absolute inset-0"
             style={{ backgroundColor: bg ? "transparent" : style.backgroundColor }}
           />
         </>
+      )}
+      {slide?.mediaKey && !black && !logoOnly && (
+        isVideo(slide.mediaKey) ? (
+          <video
+            key={slide.mediaKey}
+            src={mediaUrl(slide.mediaKey)}
+            autoPlay
+            loop
+            muted
+            playsInline
+            className="absolute inset-0 z-[1] h-full w-full object-contain bg-black"
+          />
+        ) : (
+          <img
+            src={mediaUrl(slide.mediaKey)}
+            alt=""
+            className="absolute inset-0 z-[1] h-full w-full object-contain bg-black"
+          />
+        )
       )}
       {logoOnly && slide?.logoKey && (
         <div className="absolute inset-0 flex items-center justify-center bg-black">

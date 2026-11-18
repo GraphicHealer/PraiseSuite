@@ -90,11 +90,23 @@ function RoleEditor({
 /** Global presentation style editor + OpenSong settings import (M6). */
 export function SettingsPage(): ReactNode {
   const [style, setStyle] = useState<SlideStyle | null>(null);
+  const [bibles, setBibles] = useState<{ id: string; name: string; abbreviation: string; books: number }[]>([]);
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
     void api.style().then(setStyle);
+    void api.bibles().then(setBibles).catch(() => {});
   }, []);
+
+  const importBible = async (files: FileList | null) => {
+    if (!files?.length) return;
+    for (const f of Array.from(files)) {
+      const text = await f.text();
+      await api.importBibleXml(text);
+    }
+    setBibles(await api.bibles());
+    setMsg("Bible imported.");
+  };
 
   const save = async () => {
     if (!style) return;
@@ -200,6 +212,30 @@ export function SettingsPage(): ReactNode {
           {style.backgroundKey ? `Background image: ${style.backgroundKey}` : "No background image."}
           {style.logoKey ? ` Logo: ${style.logoKey}` : " No logo set."}
         </div>
+      </fieldset>
+
+      <fieldset className="rounded border border-zinc-200 p-3 dark:border-zinc-800">
+        <legend className="px-1 text-sm font-medium">Bible translations</legend>
+        <ul className="mb-2 divide-y divide-zinc-200 dark:divide-zinc-800">
+          {bibles.map((b) => (
+            <li key={b.id} className="flex items-center gap-3 py-1.5 text-sm">
+              <span className="font-medium">{b.abbreviation}</span>
+              <span className="text-zinc-500">{b.name}</span>
+              <span className="text-xs text-zinc-400">{b.books} books</span>
+              <button
+                className="ml-auto text-xs text-red-600 hover:underline"
+                onClick={() => void api.deleteBible(b.id).then(() => api.bibles().then(setBibles))}
+              >
+                remove
+              </button>
+            </li>
+          ))}
+          {bibles.length === 0 && <li className="py-1 text-sm text-zinc-500">No translations installed.</li>}
+        </ul>
+        <label className="cursor-pointer rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800">
+          Import OpenSong/Zefania Bible XML…
+          <input type="file" multiple className="hidden" onChange={(e) => void importBible(e.target.files)} />
+        </label>
       </fieldset>
     </div>
   );
