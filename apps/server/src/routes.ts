@@ -358,6 +358,14 @@ export function buildRoutes(deps: AppDeps): Route[] {
       const analysis = analyzeImport(body.files as ImportFile[], existing);
       const report = await applyImport(analysis, deps.ids, deps.repos, {
         onDuplicate: () => body.onDuplicate ?? "skip",
+        storeMedia: async (name, mediaType, dataBase64) => {
+          const m = await storeMedia(deps.storage, deps.ids, {
+            data: Buffer.from(dataBase64, "base64"),
+            mediaType,
+            originalFilename: name,
+          });
+          return m.storageKey;
+        },
       });
       return report;
     }),
@@ -620,8 +628,9 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
     kind: slide.kind,
     mediaKey: slide.mediaKey,
     style,
-    /** Per-song background (OpenSong per-verse image) wins over the style background. */
-    backgroundKey: song?.background ?? style.backgroundKey,
+    /** Per-verse background wins over song-level, which wins over style. */
+    backgroundKey: slide.backgroundKey ?? song?.background ?? style.backgroundKey,
+    backgroundAsText: slide.backgroundAsText,
     logoKey: style.logoKey,
     /** Announcement-loop timing in seconds (OpenSong item loop interval). */
     loopSeconds: typeof item?.config["loopSeconds"] === "number" ? (item.config["loopSeconds"] as number) : null,

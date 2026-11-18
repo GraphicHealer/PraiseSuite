@@ -51,7 +51,8 @@ function song(): Song {
         ],
       },
     ],
-    background: null, notes: null,
+    background: null,
+    backgrounds: null, notes: null,
   };
 }
 

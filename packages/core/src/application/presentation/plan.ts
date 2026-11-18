@@ -28,6 +28,10 @@ export interface PlanSlide {
   lines: string[];
   /** Storage key for image/video media slides (kind === "media"). */
   mediaKey: string | null;
+  /** Per-verse song background (OpenSong <backgrounds><background verse>); cycles across slices. */
+  backgroundKey: string | null;
+  /** Show the background image instead of slide text (OpenSong @background_as_text). */
+  backgroundAsText: boolean;
 }
 
 export interface PresentationPlan {
@@ -86,9 +90,16 @@ export function buildPlan(
             as.prefix === null
               ? raw
               : { ...raw, lines: raw.lines.filter((l) => l.prefix === as.prefix) };
+          // Verse backgrounds for this section, cycled across slices
+          // (OpenSong background[@verse='V'|'v'], xbackIndex per sub-section).
+          const label = raw.label.toLowerCase();
+          const backs = (song.backgrounds?.items ?? []).filter(
+            (b) => b.verse.toLowerCase() === label,
+          );
           const repeats = Math.max(1, as.repeats);
           for (let rep = 0; rep < repeats; rep++) {
             slicesOfSection(section).forEach((lines, sliceIndex) => {
+              const bg = backs.length > 0 ? backs[Math.min(sliceIndex, backs.length - 1)]! : null;
               slides.push({
                 serviceItemId: item.id,
                 kind: item.kind,
@@ -100,6 +111,8 @@ export function buildPlan(
                 title: `${song.title} — ${section.label}`,
                 lines,
                 mediaKey: null,
+                backgroundKey: bg?.key ?? null,
+                backgroundAsText: bg !== null && (song.backgrounds?.asText ?? false),
               });
             });
           }
@@ -125,6 +138,8 @@ export function buildPlan(
           title: item.title,
           lines: [],
           mediaKey: key,
+          backgroundKey: null,
+          backgroundAsText: false,
         });
       }
       continue;
@@ -142,6 +157,8 @@ export function buildPlan(
         title: item.title,
         lines: slide.body.split("\n"),
         mediaKey: null,
+        backgroundKey: null,
+        backgroundAsText: false,
       });
     }
     if (item.slides.length === 0) {
@@ -156,6 +173,8 @@ export function buildPlan(
         title: item.title,
         lines: [item.title],
         mediaKey: null,
+        backgroundKey: null,
+        backgroundAsText: false,
       });
     }
   }

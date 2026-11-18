@@ -121,6 +121,8 @@ export async function applyImport(
   repos: Pick<Repositories, "songs">,
   options: {
     onDuplicate?: (match: DuplicateMatch) => DuplicateAction;
+    /** Persist embedded media (e.g. background <image> base64) -> storage key. */
+    storeMedia?: (name: string, mediaType: string, dataBase64: string) => Promise<string>;
   } = {},
 ): Promise<ImportReport> {
   const report: ImportReport = {
@@ -149,6 +151,17 @@ export async function applyImport(
       // Replace keeps the existing id — handled at M2 when repos exist;
       // for now import alongside (documented limitation).
       report.warnings.push(`${analyzed.path}: replace not yet supported; imported as new`);
+    }
+    // Verse backgrounds with embedded <image> data -> media storage keys.
+    if (analyzed.song.backgrounds !== null && options.storeMedia !== undefined) {
+      for (const bg of analyzed.song.backgrounds.items) {
+        if (bg.imageData === null || bg.imageData === "" || bg.key) continue;
+        try {
+          bg.key = await options.storeMedia(bg.filename ?? "background.png", "image/png", bg.imageData);
+        } catch {
+          report.warnings.push(`${analyzed.path}: background image for "${bg.verse}" could not be stored`);
+        }
+      }
     }
     const song = materializeSong(analyzed.song, ids);
     await repos.songs.save(song);

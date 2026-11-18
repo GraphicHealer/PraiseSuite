@@ -11,6 +11,8 @@ interface SlidePayload {
   mediaKey: string | null;
   style: SlideStyle;
   backgroundKey: string | null;
+  /** OpenSong @background_as_text: image replaces the slide text. */
+  backgroundAsText?: boolean;
   logoKey: string | null;
   loopSeconds: number | null;
   next: { title: string; lines: string[] } | null;
@@ -207,7 +209,7 @@ export function ReceiverPage(): ReactNode {
           <img src={mediaUrl(slide.logoKey)} alt="logo" className="max-h-[60vh] max-w-[60vw]" />
         </div>
       )}
-      {!black && !logoOnly && style && (
+      {!black && !logoOnly && style && !(slide?.backgroundAsText && bg) && (
         <div
           className="relative flex min-h-screen flex-1 flex-col justify-center"
           style={{

@@ -13,14 +13,46 @@ export interface ParsedArrangement extends Omit<SongArrangement, "id" | "sequenc
 }
 
 /** A Song without ids/revision — assigned by materializeSong(). */
-export type ParsedSong = Omit<Song, "id" | "revision" | "sections" | "arrangements"> & {
+/** Parsed backgrounds carry embedded image data; applyImport stores it as media. */
+export interface ParsedSongBackgrounds {
+  resize: string;
+  keepAspect: boolean;
+  link: boolean;
+  asText: boolean;
+  items: { verse: string; filename: string | null; imageData: string | null; key?: string | null }[];
+}
+
+export type ParsedSong = Omit<Song, "id" | "revision" | "sections" | "arrangements" | "backgrounds"> & {
   sections: Omit<SongSection, "id">[];
   arrangements: ParsedArrangement[];
+  backgrounds: ParsedSongBackgrounds | null;
 };
 
 export interface SongParseResult {
   song: ParsedSong;
   warnings: string[];
+}
+
+/** <backgrounds> element -> verse-specific images (OpenSong backgrounds tab). */
+function parseBackgrounds(el: unknown): ParsedSongBackgrounds | null {
+  const rec = asRecord(el);
+  const kids = rec["background"];
+  if (kids === undefined && rec["@_resize"] === undefined) return null;
+  const list = Array.isArray(kids) ? kids : kids === undefined ? [] : [kids];
+  return {
+    resize: asString(rec["@_resize"]),
+    keepAspect: asString(rec["@_keep_aspect"]) === "true",
+    link: asString(rec["@_link"]) === "true",
+    asText: asString(rec["@_background_as_text"]) === "true",
+    items: list.map((b) => {
+      const r = asRecord(b);
+      return {
+        verse: asString(r["@_verse"]),
+        filename: str(r["filename"]),
+        imageData: str(r["image"]),
+      };
+    }),
+  };
 }
 
 function str(v: unknown): string | null {
@@ -114,6 +146,7 @@ export function parseOpenSongSong(xml: string): SongParseResult {
         user3: asString(root["user3"]),
       },
       background: str(root["background"]),
+      backgrounds: parseBackgrounds(root["backgrounds"]),
       notes: null,
       sections,
       arrangements,
@@ -129,6 +162,17 @@ export function materializeSong(parsed: ParsedSong, ids: IdGenerator): Song {
     ...parsed,
     id: ids.next() as Song["id"],
     sections: parsed.sections.map((s, i) => ({ ...s, id: sectionIds[i]! })),
+    backgrounds: parsed.backgrounds === null ? null : {
+      resize: parsed.backgrounds.resize,
+      keepAspect: parsed.backgrounds.keepAspect,
+      link: parsed.backgrounds.link,
+      asText: parsed.backgrounds.asText,
+      items: parsed.backgrounds.items.map((b) => ({
+        verse: b.verse,
+        key: b.key ?? null,
+        filename: b.filename,
+      })),
+    },
     arrangements: parsed.arrangements.map((a) => ({
       ...a,
       id: ids.next() as SongArrangement["id"],

@@ -102,5 +102,30 @@ export interface Song extends Revisioned {
   arrangements: SongArrangement[];
   /** Song-level background media reference (OpenSong `background` path or a storage key). */
   background: string | null;
+  /**
+   * Verse-specific backgrounds (OpenSong `<backgrounds>`): per-section images
+   * cycled across the section's slide slices, with fit/link/as-text flags.
+   */
+  backgrounds: SongBackgrounds | null;
   notes: string | null;
+}
+
+export interface SongBackgrounds {
+  /** OpenSong @resize: "screen" | "body" | "" (no resize). */
+  resize: string;
+  keepAspect: boolean;
+  /** Store filename links instead of embedded image data (OpenSong @link). */
+  link: boolean;
+  /** Show the background image INSTEAD of the slide text (OpenSong @background_as_text). */
+  asText: boolean;
+  items: SongBackgroundItem[];
+}
+
+export interface SongBackgroundItem {
+  /** Section label this applies to (OpenSong @verse, e.g. "V1", "C"). */
+  verse: string;
+  /** Media storage key (image imported/uploaded), or null when only linked. */
+  key: string | null;
+  /** Original filename — kept for link mode and export round-trips. */
+  filename: string | null;
 }

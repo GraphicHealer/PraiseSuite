@@ -133,6 +133,22 @@ describe("song parser", () => {
     const { warnings } = parseOpenSongSong(xml);
     expect(warnings.some((w) => w.includes("C9"))).toBe(true);
   });
+
+  it("parses <backgrounds> verse images with fit/link/as-text flags", () => {
+    const xml = `<?xml version="1.0"?><song><title>T</title><lyrics>[V1]\n x</lyrics>
+      <backgrounds resize="screen" keep_aspect="true" link="false" background_as_text="true">
+        <background verse="V1"><image>QUJD</image></background>
+        <background verse="C"><filename>clouds.jpg</filename></background>
+      </backgrounds></song>`;
+    const { song } = parseOpenSongSong(xml);
+    expect(song.backgrounds?.resize).toBe("screen");
+    expect(song.backgrounds?.keepAspect).toBe(true);
+    expect(song.backgrounds?.asText).toBe(true);
+    expect(song.backgrounds?.items).toEqual([
+      { verse: "V1", filename: null, imageData: "QUJD" },
+      { verse: "C", filename: "clouds.jpg", imageData: null },
+    ]);
+  });
 });
 
 describe("transposeSourceText", () => {
@@ -188,6 +204,22 @@ describe("set parser", () => {
 });
 
 describe("round-trip export", () => {
+  it("serializes backgrounds (link filenames) and re-parses them", () => {
+    const parsed = parseOpenSongSong(fixtureSong("Amazing Grace")).song;
+    parsed.backgrounds = {
+      resize: "screen", keepAspect: true, link: true, asText: false,
+      items: [{ verse: "V1", filename: "sky.jpg", imageData: null, key: "media/sky.png" }],
+    };
+    const song = materializeSong(parsed, ids);
+    const xml = serializeOpenSongSong(song);
+    expect(xml).toContain("<backgrounds");
+    expect(xml).toContain('verse="V1"');
+    const again = parseOpenSongSong(xml).song;
+    expect(again.backgrounds?.keepAspect).toBe(true);
+    expect(again.backgrounds?.link).toBe(true);
+    expect(again.backgrounds?.items[0]).toMatchObject({ verse: "V1", filename: "sky.jpg" });
+  });
+
   it("serializes Amazing Grace and re-parses equivalently", () => {
     const original = parseOpenSongSong(fixtureSong("Amazing Grace")).song;
     const song = materializeSong(original, ids);

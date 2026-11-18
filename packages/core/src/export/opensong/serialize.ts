@@ -127,6 +127,30 @@ export function serializeOpenSongSong(song: Song): string {
     "\n" +
     el("user3", song.userFields.user3) +
     "\n" +
+    (song.background === null ? "" : el("background", song.background) + "\n") +
+    serializeBackgrounds(song) +
     `  <lyrics>${escapeXml(lyrics)}</lyrics></song>\n`
+  );
+}
+
+/** <backgrounds> block — verse-specific images with fit/link/as-text flags. */
+function serializeBackgrounds(song: Song): string {
+  const bg = song.backgrounds;
+  if (bg === null) return "";
+  const items = bg.items
+    .map(
+      (i) =>
+        `    <background verse="${escapeXml(i.verse)}">` +
+        (i.filename !== null
+          ? `<filename>${escapeXml(i.filename)}</filename>`
+          : i.key !== null
+            ? `<filename>${escapeXml(i.key)}</filename>`
+            : "") +
+        `</background>`,
+    )
+    .join("\n");
+  return (
+    `  <backgrounds resize="${escapeXml(bg.resize)}" keep_aspect="${bg.keepAspect}" ` +
+    `link="${bg.link}" background_as_text="${bg.asText}">\n${items}\n  </backgrounds>\n`
   );
 }

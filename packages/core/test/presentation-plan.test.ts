@@ -45,6 +45,7 @@ function song(id: string): Song {
       },
     ],
     background: null,
+    backgrounds: null,
     notes: null,
   };
 }
@@ -123,6 +124,38 @@ describe("buildPlan", () => {
     const svc = { ...service, items: [service.items[0]!] };
     const p = buildPlan(svc, new Map([["song1" as Song["id"], s]]));
     expect(p.slides[0]!.lines).toEqual(["choosing a mighty fortress"]);
+  });
+
+  it("assigns verse backgrounds to matching section slides, cycling slices", () => {
+    const s = song("song4");
+    s.backgrounds = {
+      resize: "screen", keepAspect: true, link: false, asText: false,
+      items: [
+        { verse: "V1", key: "media/bg-a.png", filename: "a.png" },
+        { verse: "V1", key: "media/bg-b.png", filename: "b.png" },
+        { verse: "C", key: "media/bg-c.png", filename: "c.png" },
+      ],
+    };
+    const svc = { ...service, items: [service.items[0]!] };
+    const p = buildPlan(svc, new Map([["song1" as Song["id"], s]]));
+    // V1 has 2 slices -> bg-a then bg-b; C slices -> bg-c each repeat
+    expect(p.slides[0]!.backgroundKey).toBe("media/bg-a.png");
+    expect(p.slides[1]!.backgroundKey).toBe("media/bg-b.png");
+    expect(p.slides[2]!.backgroundKey).toBe("media/bg-c.png");
+    expect(p.slides[3]!.backgroundKey).toBe("media/bg-c.png");
+    expect(p.slides.every((x) => !x.backgroundAsText)).toBe(true);
+  });
+
+  it("marks slides background_as_text when the flag is set", () => {
+    const s = song("song5");
+    s.backgrounds = {
+      resize: "", keepAspect: false, link: false, asText: true,
+      items: [{ verse: "V1", key: "media/bg.png", filename: null }],
+    };
+    const svc = { ...service, items: [service.items[0]!] };
+    const p = buildPlan(svc, new Map([["song1" as Song["id"], s]]));
+    expect(p.slides[0]!.backgroundAsText).toBe(true);
+    expect(p.slides[2]!.backgroundAsText).toBe(false); // C has no background
   });
 
   it("navigates with clamping", () => {

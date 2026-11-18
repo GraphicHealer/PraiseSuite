@@ -7,6 +7,7 @@ import {
   transposeSourceText,
   type Song,
   type SongArrangement,
+  type SongBackgrounds,
   type SongSectionId,
   type ArrangementSectionId,
 } from "@praisesuite/core";
@@ -53,7 +54,7 @@ function presentationOf(song: Song): string {
  */
 export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void }): ReactNode {
   const [song, setSong] = useState<Song | null>(null);
-  const [tab, setTab] = useState<"general" | "advanced">("general");
+  const [tab, setTab] = useState<"general" | "advanced" | "backgrounds">("general");
   const [source, setSource] = useState("");
   const [presentation, setPresentation] = useState("");
   const [capo, setCapo] = useState("");
@@ -164,6 +165,24 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
     setDirty(true);
   };
 
+  /** Verse-background list helpers (OpenSong <backgrounds> model). */
+  const bgs = (): SongBackgrounds =>
+    song?.backgrounds ?? { resize: "", keepAspect: false, link: false, asText: false, items: [] };
+  const updateBg = (patch: Partial<SongBackgrounds>) => update({ backgrounds: { ...bgs(), ...patch } });
+
+  const addBackground = async (verse: string, file: File) => {
+    const dataUrl = await new Promise<string>((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(String(r.result).split(",")[1]!);
+      r.onerror = rej;
+      r.readAsDataURL(file);
+    });
+    const m = await api.uploadMedia(file.name, file.type || "image/png", dataUrl);
+    updateBg({ items: [...bgs().items, { verse, key: m.storageKey, filename: file.name }] });
+  };
+
+  const mediaThumb = (key: string) => `/api/v1/media/${encodeURIComponent(key.split("/").pop() ?? key)}`;
+
   /** Insert text at the CodeMirror cursor (or append when unfocused). */
   const insertAtCursor = (text: string) => {
     const view = viewRef.current;
@@ -217,6 +236,12 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
         >
           Advanced
         </button>
+        <button
+          onClick={() => setTab("backgrounds")}
+          className={`${btn} ${tab === "backgrounds" ? "bg-indigo-100 dark:bg-indigo-950" : ""}`}
+        >
+          Backgrounds
+        </button>
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-zinc-500">Transpose</span>
           <button onClick={() => transpose(-1)} className={btn}>-♭</button>
@@ -243,7 +268,7 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
       </div>
       {status && <p className="text-xs text-zinc-500">{status}</p>}
 
-      {tab === "general" ? (
+      {tab === "general" && (
         <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-4">
           <Field label="Title" value={song.title} onChange={(v) => update({ title: v })} />
           <Field label="AKA" value={song.aka ?? ""} onChange={(v) => update({ aka: v || null })} />
@@ -265,13 +290,68 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
           <Field label="Capo" value={capo} onChange={setCapo} />
           <Field label="Presentation" value={presentation} onChange={(v) => { setPresentation(v); setDirty(true); }} className="col-span-2" />
         </div>
-      ) : (
+      )}
+      {tab === "advanced" && (
         <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-4">
           <Field label="User Defined 1" value={song.userFields.user1} onChange={(v) => update({ userFields: { ...song.userFields, user1: v } })} />
           <Field label="User Defined 2" value={song.userFields.user2} onChange={(v) => update({ userFields: { ...song.userFields, user2: v } })} />
           <Field label="User Defined 3" value={song.userFields.user3} onChange={(v) => update({ userFields: { ...song.userFields, user3: v } })} />
           <Field label="Background" value={song.background ?? ""} onChange={(v) => update({ background: v || null })} />
           <Field label="Notes" value={song.notes ?? ""} onChange={(v) => update({ notes: v || null })} className="col-span-2" />
+        </div>
+      )}
+      {tab === "backgrounds" && (
+        <div className="flex flex-col gap-2 overflow-y-auto">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+            <label className="flex items-center gap-1">
+              <input type="radio" name="bg-resize" checked={bgs().resize === "screen"} onChange={() => updateBg({ resize: "screen" })} />
+              Fit to screen
+            </label>
+            <label className="flex items-center gap-1">
+              <input type="radio" name="bg-resize" checked={bgs().resize === "body"} onChange={() => updateBg({ resize: "body" })} />
+              Fit to body
+            </label>
+            <label className="flex items-center gap-1">
+              <input type="radio" name="bg-resize" checked={bgs().resize === ""} onChange={() => updateBg({ resize: "" })} />
+              No resize
+            </label>
+            <label className="flex items-center gap-1">
+              <input type="checkbox" checked={bgs().keepAspect} onChange={(e) => updateBg({ keepAspect: e.target.checked })} />
+              Keep aspect
+            </label>
+            <label className="flex items-center gap-1">
+              <input type="checkbox" checked={bgs().link} onChange={(e) => updateBg({ link: e.target.checked })} />
+              Store as link
+            </label>
+            <label className="flex items-center gap-1">
+              <input type="checkbox" checked={bgs().asText} onChange={(e) => updateBg({ asText: e.target.checked })} />
+              Background as text
+            </label>
+          </div>
+          <div>
+            <span className="text-xs text-zinc-500">Verse specific backgrounds:</span>
+            <div className="mt-1 flex flex-col gap-1">
+              {bgs().items.map((item, i) => (
+                <div key={i} className="flex items-center gap-2 rounded border border-zinc-300 p-1.5 dark:border-zinc-700">
+                  <span className="w-16 text-sm font-medium">{item.verse || "(all)"}</span>
+                  {item.key ? (
+                    <img src={mediaThumb(item.key)} alt="" className="h-10 w-16 rounded object-cover" />
+                  ) : (
+                    <span className="text-xs text-zinc-500">{item.filename ?? "linked file"}</span>
+                  )}
+                  <span className="text-xs text-zinc-500">{item.filename ?? item.key ?? ""}</span>
+                  <button
+                    className={`${btn} ml-auto text-red-600`}
+                    onClick={() => updateBg({ items: bgs().items.filter((_, j) => j !== i) })}
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
+              {bgs().items.length === 0 && <p className="text-xs text-zinc-500">No verse backgrounds. Pick a section and an image to add one.</p>}
+            </div>
+          </div>
+          <BackgroundAdder sections={song.sections.map((s) => s.label)} onAdd={(v, f) => void addBackground(v, f)} />
         </div>
       )}
 
@@ -301,6 +381,28 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
           }}
         />
       </div>
+    </div>
+  );
+}
+
+/** Verse select + image picker -> uploads the file and appends a background. */
+function BackgroundAdder({ sections, onAdd }: { sections: string[]; onAdd: (verse: string, file: File) => void }): ReactNode {
+  const [verse, setVerse] = useState("");
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  return (
+    <div className="flex items-center gap-2">
+      <select className={input} value={verse} onChange={(e) => setVerse(e.target.value)}>
+        <option value="">(all / every slide)</option>
+        {sections.map((l) => (
+          <option key={l} value={l}>{l}</option>
+        ))}
+      </select>
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
+        const f = e.target.files?.[0];
+        if (f) onAdd(verse === "" ? verse : verse, f);
+        e.target.value = "";
+      }} />
+      <button className={btn} onClick={() => fileRef.current?.click()}>Add background…</button>
     </div>
   );
 }

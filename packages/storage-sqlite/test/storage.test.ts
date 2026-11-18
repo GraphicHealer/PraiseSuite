@@ -52,6 +52,7 @@ function makeSong(over: Partial<Song> = {}): Song {
     ],
     arrangements: [],
     background: null,
+    backgrounds: null,
     notes: null,
     ...over,
   };
