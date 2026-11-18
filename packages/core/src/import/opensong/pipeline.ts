@@ -1,0 +1,165 @@
+import { strFromU8, unzipSync } from "fflate";
+import type { IdGenerator, Repositories } from "../../ports/index.js";
+import type { Song } from "../../domain/songs/types.js";
+import { materializeSong, parseOpenSongSong, type ParsedSong } from "./song.js";
+import { parseOpenSongSet, type ParsedServiceItem } from "./set.js";
+import {
+  detectDuplicates,
+  existingInfo,
+  type DuplicateMatch,
+  type ExistingSongInfo,
+} from "./duplicates.js";
+
+export interface ImportFile {
+  /** Path relative to the import root; may include folders. */
+  path: string;
+  text: string;
+}
+
+export interface AnalyzedSong {
+  path: string;
+  song?: ParsedSong;
+  error?: string;
+  warnings: string[];
+}
+
+export interface AnalyzedSet {
+  path: string;
+  name: string;
+  items?: ParsedServiceItem[];
+  error?: string;
+  warnings: string[];
+}
+
+export interface ImportAnalysis {
+  songs: AnalyzedSong[];
+  sets: AnalyzedSet[];
+  skipped: { path: string; reason: string }[];
+  duplicates: DuplicateMatch[];
+}
+
+/** Expand a zip archive into import files (fflate — runs in Node and browsers). */
+export function expandZip(data: Uint8Array): ImportFile[] {
+  const entries = unzipSync(data);
+  const files: ImportFile[] = [];
+  for (const [path, bytes] of Object.entries(entries)) {
+    // OpenSong songs/sets/settings are extensionless; skip obvious resources.
+    const lower = path.toLowerCase();
+    if (
+      path.endsWith("/") ||
+      /\.(jpe?g|png|gif|webp|mp4|mov|mp3|wav|ttf|otf|db|ds_store)$/i.test(lower)
+    )
+      continue;
+    try {
+      files.push({ path, text: strFromU8(bytes) });
+    } catch {
+      // non-utf8 content — skip
+    }
+  }
+  return files;
+}
+
+function looksLikeXml(text: string): boolean {
+  const head = text.slice(0, 300);
+  return head.includes("<") && (head.includes("<song") || head.includes("<set") || head.includes("<?xml"));
+}
+
+/**
+ * Staged import, analysis phase (PRD 5.2 steps 1-6): identify format,
+ * parse, validate, report issues, detect duplicates.
+ */
+export function analyzeImport(
+  files: ImportFile[],
+  existing: ExistingSongInfo[] = [],
+): ImportAnalysis {
+  const songs: AnalyzedSong[] = [];
+  const sets: AnalyzedSet[] = [];
+  const skipped: ImportAnalysis["skipped"] = [];
+
+  for (const file of files) {
+    const name = file.path.split("/").pop() ?? file.path;
+    if (!looksLikeXml(file.text)) {
+      skipped.push({ path: file.path, reason: "not OpenSong XML" });
+      continue;
+    }
+    const isSet = file.text.includes("<set") && !file.text.includes("<song");
+    try {
+      if (isSet) {
+        const parsed = parseOpenSongSet(file.text, name);
+        sets.push({ path: file.path, name, items: parsed.items, warnings: parsed.warnings });
+      } else {
+        const parsed = parseOpenSongSong(file.text);
+        songs.push({ path: file.path, song: parsed.song, warnings: parsed.warnings });
+      }
+    } catch (e) {
+      skipped.push({ path: file.path, reason: (e as Error).message });
+    }
+  }
+
+  const parsed = songs.filter((s) => s.song).map((s) => s.song!);
+  const duplicates = detectDuplicates(parsed, existing);
+  return { songs, sets, skipped, duplicates };
+}
+
+export type DuplicateAction = "skip" | "replace" | "import";
+
+export interface ImportReport {
+  importedSongs: number;
+  importedSets: number;
+  skippedFiles: number;
+  failed: { path: string; error: string }[];
+  warnings: string[];
+}
+
+/**
+ * Apply phase (PRD 5.2 steps 7-9): perform the import honoring duplicate
+ * actions, then report.
+ */
+export async function applyImport(
+  analysis: ImportAnalysis,
+  ids: IdGenerator,
+  repos: Pick<Repositories, "songs">,
+  options: {
+    onDuplicate?: (match: DuplicateMatch) => DuplicateAction;
+  } = {},
+): Promise<ImportReport> {
+  const report: ImportReport = {
+    importedSongs: 0,
+    importedSets: 0,
+    skippedFiles: analysis.skipped.length,
+    failed: [],
+    warnings: [],
+  };
+
+  const dupActions = new Map<number, DuplicateAction>();
+  for (const m of analysis.duplicates) {
+    dupActions.set(m.incomingIndex, options.onDuplicate?.(m) ?? "import");
+  }
+
+  let parsedIdx = 0;
+  for (const analyzed of analysis.songs) {
+    if (!analyzed.song) {
+      report.failed.push({ path: analyzed.path, error: analyzed.error ?? "parse failed" });
+      continue;
+    }
+    const action = dupActions.get(parsedIdx) ?? "import";
+    parsedIdx++;
+    if (action === "skip") continue;
+    if (action === "replace") {
+      // Replace keeps the existing id — handled at M2 when repos exist;
+      // for now import alongside (documented limitation).
+      report.warnings.push(`${analyzed.path}: replace not yet supported; imported as new`);
+    }
+    const song = materializeSong(analyzed.song, ids);
+    await repos.songs.save(song);
+    report.importedSongs++;
+    report.warnings.push(...analyzed.warnings.map((w) => `${analyzed.path}: ${w}`));
+  }
+
+  report.importedSets = analysis.sets.length;
+  return report;
+}
+
+export function toExistingInfo(songs: Song[]): ExistingSongInfo[] {
+  return songs.map(existingInfo);
+}

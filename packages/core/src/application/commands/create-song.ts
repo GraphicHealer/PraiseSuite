@@ -24,9 +24,12 @@ export const createSong: CommandHandler<CreateSongInput, SongSummary> = async (
     timeSignature: null,
     theme: null,
     secondaryTheme: null,
+    aka: null,
+    keyLine: null,
     userFields: { user1: "", user2: "", user3: "" },
     sections: [],
     arrangements: [],
+    background: null,
     notes: null,
     revision: {
       id: ctx.ids.next() as Song["revision"]["id"],

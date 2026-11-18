@@ -8,7 +8,9 @@ export default tseslint.config(
     ignores: ["**/dist/**", "**/build/**", "**/coverage/**", "**/node_modules/**"],
   },
   {
-    files: ["packages/core/**/*.ts"],
+    // Boundary applies to shipped source only — test files run in Node and may
+    // read fixtures via node:fs even under the happy-dom environment.
+    files: ["packages/core/src/**/*.ts"],
     rules: {
       // packages/core is isomorphic: it must run in Node, browsers, and the
       // Android WebView. No Node builtins and no process/global Node APIs.
