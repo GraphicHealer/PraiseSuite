@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Service, ServiceItem, ServiceItemId, SongSummary } from "@praisesuite/core";
 import { api } from "../api.js";
+import { AddItemDialog, type AddItemTab } from "../components/AddItemDialog.js";
 import { openPrintPreview } from "../PrintPreview.js";
 import { SongEditorPage } from "./SongEditorPage.js";
 
@@ -273,22 +274,16 @@ function SetsMode({
   setPrintUrl: (url: string | null) => void;
 }): ReactNode {
   const [services, setServices] = useState<Service[]>([]);
-  const [songs, setSongs] = useState<SongSummary[]>([]);
   const [current, setCurrent] = useState<Service | null>(null);
   const [sel, setSel] = useState<number | null>(null);
   const [clipboard, setClipboard] = useState<ServiceItem | null>(null);
   const [dirty, setDirty] = useState(false);
-  const [bibles, setBibles] = useState<{ id: string; name: string; abbreviation: string }[]>([]);
   const [error, setError] = useState("");
-  const [showAddScripture, setShowAddScripture] = useState(false);
-  const [bibleId, setBibleId] = useState("");
-  const [refText, setRefText] = useState("");
+  const [addTab, setAddTab] = useState<AddItemTab | null>(null);
 
   const reload = () => api.services().then(setServices).catch((e) => setError((e as Error).message));
   useEffect(() => {
     void reload();
-    api.songs().then(setSongs).catch(() => {});
-    api.bibles().then(setBibles).catch(() => {});
   }, []);
 
   const open = (s: Service) => { setCurrent(s); setSel(null); setDirty(false); };
@@ -356,38 +351,12 @@ function SetsMode({
     onPresentService(current, itemId);
   };
 
-  // ── New Item ──
-  const addSong = (songId: string) => {
-    const s = songs.find((x) => x.id === songId);
-    if (current && s) patchItems([...current.items, makeItem({ kind: "song", songId: s.id as ServiceItem["songId"], title: s.title })]);
-  };
-  const addScripture = async () => {
-    if (!current || !bibleId || !refText.trim()) return;
-    try {
-      const p = await api.passage(bibleId, refText.trim());
-      patchItems([...current.items, makeItem({ kind: "scripture", title: p.title, slides: p.slides })]);
-      setRefText("");
-      setShowAddScripture(false);
-    } catch (e) { setError((e as Error).message); }
-  };
-  const addSlides = () =>
-    current && patchItems([...current.items, makeItem({ kind: "custom-slides", title: "Custom slide", slides: [{ body: "" }] })]);
-  const addStyle = () =>
-    current && patchItems([...current.items, makeItem({ kind: "note", title: "Style change", config: { style: {} } })]);
-  const addImage = async (file: File) => {
+  // ── New Item (OpenSong Song Lookup dialog) ──
+  const insertItems = (items: ServiceItem[]) => {
     if (!current) return;
-    const dataUrl = await new Promise<string>((res, rej) => {
-      const r = new FileReader();
-      r.onload = () => res(String(r.result).split(",")[1]!);
-      r.onerror = rej;
-      r.readAsDataURL(file);
-    });
-    const m = await api.uploadMedia(file.name, file.type || "image/png", dataUrl);
-    patchItems([...current.items, makeItem({ kind: "media", title: file.name, mediaAssetId: m.storageKey as ServiceItem["mediaAssetId"], config: { assetKeys: [m.storageKey] } })]);
-  };
-  const addExternal = () => {
-    const url = prompt("External file path or URL:");
-    if (current && url) patchItems([...current.items, makeItem({ kind: "note", title: url, config: { external: url } })]);
+    const list = [...current.items];
+    list.splice((sel ?? list.length - 1) + 1, 0, ...items);
+    patchItems(list);
   };
 
   return (
@@ -441,48 +410,23 @@ function SetsMode({
             </ol>
             {error && <p className="text-xs text-red-600">{error}</p>}
 
-            {showAddScripture && (
-              <div className="flex items-center gap-2 rounded border border-zinc-300 p-2 dark:border-zinc-700">
-                <select className={input} value={bibleId} onChange={(e) => setBibleId(e.target.value)}>
-                  <option value="">translation…</option>
-                  {bibles.map((b) => (
-                    <option key={b.id} value={b.id}>{b.abbreviation} — {b.name}</option>
-                  ))}
-                </select>
-                <input
-                  className={`${input} flex-1`}
-                  placeholder="John 3:16-18"
-                  value={refText}
-                  onChange={(e) => setRefText(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && void addScripture()}
-                  autoFocus
-                />
-                <button disabled={!bibleId || !refText.trim()} onClick={() => void addScripture()} className={btn}>Add</button>
-                <button onClick={() => setShowAddScripture(false)} className={btn}>Cancel</button>
-              </div>
-            )}
-
-            {/* New Item group */}
+            {/* New Item — OpenSong add-to-set dialogs as tabs */}
             <div className={grp}>
               <span className={grpLabel}>New item</span>
               <div className="flex flex-wrap gap-1">
-                <select className={input} value="" onChange={(e) => addSong(e.target.value)}>
-                  <option value="">Add song…</option>
-                  {songs.map((s) => (
-                    <option key={s.id} value={s.id}>{s.title}</option>
-                  ))}
-                </select>
-                <button onClick={() => setShowAddScripture(true)} className={btn}>Scripture</button>
-                <button onClick={addSlides} className={btn}>Slides</button>
-                <button onClick={addStyle} className={btn}>Style</button>
-                <label className={`${btn} cursor-pointer`}>
-                  Image
-                  <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void addImage(f); e.target.value = ""; }} />
-                </label>
-                <button onClick={addExternal} className={btn}>External</button>
+                <button onClick={() => setAddTab("song")} className={btn}>Add Item…</button>
+                <button onClick={() => setAddTab("scripture")} className={btn}>Scripture…</button>
+                <button onClick={() => setAddTab("custom")} className={btn}>Slides…</button>
+                <button onClick={() => setAddTab("image")} className={btn}>Image…</button>
+                <button onClick={() => setAddTab("style")} className={btn}>Style</button>
+                <button onClick={() => setAddTab("external")} className={btn}>External…</button>
               </div>
             </div>
           </div>
+
+          {addTab !== null && (
+            <AddItemDialog tab={addTab} onTabChange={setAddTab} onAdd={insertItems} onClose={() => setAddTab(null)} />
+          )}
 
           {/* Current Set + Current Item groups */}
           <aside className="flex w-44 shrink-0 flex-col gap-2">

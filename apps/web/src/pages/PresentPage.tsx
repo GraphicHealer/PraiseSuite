@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import type { PresentationSession, Service, ServiceItem, SongSummary } from "@praisesuite/core";
-import { serializeOpenSongLyrics } from "@praisesuite/core";
+import type { PresentationSession, Service, ServiceItem } from "@praisesuite/core";
+import { AddItemDialog, type AddItemTab } from "../components/AddItemDialog.js";
 import { api, type PresentMode, type SlideResponse } from "../api.js";
 import { fontStack } from "../fonts";
 import type { SlideStyle, TextStyle } from "../slide-types";
@@ -132,18 +132,7 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
   const [receiverUrl, setReceiverUrl] = useState("");
   const [alertText, setAlertText] = useState("");
   const [fullscreen, setFullscreen] = useState(false);
-  const [addTab, setAddTab] = useState<"song" | "scripture" | "custom" | null>(null);
-  const [songQuery, setSongQuery] = useState("");
-  const [songFolder, setSongFolder] = useState("(All)");
-  const [allSongs, setAllSongs] = useState<SongSummary[]>([]);
-  const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [previewSong, setPreviewSong] = useState<{ text: string; order: string } | null>(null);
-  const [customOrder, setCustomOrder] = useState("");
-  const [bibles, setBibles] = useState<{ id: string; name: string; abbreviation: string }[]>([]);
-  const [bibleId, setBibleId] = useState("");
-  const [bibleRef, setBibleRef] = useState("");
-  const [customTitle, setCustomTitle] = useState("");
-  const [customBody, setCustomBody] = useState("");
+  const [addTab, setAddTab] = useState<AddItemTab | null>(null);
   const [frozen, setFrozen] = useState<SlideResponse | null>(null);
   const [error, setError] = useState("");
   const wsRef = useRef<WebSocket | null>(null);
@@ -291,13 +280,8 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
     [plan, session, doNavigate],
   );
 
-  /** Song Lookup (OpenSong SongPickerWindow) — load library + open the dialog. */
-  const openAdd = useCallback((tab: "song" | "scripture" | "custom") => {
-    setAddTab(tab);
-    if (tab === "song") void api.songs().then(setAllSongs).catch(() => {});
-    if (tab === "scripture")
-      void api.bibles().then((b) => { setBibles(b); setBibleId((x) => x || b[0]?.id || ""); }).catch(() => {});
-  }, []);
+  /** OpenSong [Q]/[S] quick-insert opens the shared Add Item dialog. */
+  const openAdd = useCallback((tab: AddItemTab) => setAddTab(tab), []);
 
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) {
@@ -372,93 +356,14 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
     }
   };
 
-  const insertItem = async (item: ServiceItem) => {
+  const insertItems = async (items: ServiceItem[]) => {
     if (!session?.serviceId) return;
     const svc = await api.service(session.serviceId);
     const curItem = plan?.slides[plan.current]?.itemId;
     const at = svc.items.findIndex((i) => i.id === curItem);
-    svc.items.splice(at === -1 ? svc.items.length : at + 1, 0, item);
+    svc.items.splice(at === -1 ? svc.items.length : at + 1, 0, ...items);
     await api.saveService(svc);
     await refreshPlan(session.id);
-  };
-
-  const orderOf = (song: Awaited<ReturnType<typeof api.song>>) =>
-    (song.arrangements[0]?.sequence ?? [])
-      .map((as) => {
-        const sec = song.sections.find((s) => s.id === as.sectionId);
-        return sec ? `${sec.label}${as.prefix ?? ""}` : "";
-      })
-      .filter(Boolean)
-      .join(" ");
-
-  const preview = async (sum: SongSummary) => {
-    const song = await api.song(sum.id);
-    setPreviewSong({ text: serializeOpenSongLyrics(song), order: orderOf(song) });
-  };
-
-  const addSongs = async (ids: string[]) => {
-    for (const id of ids) {
-      const sum = allSongs.find((s) => s.id === id);
-      if (!sum) continue;
-      const song = await api.song(sum.id);
-      await insertItem({
-        id: crypto.randomUUID() as ServiceItem["id"],
-        kind: "song",
-        songId: song.id,
-        arrangementId: song.arrangements[0]?.id ?? null,
-        mediaAssetId: null,
-        title: song.title,
-        subtitle: null,
-        notes: null,
-        slides: [],
-        loopSeconds: 0,
-        config: customOrder.trim() ? { presentation: customOrder.trim() } : {},
-      });
-    }
-    setPicked(new Set());
-    setCustomOrder("");
-    setPreviewSong(null);
-    setAddTab(null);
-  };
-
-  const addCustom = async () => {
-    if (!customTitle.trim() && !customBody.trim()) return;
-    await insertItem({
-      id: crypto.randomUUID() as ServiceItem["id"],
-      kind: "custom-slides",
-      songId: null,
-      arrangementId: null,
-      mediaAssetId: null,
-      title: customTitle.trim() || "Custom",
-      subtitle: null,
-      notes: null,
-      slides: customBody.split(/\n{2,}/).filter((s) => s.trim()).map((body) => ({ body })),
-      loopSeconds: 0,
-      config: {},
-    });
-    setCustomTitle("");
-    setCustomBody("");
-    setAddTab(null);
-  };
-
-  const addScripture = async () => {
-    if (!bibleId || !bibleRef) return;
-    const p = await api.passage(bibleId, bibleRef);
-    await insertItem({
-      id: crypto.randomUUID() as ServiceItem["id"],
-      kind: "scripture",
-      songId: null,
-      arrangementId: null,
-      mediaAssetId: null,
-      title: p.title,
-      subtitle: null,
-      notes: null,
-      slides: p.slides,
-      loopSeconds: 0,
-      config: {},
-    });
-    setAddTab(null);
-    setBibleRef("");
   };
 
   const makeReceiverUrl = async () => {
@@ -731,188 +636,8 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
         </div>
       </div>
 
-      {/* Add Item — OpenSong SongPickerWindow (song tab) + scripture/custom tabs */}
       {addTab !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setAddTab(null)}>
-          <div className="flex h-[520px] w-[640px] flex-col rounded-lg bg-white p-4 shadow-xl dark:bg-zinc-900" onClick={(e) => e.stopPropagation()}>
-            {/* Tab bar */}
-            <div className="mb-3 flex gap-1 border-b border-zinc-200 dark:border-zinc-700">
-              {([["song", "Songs"], ["scripture", "Scripture"], ["custom", "Custom"]] as const).map(([t, label]) => (
-                <button
-                  key={t}
-                  onClick={() => openAdd(t)}
-                  className={`rounded-t px-3 py-1.5 text-sm ${addTab === t ? "bg-zinc-100 font-semibold dark:bg-zinc-800" : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {addTab === "song" && (
-              <>
-                <p className="mb-2 text-xs text-zinc-500">
-                  To add a song, click the song title below and click &quot;Add&quot;. If you know the name of the
-                  song you can type it in the Quick Lookup field. Double-click a song to add it.
-                </p>
-                <div className="mb-2 flex items-center gap-3">
-                  <label className="flex items-center gap-1.5 text-xs">
-                    <span className="font-semibold">Select Folder:</span>
-                    <select
-                      value={songFolder}
-                      onChange={(e) => setSongFolder(e.target.value)}
-                      className="rounded border border-zinc-300 bg-transparent px-1.5 py-0.5 dark:border-zinc-700 dark:bg-zinc-900"
-                    >
-                      <option>(All)</option>
-                      {[...new Set(allSongs.map((s) => s.folder).filter((f): f is string => f !== null))].map((f) => (
-                        <option key={f}>{f}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="flex flex-1 items-center gap-1.5 text-xs">
-                    <span className="font-semibold">Quick Lookup:</span>
-                    <input
-                      autoFocus
-                      value={songQuery}
-                      onChange={(e) => setSongQuery(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && picked.size === 0 && void api.songs(songQuery).then((r) => { if (r[0]) void preview(r[0]); })}
-                      className="flex-1 rounded border border-zinc-300 bg-transparent px-2 py-0.5 dark:border-zinc-700"
-                    />
-                  </label>
-                </div>
-                <div className="flex min-h-0 flex-1 gap-2">
-                  {/* Song list (multi-select) */}
-                  <ul className="w-1/2 overflow-auto rounded border border-zinc-300 divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-700">
-                    {allSongs
-                      .filter(
-                        (s) =>
-                          (songFolder === "(All)" || s.folder === songFolder) &&
-                          (songQuery === "" ||
-                            s.title.toLowerCase().includes(songQuery.toLowerCase()) ||
-                            s.authors.some((a) => a.toLowerCase().includes(songQuery.toLowerCase()))),
-                      )
-                      .map((s) => (
-                        <li key={s.id}>
-                          <button
-                            onClick={() => {
-                              setPicked((p) => {
-                                const n = new Set(p);
-                                if (n.has(s.id)) n.delete(s.id);
-                                else n.add(s.id);
-                                return n;
-                              });
-                              void preview(s);
-                            }}
-                            onDoubleClick={() => { setPicked(new Set()); void addSongs([s.id]); }}
-                            className={`w-full px-2 py-1 text-left text-sm ${
-                              picked.has(s.id) ? "bg-indigo-100 dark:bg-indigo-950" : "hover:bg-zinc-50 dark:hover:bg-zinc-800"
-                            }`}
-                          >
-                            {s.title}
-                          </button>
-                        </li>
-                      ))}
-                  </ul>
-                  {/* Preview + order */}
-                  <div className="flex w-1/2 flex-col gap-1.5">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Song Preview</p>
-                    <textarea
-                      readOnly
-                      value={previewSong?.text ?? ""}
-                      className="min-h-0 flex-1 resize-none rounded border border-zinc-300 bg-zinc-50 p-1.5 font-mono text-[10px] leading-snug dark:border-zinc-700 dark:bg-zinc-950"
-                    />
-                    <label className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                      Custom presentation order
-                      <input
-                        value={customOrder}
-                        onChange={(e) => setCustomOrder(e.target.value)}
-                        className="mt-0.5 w-full rounded border border-zinc-300 bg-transparent px-2 py-0.5 font-mono text-xs normal-case dark:border-zinc-700"
-                      />
-                    </label>
-                    <label className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                      Original presentation order
-                      <input
-                        readOnly
-                        value={previewSong?.order ?? ""}
-                        className="mt-0.5 w-full rounded border border-zinc-300 bg-zinc-50 px-2 py-0.5 font-mono text-xs normal-case text-zinc-500 dark:border-zinc-700 dark:bg-zinc-950"
-                      />
-                    </label>
-                  </div>
-                </div>
-                <div className="mt-3 flex items-center gap-2">
-                  <button
-                    onClick={() => void api.songs(songQuery).then((r) => setAllSongs(r)).catch(() => {})}
-                    className="rounded border border-zinc-300 px-4 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-                  >
-                    Search
-                  </button>
-                  <div className="flex-1" />
-                  <button
-                    disabled={picked.size === 0}
-                    onClick={() => void addSongs([...picked])}
-                    className="rounded bg-indigo-600 px-6 py-1.5 text-sm text-white hover:bg-indigo-500 disabled:opacity-50"
-                  >
-                    Add
-                  </button>
-                  <button onClick={() => setAddTab(null)} className="rounded border border-zinc-300 px-4 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800">
-                    Done
-                  </button>
-                </div>
-              </>
-            )}
-
-            {addTab === "scripture" && (
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold">
-                  Translation
-                  <select value={bibleId} onChange={(e) => setBibleId(e.target.value)} className="mt-0.5 w-full rounded border border-zinc-300 bg-transparent px-2 py-1 text-sm font-normal dark:border-zinc-700 dark:bg-zinc-900">
-                    {bibles.map((b) => (
-                      <option key={b.id} value={b.id}>{b.abbreviation} — {b.name}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="text-xs font-semibold">
-                  Reference
-                  <input
-                    autoFocus
-                    value={bibleRef}
-                    onChange={(e) => setBibleRef(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && void addScripture()}
-                    placeholder="John 3:16-17"
-                    className="mt-0.5 w-full rounded border border-zinc-300 bg-transparent px-2 py-1 text-sm font-normal dark:border-zinc-700"
-                  />
-                </label>
-                <button onClick={() => void addScripture()} className="mt-1 self-end rounded bg-indigo-600 px-6 py-1.5 text-sm text-white hover:bg-indigo-500">
-                  Insert
-                </button>
-              </div>
-            )}
-
-            {addTab === "custom" && (
-              <div className="flex min-h-0 flex-1 flex-col gap-2">
-                <label className="text-xs font-semibold">
-                  Title
-                  <input
-                    autoFocus
-                    value={customTitle}
-                    onChange={(e) => setCustomTitle(e.target.value)}
-                    className="mt-0.5 w-full rounded border border-zinc-300 bg-transparent px-2 py-1 text-sm font-normal dark:border-zinc-700"
-                  />
-                </label>
-                <label className="flex min-h-0 flex-1 flex-col text-xs font-semibold">
-                  Slides (blank line between slides)
-                  <textarea
-                    value={customBody}
-                    onChange={(e) => setCustomBody(e.target.value)}
-                    className="mt-0.5 min-h-0 flex-1 resize-none rounded border border-zinc-300 bg-transparent px-2 py-1 font-mono text-sm font-normal dark:border-zinc-700"
-                  />
-                </label>
-                <button onClick={() => void addCustom()} className="self-end rounded bg-indigo-600 px-6 py-1.5 text-sm text-white hover:bg-indigo-500">
-                  Insert
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+        <AddItemDialog tab={addTab} onTabChange={setAddTab} onAdd={insertItems} onClose={() => setAddTab(null)} />
       )}
     </div>
   );
