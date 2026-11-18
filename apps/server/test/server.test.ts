@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { WebSocket } from "ws";
 import type { AddressInfo } from "node:net";
 import { createApp, type PraiseSuiteApp } from "../src/app.js";
@@ -10,6 +10,7 @@ let app: PraiseSuiteApp;
 let dir: string;
 let base: string;
 let adminToken = "";
+const fixtures = resolve(process.cwd(), "../../infrastructure/fixtures/opensong-defaults");
 
 async function api(path: string, opts: RequestInit = {}, token?: string): Promise<Response> {
   const headers: Record<string, string> = { "content-type": "application/json" };
@@ -103,6 +104,8 @@ describe("api v1", () => {
       createdAt: new Date().toISOString(),
       lastActivityAt: new Date().toISOString(),
       blanked: false,
+      mode: "normal",
+      alert: null,
       controlOwner: null,
     };
     await api("/api/v1/sessions/sess-1", { method: "PUT", body: JSON.stringify(session) }, adminToken);
@@ -194,7 +197,7 @@ describe("api v1", () => {
       id: "sess-nav",
       serviceId: "svc-1", name: "Nav", status: "live",
       position: { sessionId: "sess-nav", serviceItemId: null, songId: null, arrangementId: null, sectionId: null, sectionInstanceId: null, positionWithinSection: 0 },
-      blanked: false, controlOwner: null,
+      blanked: false, mode: "normal", alert: null, controlOwner: null,
       createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(),
     };
     await api("/api/v1/sessions/sess-nav", { method: "PUT", body: JSON.stringify(session) }, adminToken);
@@ -249,6 +252,67 @@ describe("api v1", () => {
     expect(slide.status).toBe(200);
     // but not for library browsing
     expect((await api("/api/v1/songs", {}, j.token)).status).toBe(403);
+  });
+
+  it("mode and alert endpoints update session state and slide payload", async () => {
+    let res = await api("/api/v1/sessions/sess-nav/mode", {
+      method: "POST", body: JSON.stringify({ mode: "logo" }),
+    }, adminToken);
+    expect((await res.json()) as { mode: string }).toMatchObject({ mode: "logo" });
+
+    res = await api("/api/v1/sessions/sess-nav/alert", {
+      method: "POST", body: JSON.stringify({ message: "Nursery 12" }),
+    }, adminToken);
+    expect((await res.json()) as { alert: string }).toMatchObject({ alert: "Nursery 12" });
+
+    const slide = await api("/api/v1/sessions/sess-nav/slide", {}, adminToken);
+    const body = (await slide.json()) as {
+      mode: string; alert: string;
+      slide: { style: { body: { font: string } }; logoKey: string | null; next: unknown } | null;
+    };
+    expect(body.mode).toBe("logo");
+    expect(body.alert).toBe("Nursery 12");
+    expect(body.slide?.style.body.font).toBe("Inter"); // resolved default style
+    expect(body.slide).toHaveProperty("next");
+
+    // clear
+    await api("/api/v1/sessions/sess-nav/mode", { method: "POST", body: JSON.stringify({ mode: "normal" }) }, adminToken);
+    await api("/api/v1/sessions/sess-nav/alert", { method: "POST", body: JSON.stringify({ message: null }) }, adminToken);
+  });
+
+  it("global style get/put and OpenSong settings import", async () => {
+    let res = await api("/api/v1/style", {}, adminToken);
+    const style = (await res.json()) as { body: { size: number; font: string }; backgroundColor: string };
+    expect(style.body.font).toBe("Inter");
+
+    // PUT a custom style
+    style.body.size = 44;
+    style.backgroundColor = "#123456";
+    res = await api("/api/v1/style", { method: "PUT", body: JSON.stringify(style) }, adminToken);
+    expect(((await res.json()) as typeof style).body.size).toBe(44);
+    // reflected in slide payload
+    const slide = await api("/api/v1/sessions/sess-nav/slide", {}, adminToken);
+    const body = (await slide.json()) as { slide: { style: { body: { size: number }; backgroundColor: string } } | null };
+    expect(body.slide?.style.body.size).toBe(44);
+    expect(body.slide?.style.backgroundColor).toBe("#123456");
+
+    // Import real OpenSong PresentSettings (fonts resolved, media stored)
+    const xml = readFileSync(resolve(fixtures, "Settings/PresentSettings"), "utf8");
+    res = await api("/api/v1/import/opensong/settings", {
+      method: "POST", body: JSON.stringify({ presentSettings: xml }),
+    }, adminToken);
+    const out = (await res.json()) as { media: string[]; style: { body: { font: string }; logoKey: string | null; backgroundKey: string | null } };
+    expect(out.style.body.font).toBe("Inter");
+    expect(out.media.length).toBeGreaterThan(0);
+    expect(out.style.logoKey).toBeTruthy();
+
+    // Media endpoint serves the imported background to guests
+    const file = out.style.backgroundKey!.split("/").pop()!;
+    const media = await fetch(`${base}/api/v1/media/${file}`, {
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(media.status).toBe(200);
+    expect(media.headers.get("content-type")).toContain("image/");
   });
 
   it("LAN toggle reports addresses", async () => {

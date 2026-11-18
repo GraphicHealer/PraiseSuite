@@ -13,6 +13,7 @@ export function PresentPage(): ReactNode {
   const [slide, setSlide] = useState<SlideResponse | null>(null);
   const [controlling, setControlling] = useState(false);
   const [receiverUrl, setReceiverUrl] = useState("");
+  const [alertText, setAlertText] = useState("");
   const [error, setError] = useState("");
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -40,7 +41,7 @@ export function PresentPage(): ReactNode {
     ws.onopen = () => ws.send(JSON.stringify({ type: "subscribe", sessionId: s.id }));
     ws.onmessage = (e) => {
       const msg = JSON.parse(e.data as string) as { type: string; controlOwner?: string | null };
-      if (msg.type === "position" || msg.type === "blank") void refreshSlide(s.id);
+      if (["position", "blank", "mode", "alert"].includes(msg.type)) void refreshSlide(s.id);
       if (msg.type === "control") setControlling(false);
     };
     wsRef.current = ws;
@@ -65,6 +66,8 @@ export function PresentPage(): ReactNode {
         positionWithinSection: 0,
       },
       blanked: false,
+      mode: "normal",
+      alert: null,
       controlOwner: null,
       createdAt: new Date().toISOString(),
       lastActivityAt: new Date().toISOString(),
@@ -187,6 +190,45 @@ export function PresentPage(): ReactNode {
             </button>
             <button disabled={!controlling} onClick={() => void doNavigate("next")} className="rounded bg-indigo-600 px-6 py-1.5 text-sm text-white hover:bg-indigo-500 disabled:opacity-50">Next →</button>
             <button disabled={!controlling} onClick={() => void doNavigate("last")} className={btn}>Last ⇥</button>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+            <span className="text-xs uppercase tracking-wide text-zinc-500">Mode:</span>
+            {(["normal", "logo", "freeze"] as const).map((m) => (
+              <button
+                key={m}
+                disabled={!controlling}
+                onClick={() => session && void api.setMode(session.id, m).then(() => refreshSlide(session.id))}
+                className={`${btn} ${slide?.mode === m ? "bg-indigo-100 dark:bg-indigo-950" : ""}`}
+              >
+                {m}
+              </button>
+            ))}
+            <span className="ml-4 text-xs uppercase tracking-wide text-zinc-500">Alert:</span>
+            <input
+              value={alertText}
+              onChange={(e) => setAlertText(e.target.value)}
+              placeholder="Nursery alert, message…"
+              className="rounded border border-zinc-300 bg-transparent px-2 py-1 text-sm dark:border-zinc-700"
+            />
+            <button
+              disabled={!controlling}
+              onClick={() => session && void api.setAlert(session.id, alertText || null).then(() => refreshSlide(session.id))}
+              className={btn}
+            >
+              Show
+            </button>
+            <button
+              disabled={!controlling}
+              onClick={() => {
+                setAlertText("");
+                if (session) void api.setAlert(session.id, null).then(() => refreshSlide(session.id));
+              }}
+              className={btn}
+            >
+              Clear
+            </button>
+            <a href="/stage" target="_blank" rel="noreferrer" className={`${btn} ml-4`}>Stage view</a>
           </div>
         </div>
       )}

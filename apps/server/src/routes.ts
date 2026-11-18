@@ -9,18 +9,26 @@ import type {
   Song,
   SongId,
   PresentationSession,
+  SlideStyle,
+  SlideStyleOverride,
+  OutputMode,
 } from "@praisesuite/core";
 import type { SqliteStorage } from "@praisesuite/storage-sqlite";
+import { storeMedia } from "@praisesuite/storage-sqlite";
 import { ApiError, type Route, type RouteAccess } from "./http.js";
 import type { AuthService } from "./auth.js";
 import {
   analyzeImport,
   applyImport,
   buildPlan,
+  defaultSlideStyle,
   existingInfo,
   indexOfPosition,
   navigate,
+  parsePresentSettings,
+  parsePrintSettings,
   positionOfSlide,
+  resolveSlideStyle,
   type ImportFile,
 } from "@praisesuite/core";
 
@@ -206,11 +214,13 @@ export function buildRoutes(deps: AppDeps): Route[] {
       }
       const session = await deps.repos.sessions.get(ctx.params["id"]! as SessionId);
       if (!session) throw new ApiError(404, "not_found", "Session not found");
-      const slide = await currentSlide(deps.repos, session);
+      const slide = await currentSlide(deps.repos, deps.storage, session);
       return {
         sessionId: session.id,
         status: session.status,
         blanked: session.blanked,
+        mode: session.mode,
+        alert: session.alert,
         slide,
       };
     }),
@@ -278,6 +288,28 @@ export function buildRoutes(deps: AppDeps): Route[] {
       return { blanked: body.blanked };
     }),
 
+    r("POST", "/api/v1/sessions/:id/mode", "guest", "Set output mode (normal/logo/freeze)", async (ctx) => {
+      const session = await deps.repos.sessions.get(ctx.params["id"]! as SessionId);
+      if (!session) throw new ApiError(404, "not_found", "Session not found");
+      requireControl(ctx, session);
+      const body = z.object({ mode: z.enum(["normal", "logo", "freeze"]) }).parse(await ctx.body());
+      const updated: PresentationSession = { ...session, mode: body.mode as OutputMode, lastActivityAt: new Date().toISOString() };
+      await deps.repos.sessions.save(updated);
+      deps.broadcastToSession(session.id, { type: "mode", sessionId: session.id, mode: updated.mode });
+      return { mode: updated.mode };
+    }),
+
+    r("POST", "/api/v1/sessions/:id/alert", "guest", "Show/clear an alert overlay on all outputs", async (ctx) => {
+      const session = await deps.repos.sessions.get(ctx.params["id"]! as SessionId);
+      if (!session) throw new ApiError(404, "not_found", "Session not found");
+      requireControl(ctx, session);
+      const body = z.object({ message: z.string().nullable() }).parse(await ctx.body());
+      const updated: PresentationSession = { ...session, alert: body.message, lastActivityAt: new Date().toISOString() };
+      await deps.repos.sessions.save(updated);
+      deps.broadcastToSession(session.id, { type: "alert", sessionId: session.id, alert: body.message });
+      return { alert: body.message };
+    }),
+
     r("POST", "/api/v1/import/opensong/preview", "admin", "Analyze OpenSong files without importing", async (ctx) => {
       const body = z
         .object({ files: z.array(z.object({ path: z.string(), text: z.string() })) })
@@ -318,6 +350,93 @@ export function buildRoutes(deps: AppDeps): Route[] {
       return report;
     }),
 
+    r("GET", "/api/v1/style", "guest", "Global presentation slide style", async () =>
+      loadStyle(deps.storage)),
+
+    r("PUT", "/api/v1/style", "admin", "Save global presentation slide style", async (ctx) => {
+      const body = z.record(z.string(), z.unknown()).parse(await ctx.body());
+      const style = { ...defaultSlideStyle(), ...(body as Partial<SlideStyle>) };
+      deps.storage.setSetting("style.present", JSON.stringify(style));
+      return style;
+    }),
+
+    r("POST", "/api/v1/import/opensong/settings", "admin", "Import OpenSong PresentSettings/PrintSettings", async (ctx) => {
+      const body = z
+        .object({
+          presentSettings: z.string().optional(),
+          printSettings: z.string().optional(),
+          /** Whether to apply imported fonts/styles over the current style. */
+          applyStyle: z.boolean().optional(),
+        })
+        .parse(await ctx.body());
+      const out: { warnings: string[]; style: SlideStyle | null; printRoles: string[]; media: string[] } = {
+        warnings: [],
+        style: null,
+        printRoles: [],
+        media: [],
+      };
+      if (body.presentSettings !== undefined) {
+        const parsed = parsePresentSettings(body.presentSettings);
+        const style = body.applyStyle === false ? parsed.style : resolveSlideStyle(loadStyle(deps.storage));
+        Object.assign(style, {
+          title: parsed.style.title,
+          body: parsed.style.body,
+          subtitle: parsed.style.subtitle,
+          descriptiveSubtitles: parsed.style.descriptiveSubtitles,
+          highlightChorus: parsed.style.highlightChorus,
+          backgroundColor: parsed.style.backgroundColor,
+          transition: parsed.style.transition,
+          transitionMs: parsed.style.transitionMs,
+        });
+        if (parsed.backgroundData) {
+          const m = await storeMedia(deps.storage, deps.ids, {
+            data: Buffer.from(parsed.backgroundData, "base64"),
+            mediaType: "image/jpeg",
+            originalFilename: "opensong-background.jpg",
+          });
+          style.backgroundKey = m.storageKey;
+          out.media.push(m.storageKey);
+        }
+        if (parsed.logoData) {
+          const m = await storeMedia(deps.storage, deps.ids, {
+            data: Buffer.from(parsed.logoData, "base64"),
+            mediaType: "image/jpeg",
+            originalFilename: "opensong-logo.jpg",
+          });
+          style.logoKey = m.storageKey;
+          out.media.push(m.storageKey);
+        }
+        deps.storage.setSetting("style.present", JSON.stringify(style));
+        deps.storage.setSetting("style.options", JSON.stringify(parsed.options));
+        out.style = style;
+        out.warnings.push(...parsed.warnings);
+      }
+      if (body.printSettings !== undefined) {
+        const roles = parsePrintSettings(body.printSettings);
+        deps.storage.setSetting("style.print", JSON.stringify(roles));
+        out.printRoles = Object.keys(roles);
+      }
+      return out;
+    }),
+
+    r("GET", "/api/v1/media/:file", "guest", "Serve a stored media file (backgrounds/logos)", async (ctx) => {
+      const key = `media/${ctx.params["file"]}`;
+      if (!(await deps.repos.files.has(key))) throw new ApiError(404, "not_found", "Media not found");
+      const data = await deps.repos.files.get(key);
+      if (data === null) throw new ApiError(404, "not_found", "Media not found");
+      const ext = key.slice(key.lastIndexOf(".")).toLowerCase();
+      const types: Record<string, string> = {
+        ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+        ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp", ".svg": "image/svg+xml",
+      };
+      ctx.res.writeHead(200, {
+        "content-type": types[ext] ?? "application/octet-stream",
+        "cache-control": "public, max-age=31536000, immutable",
+      });
+      ctx.res.end(Buffer.from(data));
+      return null;
+    }),
+
     r("GET", "/api/v1/receiver/join", "public", "Join the most recent live session as a viewer", async () => {
       const sessions = await deps.repos.sessions.listActive();
       const live = sessions
@@ -349,12 +468,48 @@ async function sessionPlan(repos: Repositories, session: PresentationSession) {
   return { service, plan };
 }
 
-/** Resolve the session's current slide content for receivers. */
-async function currentSlide(repos: Repositories, session: PresentationSession) {
-  const { plan } = await sessionPlan(repos, session);
+/** Load the stored global style (defaults when unset). */
+function loadStyle(storage: SqliteStorage): SlideStyle {
+  const raw = storage.getSetting("style.present");
+  if (!raw) return defaultSlideStyle();
+  try {
+    return { ...defaultSlideStyle(), ...(JSON.parse(raw) as Partial<SlideStyle>) };
+  } catch {
+    return defaultSlideStyle();
+  }
+}
+
+/**
+ * Resolve the session's current slide content for receivers: lines plus the
+ * effective style chain (global -> item/song overrides), background, logo,
+ * announcement-loop timing, and the next slide for confidence view.
+ */
+async function currentSlide(repos: Repositories, storage: SqliteStorage, session: PresentationSession) {
+  const { service, plan } = await sessionPlan(repos, session);
   const idx = indexOfPosition(plan, session.position) ?? 0;
   const slide = plan.slides[idx] ?? null;
-  return slide ? { index: idx, total: plan.slides.length, title: slide.title, lines: slide.lines, kind: slide.kind } : null;
+  if (!slide) return null;
+  const item = service?.items.find((i) => i.id === slide.serviceItemId);
+  const song = slide.songId ? await repos.songs.get(slide.songId) : null;
+  const style = resolveSlideStyle(
+    loadStyle(storage),
+    item?.config["style"] as SlideStyleOverride | undefined,
+  );
+  const next = plan.slides[idx + 1] ?? null;
+  return {
+    index: idx,
+    total: plan.slides.length,
+    title: slide.title,
+    lines: slide.lines,
+    kind: slide.kind,
+    style,
+    /** Per-song background (OpenSong per-verse image) wins over the style background. */
+    backgroundKey: song?.background ?? style.backgroundKey,
+    logoKey: style.logoKey,
+    /** Announcement-loop timing in seconds (OpenSong item loop interval). */
+    loopSeconds: typeof item?.config["loopSeconds"] === "number" ? (item.config["loopSeconds"] as number) : null,
+    next: next ? { title: next.title, lines: next.lines } : null,
+  };
 }
 
 /** TAS 13.4: control requires admin or a guest token with "control" scope + ownership. */

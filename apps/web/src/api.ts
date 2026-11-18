@@ -1,10 +1,24 @@
 import type { PresentationSession, Service, Song, SongSummary } from "@praisesuite/core";
+import type { SlideStyle } from "./slide-types.js";
 
 export interface SlideResponse {
   sessionId: string;
   status: string;
   blanked: boolean;
-  slide: { index: number; total: number; title: string; lines: string[]; kind: string } | null;
+  mode: "normal" | "blank" | "logo" | "freeze";
+  alert: string | null;
+  slide: {
+    index: number;
+    total: number;
+    title: string;
+    lines: string[];
+    kind: string;
+    style: SlideStyle;
+    backgroundKey: string | null;
+    logoKey: string | null;
+    loopSeconds: number | null;
+    next: { title: string; lines: string[] } | null;
+  } | null;
 }
 
 export interface ImportPreview {
@@ -138,6 +152,26 @@ class Api {
     });
   guestToken = (sessionId: string, scopes: string[] = ["view"]) =>
     this.req<{ token: string }>("/api/v1/auth/guest", { method: "POST", body: { sessionId, scopes } });
+  setMode = (id: string, mode: "normal" | "logo" | "freeze") =>
+    this.req<{ mode: string }>(`/api/v1/sessions/${encodeURIComponent(id)}/mode`, {
+      method: "POST",
+      body: { mode },
+    });
+  setAlert = (id: string, message: string | null) =>
+    this.req<{ alert: string | null }>(`/api/v1/sessions/${encodeURIComponent(id)}/alert`, {
+      method: "POST",
+      body: { message },
+    });
+
+  // styles
+  style = () => this.req<SlideStyle>("/api/v1/style");
+  saveStyle = (style: SlideStyle) =>
+    this.req<SlideStyle>("/api/v1/style", { method: "PUT", body: style as unknown as Record<string, unknown> });
+  importOpenSongSettings = (presentSettings?: string, printSettings?: string) =>
+    this.req<{ warnings: string[]; media: string[]; printRoles: string[] }>(
+      "/api/v1/import/opensong/settings",
+      { method: "POST", body: { presentSettings, printSettings } },
+    );
 
   // import
   importPreview = (files: ImportFilePayload[]) =>

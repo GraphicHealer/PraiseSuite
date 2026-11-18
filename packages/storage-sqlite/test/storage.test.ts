@@ -158,6 +158,8 @@ describe("sqlite storage", () => {
         createdAt: "2026-01-01T00:00:00Z",
         lastActivityAt: "2026-01-01T00:00:00Z",
         blanked: false,
+        mode: "normal",
+        alert: null,
         controlOwner: null,
       };
       await repositories.sessions.save(session);

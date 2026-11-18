@@ -29,6 +29,9 @@ export type SessionStatus = "preparing" | "live" | "suspended" | "ended";
 
 export type NavigationMode = "follow" | "independent" | "hybrid";
 
+/** Output mode (OpenSong initial_mode N/B/L + freeze). */
+export type OutputMode = "normal" | "blank" | "logo" | "freeze";
+
 export type OutputType =
   | "projector"
   | "confidence"
@@ -52,8 +55,12 @@ export interface PresentationSession {
   name: string;
   status: SessionStatus;
   position: MusicalPosition;
-  /** Screen blanked (black/logo) while position is retained for recovery. */
+  /** Screen blanked (black) while position is retained for recovery. */
   blanked: boolean;
+  /** Output mode — blank/logo/freeze overlay the current slide. */
+  mode: OutputMode;
+  /** Alert message overlaid on all outputs, or null. */
+  alert: string | null;
   /** jti of the token currently holding control, or null when free (TAS 13.4). */
   controlOwner: string | null;
   createdAt: string; // ISO 8601

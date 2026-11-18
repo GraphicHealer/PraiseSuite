@@ -5,14 +5,16 @@ import { ImportPage } from "./pages/ImportPage.js";
 import { ServicesPage } from "./pages/ServicesPage.js";
 import { SongEditorPage } from "./pages/SongEditorPage.js";
 import { PresentPage } from "./pages/PresentPage.js";
+import { SettingsPage } from "./pages/SettingsPage.js";
 
-type Page = "library" | "import" | "services" | "song" | "present";
+type Page = "library" | "import" | "services" | "song" | "present" | "settings";
 
 const NAV: { id: Page; label: string }[] = [
   { id: "library", label: "Library" },
   { id: "services", label: "Services" },
   { id: "import", label: "Import" },
   { id: "present", label: "Present" },
+  { id: "settings", label: "Settings" },
 ];
 
 function LoginGate({ onDone }: { onDone: () => void }) {
@@ -121,6 +123,7 @@ export function App(): ReactNode {
         {page === "services" && <ServicesPage onOpenSong={openSong} />}
         {page === "import" && <ImportPage />}
         {page === "present" && <PresentPage />}
+        {page === "settings" && <SettingsPage />}
         {page === "song" && songId && <SongEditorPage id={songId} onBack={() => setPage("library")} />}
       </main>
     </div>
