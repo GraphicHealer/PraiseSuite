@@ -256,6 +256,7 @@ export async function applyImport(
             );
             stored.push({
               storageKey: m.storageKey,
+              ...(img.filename ? { filename: img.filename } : {}),
               ...(img.description ? { description: img.description } : {}),
             });
             mediaAssetId = mediaAssetId ?? (m.id as MediaAssetId);

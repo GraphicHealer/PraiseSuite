@@ -67,11 +67,16 @@ function serializeSection(s: SongSection): string {
   const out: string[] = s.label === "" && Object.keys(s.options).length === 0 ? [] : [sectionHeader(s)];
   // "inline" break pieces rejoin into one source line (with merged chords).
   let pending: { text: string; chords: { offset: number; chord: { display: string } }[]; prefix: string } | null = null;
+  // SongML FindLyricLineCount: one "." line covers a whole run of digit-
+  // prefixed lines — dedupe identical chord rows across the run (R3).
+  let lastDigitChord: string | null = null;
 
   const flush = () => {
     if (!pending) return;
     const cl = chordLine(pending);
-    if (cl !== "") out.push(cl);
+    const isDigit = pending.prefix >= "1" && pending.prefix <= "9";
+    if (cl !== "" && cl !== (isDigit ? lastDigitChord : null)) out.push(cl);
+    lastDigitChord = isDigit && cl !== "" ? cl : null;
     out.push(pending.prefix + pending.text);
     pending = null;
   };
@@ -80,10 +85,12 @@ function serializeSection(s: SongSection): string {
     if (line.breakBefore === "slide") {
       flush();
       out.push("");
+      lastDigitChord = null;
     }
     if (line.kind !== "lyric") {
       flush();
       out.push((line.kind === "comment" ? ";" : "-") + line.text);
+      lastDigitChord = null;
       continue;
     }
     if (line.breakBefore === "inline" && pending) {
@@ -265,11 +272,14 @@ export function serializeOpenSongSet(
             : `\n      <slides>\n${images
                 .map((img) => {
                   const inner =
-                    (img.storageKey !== undefined && imageData !== undefined
-                      ? `<image>${imageData(img.storageKey) ?? ""}</image>`
-                      : img.filename !== undefined
-                        ? `<filename>${escapeXml(img.filename)}</filename>`
-                        : "") +
+                    // OpenSong accepts <image> + <filename> together; keep
+                    // both when we have them (re-review R4).
+                    (img.storageKey !== undefined && imageData !== undefined && imageData(img.storageKey) !== null
+                      ? `<image>${imageData(img.storageKey)}</image>`
+                      : "") +
+                    (img.filename !== undefined
+                      ? `<filename>${escapeXml(img.filename)}</filename>`
+                      : "") +
                     (img.description !== undefined ? `<description>${escapeXml(img.description)}</description>` : "");
                   return `        <slide>\n          ${inner}\n        </slide>`;
                 })

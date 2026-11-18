@@ -63,6 +63,19 @@ describe("lyrics parser", () => {
     // 'B' at index 9 -> original offset 8; 'second part' starts at 11 -> rebased 8-11 <0? check filter
   });
 
+  it("re-bases chords after | at the exact column (re-review R1)", () => {
+    const { sections } = parseOpenSongLyrics(
+      "[V1]\n.G               Am/C D      G        C D      G     D A      D\n" +
+        " And can be that I    should gain,|an interest in my Savior's blood?",
+    );
+    const piece = sections[0]!.lines.find((l) => l.text.startsWith("an interest"));
+    expect(piece).toBeDefined();
+    // Chords sit directly over their lyric columns — not shifted by the bar.
+    expect(piece!.chords.map((c) => [c.offset, c.chord.root])).toEqual([
+      [3, "C"], [5, "D"], [12, "G"], [18, "D"], [20, "A"], [27, "D"],
+    ]);
+  });
+
   it("drops blank lines by default; slide-breaks only with blank_is_slide_change", () => {
     // SongML LyricsToSections: a blank line is skipped unless the setting
     // maps it to "||". Default (off): the line vanishes, no slide break.

@@ -106,7 +106,8 @@ function splitOnBreaks(
       chords: [],
       break: sep.length >= 2 ? "bar" : sep.length === 1 ? "inline" : "none",
     });
-    pos += piece.length + sep.length;
+    // Advance past this piece AND the separator that follows it.
+    pos += piece.length + (i + 1 < parts.length ? parts[i + 1]!.length : 0);
   }
   pieces.forEach((piece, i) => {
     const start = starts[i]!;

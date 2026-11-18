@@ -136,7 +136,7 @@ export function buildPlan(
                 sectionId: section.id,
                 sectionInstanceId: as.id,
                 sliceIndex,
-                title: `${song.title} — ${section.label}`,
+                title: `${song.title} — ${section.label}${as.prefix ?? ""}`,
                 lines,
                 mediaKey: null,
                 backgroundKey: bg?.key ?? null,
@@ -148,11 +148,19 @@ export function buildPlan(
         continue;
       }
     }
-    // Media items (image sets / videos): one slide per asset in config.assetKeys.
+    // Media items (image sets / videos): one slide per asset — from
+    // config.assetKeys (UI-added) or config.images[].storageKey (OpenSong
+    // imported <image> groups, N4/R2).
     if (item.kind === "media") {
-      const keys = Array.isArray(item.config["assetKeys"])
+      const fromAssets = Array.isArray(item.config["assetKeys"])
         ? (item.config["assetKeys"] as unknown[]).filter((k): k is string => typeof k === "string")
         : [];
+      const fromImages = Array.isArray(item.config["images"])
+        ? (item.config["images"] as { storageKey?: string }[])
+            .map((i) => i.storageKey)
+            .filter((k): k is string => typeof k === "string")
+        : [];
+      const keys = fromAssets.length > 0 ? fromAssets : fromImages;
       const list = keys.length > 0 ? keys : [null];
       for (const [i, key] of list.entries()) {
         slides.push({

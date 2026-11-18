@@ -162,6 +162,24 @@ describe("buildPlan", () => {
     expect(p.slides[2]!.backgroundAsText).toBe(false); // C has no background
   });
 
+  it("maps imported OpenSong image groups to media slides (R2)", () => {
+    const svc: Service = {
+      ...service,
+      items: [
+        {
+          id: "img1" as Service["items"][0]["id"], kind: "media", songId: null,
+          arrangementId: null, mediaAssetId: null, title: "Logo",
+          subtitle: null, notes: null, slides: [], loopSeconds: 0,
+          config: { openSongType: "image", images: [{ storageKey: "media/a.jpg" }, { storageKey: "media/b.jpg" }] },
+        },
+      ],
+    };
+    const p = buildPlan(svc, new Map());
+    expect(p.slides).toHaveLength(2);
+    expect(p.slides[0]!.mediaKey).toBe("media/a.jpg");
+    expect(p.slides[1]!.mediaKey).toBe("media/b.jpg");
+  });
+
   it("navigates with clamping", () => {
     const sess = "sess" as never;
     const p0 = positionOfSlide(plan, 0, sess);
