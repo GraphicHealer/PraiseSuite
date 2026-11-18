@@ -138,43 +138,24 @@ function SongsMode({
 
   return (
     <div className="flex h-full gap-3 p-3">
-      {/* Folders */}
-      <aside className="flex w-40 shrink-0 flex-col gap-2">
-        <div className={grp}>
-          <span className={grpLabel}>Song folders</span>
-          <div className="max-h-full overflow-y-auto">
-            <button
-              onClick={() => setFolder(null)}
-              className={`block w-full rounded px-2 py-1 text-left text-sm ${folder === null ? "bg-indigo-100 dark:bg-indigo-950" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
-            >
-              All songs
-            </button>
+      {/* OpenSong songs pane: Folders dropdown -> "Songs:" label -> song list */}
+      <div className="flex w-72 shrink-0 flex-col gap-2">
+        <label className="flex items-center gap-1.5 text-sm">
+          <span className="font-semibold">Folders:</span>
+          <select
+            value={folder ?? ""}
+            onChange={(e) => setFolder(e.target.value === "" ? null : e.target.value)}
+            className={`${input} min-w-0 flex-1`}
+          >
+            <option value="">(All)</option>
             {allFolders.map((f) => (
-              <button
-                key={f}
-                onClick={() => setFolder(f)}
-                className={`block w-full truncate rounded px-2 py-1 text-left text-sm ${folder === f ? "bg-indigo-100 dark:bg-indigo-950" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
-              >
-                {f}
-              </button>
+              <option key={f} value={f}>{f}</option>
             ))}
-          </div>
-          <div className="flex gap-1">
-            <button onClick={() => void addFolder()} className={btn} title="Add folder">+</button>
-            <button onClick={() => void deleteFolder()} disabled={folder === null} className={btn} title="Delete folder">−</button>
-          </div>
-        </div>
-      </aside>
-
-      {/* Song list + All Songs / New Song groups */}
-      <div className="flex w-64 shrink-0 flex-col gap-2">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Find…"
-          className={input}
-          title="Find songs (All Songs → Find)"
-        />
+          </select>
+          <button onClick={() => void addFolder()} className={btn} title="Add folder">+</button>
+          <button onClick={() => void deleteFolder()} disabled={folder === null} className={btn} title="Delete folder">−</button>
+        </label>
+        <span className="-mb-1 text-sm font-semibold">Songs:</span>
         <ul className="min-h-0 flex-1 divide-y divide-zinc-200 overflow-y-auto rounded border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
           {list.map((s) => (
             <li key={s.id}>
@@ -189,6 +170,13 @@ function SongsMode({
           ))}
           {list.length === 0 && <li className="px-3 py-6 text-center text-sm text-zinc-500">No songs.</li>}
         </ul>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Find…"
+          className={input}
+          title="Find songs (All Songs → Find)"
+        />
         {error && <p className="text-xs text-red-600">{error}</p>}
         <div className="grid grid-cols-2 gap-2">
           <div className={grp}>
