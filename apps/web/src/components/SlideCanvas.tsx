@@ -14,13 +14,21 @@ function mediaUrl(key: string): string {
   return `/api/v1/media/${encodeURIComponent(key.split("/").pop() ?? key)}`;
 }
 
-/** OpenSong font sizes are points — 96/72 converts to design-space px. */
-const PT_PX = 96 / 72;
+/**
+ * OpenSong draws into a 640-unit design space: SetML.DrawSlide uses
+ * `zoom = gWidth / 640` and `FontFace.OntoGraphics` sets
+ * `TextSize = size * zoom` (FontUnit Point at 72dpi = px). So a style
+ * "size" is 1/640th of the output width — 34 → 102px at 1920.
+ */
+const ZOOM = DESIGN_W / 640;
+/** OpenSong RealBorder = g.Width / 50 — the global inset around text areas. */
+const REAL_BORDER = DESIGN_W / 50;
 
 function textCss(s: TextStyle, zoom = 1): CSSProperties {
+  const t = s.borderThickness * ZOOM;
   return {
     fontFamily: fontStack(s.font),
-    fontSize: s.size * zoom * PT_PX,
+    fontSize: s.size * zoom * ZOOM,
     fontWeight: s.bold ? 700 : 400,
     fontStyle: s.italic ? "italic" : "normal",
     textDecoration: s.underline ? "underline" : "none",
@@ -28,13 +36,19 @@ function textCss(s: TextStyle, zoom = 1): CSSProperties {
     textAlign: s.align,
     textShadow: [
       s.border
-        ? `-${s.borderThickness}px -${s.borderThickness}px 0 ${s.borderColor}, ${s.borderThickness}px -${s.borderThickness}px 0 ${s.borderColor}, -${s.borderThickness}px ${s.borderThickness}px 0 ${s.borderColor}, ${s.borderThickness}px ${s.borderThickness}px 0 ${s.borderColor}`
+        ? `-${t}px -${t}px 0 ${s.borderColor}, ${t}px -${t}px 0 ${s.borderColor}, -${t}px ${t}px 0 ${s.borderColor}, ${t}px ${t}px 0 ${s.borderColor}`
         : "",
-      s.shadow ? `0 ${s.borderThickness * 2}px ${s.borderThickness * 3}px ${s.shadowColor}` : "",
+      s.shadow ? `0 ${t * 2}px ${t * 3}px ${s.shadowColor}` : "",
     ]
       .filter(Boolean)
       .join(", ") || "none",
   };
+}
+
+/** OpenSong FontFaceHeight = TextHeight + 2·border + shadow — extra leading for decorations. */
+function lineLeading(s: TextStyle, zoom = 1): number {
+  const t = s.borderThickness * ZOOM * zoom;
+  return (s.border ? 2 * t : 0) + (s.shadow ? t : 0);
 }
 
 /**
@@ -88,9 +102,12 @@ export function SlideCanvas({
     return () => ro.disconnect();
   }, []);
 
-  const margin = style?.margin ?? 0;
-  const availW = DESIGN_W - margin * 2;
-  const availH = DESIGN_H - margin * 2;
+  const inset = REAL_BORDER + (style?.margin ?? 0);
+  const availW = DESIGN_W - inset * 2;
+  // MainHeight = screen − header/footer — title and subtitle claim their space first.
+  const headerH = style?.title.enabled ? style.title.size * ZOOM * 1.3 + lineLeading(style.title) : 0;
+  const footerH = style?.subtitle.enabled ? style.subtitle.size * ZOOM * 1.3 + lineLeading(style.subtitle) : 0;
+  const availH = DESIGN_H - inset * 2 - headerH - footerH;
 
   // BodyScale: measure the text at zoom 1 and shrink until it fits.
   useLayoutEffect(() => {
@@ -122,22 +139,22 @@ export function SlideCanvas({
   const body = style && (
     <div
       className="absolute inset-0 flex flex-col"
-      style={{ padding: margin, justifyContent: justify, alignItems: align }}
+      style={{ padding: inset, justifyContent: justify, alignItems: align }}
     >
       {style.title.enabled && (
-        <div className="absolute top-0 right-0 left-0" style={{ padding: `40px 80px 0`, ...textCss(style.title) }}>
+        <div className="absolute top-0 right-0 left-0" style={{ padding: `${inset}px ${inset}px 0`, ...textCss(style.title) }}>
           {title}
         </div>
       )}
-      <div className="max-w-full" style={{ display: "flex", flexDirection: "column", gap: style.body.size * PT_PX * 0.4 * bodyZoom }}>
+      <div className="max-w-full" style={{ display: "flex", flexDirection: "column" }}>
         {lines.map((l, i) => (
-          <p key={i} style={{ ...textCss(style.body, bodyZoom), lineHeight: 1.2, margin: 0 }}>
+          <p key={i} style={{ ...textCss(style.body, bodyZoom), lineHeight: 1.2, margin: 0, marginBottom: lineLeading(style.body, bodyZoom) }}>
             {l}
           </p>
         ))}
       </div>
       {style.subtitle.enabled && (
-        <div className="absolute right-0 bottom-0 left-0" style={{ padding: `0 80px 40px`, ...textCss(style.subtitle) }}>
+        <div className="absolute right-0 bottom-0 left-0" style={{ padding: `0 ${inset}px ${inset}px`, ...textCss(style.subtitle) }}>
           {style.descriptiveSubtitles ? next?.title ?? "" : title.split(" — ")[0]}
         </div>
       )}
@@ -156,10 +173,10 @@ export function SlideCanvas({
             ref={measureRef}
             aria-hidden
             className="invisible absolute top-0 left-0"
-            style={{ width: availW, padding: margin, display: "flex", flexDirection: "column", gap: style.body.size * PT_PX * 0.4 }}
+            style={{ width: availW, display: "flex", flexDirection: "column" }}
           >
             {lines.map((l, i) => (
-              <p key={i} style={{ ...textCss(style.body), lineHeight: 1.2, margin: 0, whiteSpace: "pre-wrap" }}>
+              <p key={i} style={{ ...textCss(style.body), lineHeight: 1.2, margin: 0, marginBottom: lineLeading(style.body), whiteSpace: "pre-wrap" }}>
                 {l}
               </p>
             ))}
@@ -197,7 +214,7 @@ export function SlideCanvas({
             style={{
               padding: "32px 64px",
               backgroundColor: style?.alert.fill ? style.alert.fillColor : "rgba(245,158,11,0.95)",
-              ...(style ? textCss(style.alert) : { fontSize: 48 }),
+              ...(style ? textCss(style.alert) : { fontSize: 40 * ZOOM }),
             }}
           >
             {alert}
