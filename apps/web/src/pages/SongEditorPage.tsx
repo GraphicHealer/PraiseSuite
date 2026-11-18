@@ -12,6 +12,7 @@ import {
 } from "@praisesuite/core";
 import { api } from "../api.js";
 import { opensongLanguage } from "../opensong-language.js";
+import { useDark } from "../use-dark.js";
 
 const input =
   "rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800";
@@ -58,6 +59,7 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState("");
   const viewRef = useRef<EditorView | null>(null);
+  const dark = useDark();
 
   useEffect(() => {
     api.song(id).then((s) => {
@@ -275,6 +277,7 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
         <CodeMirror
           value={source}
           height="100%"
+          theme={dark ? "dark" : "light"}
           style={{ height: "100%" }}
           extensions={[opensongLanguage]}
           onCreateEditor={(view) => { viewRef.current = view; }}
