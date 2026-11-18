@@ -90,11 +90,21 @@ describe("chordSheetHtml (SongML slice model)", () => {
     expect(chordRow.indexOf(">C<")).toBeLessThan(chordRow.indexOf(">D<"));
   });
 
-  it("draws a continuation hyphen where a word splits at a chord boundary", () => {
-    // chord D at offset 25 lands inside "fort_re__ss" -> whole word pulls into
-    // the last cell with a left shift and a preceding ‑
-    expect(html).toContain("&#8208;fortress");
+  it("pulls a mid-word chord's word into its slice — no dash (SongML offsetC)", () => {
+    // chord D at offset 25 lands inside "fort|ress" -> the whole word moves
+    // into the next cell drawn 3ch left; a successful pull-back draws NO dash
+    // (dashes mark words that stay split, or "_" gaps).
     expect(html).toContain("margin-left:-3ch");
+    expect(html).toContain(">fortress");
+    expect(html).not.toContain("&#8208;fortress");
+  });
+
+  it("draws a continuation hyphen when '_' is adjacent to a boundary", () => {
+    // "an___cient": chord over "cient" -> "_" adjacent -> dash in the gap.
+    const { sections } = parseOpenSongLyrics("[V]\n.G      D\nan___cient foe\n");
+    const s = song();
+    const h = chordSheetHtml({ ...s, sections: sections.map((x, i) => ({ ...x, id: `u${i}` as Song["sections"][0]["id"] })) });
+    expect(h).toContain("&#8208;");
   });
 
   it("emits a capo fingering row from the arrangement capo", () => {

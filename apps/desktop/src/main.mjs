@@ -106,10 +106,10 @@ ipcMain.handle("ps:open-print", async (_e, query) => {
   const win = new BrowserWindow({
     width: 1180,
     height: 840,
-    autoHideMenuBar: true,
     title: "Print preview — PraiseSuite",
     webPreferences: { contextIsolation: true, preload: path.join(dir, "preload.mjs") },
   });
+  win.setMenu(null); // popup = document window, not an app window — no File/Edit/View bar
   await win.loadURL(`${BASE}/?${query}`);
 });
 

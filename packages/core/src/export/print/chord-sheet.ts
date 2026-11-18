@@ -61,12 +61,17 @@ function headingName(label: string): string {
   return label.length > 1 ? `${name} ${label.slice(1)}` : name;
 }
 
-interface Cell { text: string; /** pad-left 1em (blankUnderChord) */ indent?: boolean; /** chars this cell starts left of its column (offsetC pull-back) */ shift?: number; }
+interface Cell { text: string; /** pad-left 1em (blankUnderChord) */ indent?: boolean; /** chars this cell starts left of its column (offsetC pull-back) */ shift?: number; /** continuation hyphen at this cell's left edge (SongML dashStart) */ dash?: boolean; }
 
 /**
  * Slice a lyric line at chord boundaries (SongML Draw_ChordLyricLine).
  * When a chord lands mid-word, the whole word moves into the next cell,
  * which is then drawn starting `shift` chars left of its column.
+ *
+ * Dash rule (SongML): a continuation hyphen is drawn in the gap when "_" is
+ * adjacent to the boundary on either side, OR when the boundary splits a
+ * word mid-word but the pull-back couldn't happen (the word stays split).
+ * A successful pull-back (shift > 0) keeps the word whole — no dash.
  */
 function lyricCells(text: string, bounds: number[]): Cell[] {
   const cells: Cell[] = [];
@@ -79,24 +84,27 @@ function lyricCells(text: string, bounds: number[]): Cell[] {
       let cp = b - 1;
       while (cp > start && text[cp - 1] === "_") cp--;
       while (cp > start && text[cp - 1] !== " " && text[cp - 1] !== "_") cp--;
-      end = cp;
+      if (cp > start) end = cp; // pull-back only when the word start is inside this slice
     }
     const raw = text.slice(start, end);
     const colStart = i === 0 ? 0 : bounds[i - 1]!;
+    const shift = Math.max(0, colStart - start);
+    // Dash sits at this cell's LEFT boundary (bounds[i-1] == colStart). SongML
+    // checks "_" at boundary+offsetC — the pulled-back word start, not the raw
+    // boundary — so "an___cient" still hyphenates across the chord gap.
+    const leftB = colStart;
+    const dashAt = leftB - shift;
+    const underAdjacent = dashAt > 0 && dashAt < text.length && (text[dashAt - 1] === "_" || text[dashAt] === "_");
+    const midWord = leftB > 0 && leftB < text.length && isLetter(text[leftB - 1]) && isLetter(text[leftB]);
     cells.push({
       text: clean(raw),
       indent: raw.startsWith(" ") || raw.startsWith("_"),
-      shift: Math.max(0, colStart - start),
+      shift,
+      dash: i > 0 && (underAdjacent || (midWord && shift === 0)),
     });
     start = end;
   }
   return cells;
-}
-
-/** True when a dash should join cell i to i+1 (word split at a chord boundary). */
-function needsDash(text: string, boundary: number): boolean {
-  if (boundary <= 0 || boundary >= text.length) return false;
-  return text[boundary - 1] === "_" || (isLetter(text[boundary - 1]) && isLetter(text[boundary]));
 }
 
 /** One line-group (.chord + lyric row) -> table rows in the slice-column model. */
@@ -135,10 +143,9 @@ function groupHtml(wl: WrittenLine, cfg: PrintConfig, tr: number, capo: number, 
   rows.push(
     `<tr class="ly">${prefixCell}` +
       cells
-        .map((c, i) => {
-          const boundary = i === 0 ? 0 : bounds[i - 1]!;
+        .map((c) => {
           let t = esc(c.text);
-          if (c.text !== "" && needsDash(wl.text, boundary)) t = `&#8208;` + t; // ‑ continuation hyphen
+          if (c.text !== "" && c.dash) t = `&#8208;` + t; // ‑ continuation hyphen
           let inner = t;
           if (c.shift) inner = `<span style="margin-left:-${c.shift}ch;display:inline-block">${inner}</span>`;
           if (c.indent) inner = `<span style="margin-left:1em">${inner}</span>`;

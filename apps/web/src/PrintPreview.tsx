@@ -36,13 +36,16 @@ export function openPrintPreview(req: PrintPreviewRequest): void {
   }
 }
 
-/** Page chrome for the on-screen paged.js sheets (does not print). */
+/** Page chrome for the on-screen paged.js sheets (does not print): white
+ *  paper on the dark canvas — light-mode rendering inside the page even when
+ *  the app is in dark mode, sized by the document's own @page box. */
 const PREVIEW_CSS = `
   .pagedjs_pages { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 24px 0; }
   .pagedjs_page {
-    background: #fff; color: #000; flex: none;
+    background: #fff; color: #000; color-scheme: light; flex: none;
     box-shadow: 0 2px 12px rgba(0,0,0,.55), 0 0 0 1px rgba(0,0,0,.25);
   }
+  .pagedjs_sheet, .pagedjs_pagebox { background: #fff; color: #000; }
 `;
 
 const FONT_OPTIONS = [
