@@ -29,6 +29,23 @@ The **industry-standard open Scripture API is API.Bible** (`rest.api.bible`), op
 - **Provider adapters:** `api-bible` (primary — API key, JSON), `helloao` (bible.helloao.org — no key, no rate limits, bulk JSON/SQLite downloads; ideal for full-translation offline downloads), `opensong-xml` (import OpenSong Bible XML files for migration parity). OSIS/USX import is a later adapter if needed.
 - **Licensing:** every translation's `licenseNotice`/copyright must be displayable with presented scripture; the data model carries it and the projector can render it. API.Bible terms require attribution; some translations carry additional usage restrictions, which the UI surfaces at download time.
 
+### Plugin and store strategy
+
+Terminology: we call them **plugins** (the store-facing synonym "extension" may appear in UI copy). Model follows the Falcon Player (FPP) plugin ecosystem, which the owner knows well and maintains plugins for — see `FauxLite-FPP/fpp-plugin-Template` and `fpp-plugin-FauxLite` locally.
+
+- **Standard plugin layout.** Each plugin lives in its own public GitHub repo with a `pluginInfo.json` manifest at the root declaring: unique `repoName`/ID, name, author, description, `homeURL`/`srcURL`/`bugURL`/`iconURL`, **`installScope`** (see below), `versions[]` (min/max PraiseSuite version -> branch/SHA, so updates are pinned per app version), `dependencies`, **required permissions** (extension points used, API scopes, network access, file access), and a **privacy disclosure block** (what the plugin sends/collects/senses/changes — required for listing, rendered in the install dialog, FPP-style).
+- **Install scope.** Every plugin declares one of three scopes:
+  - `shared` (**default**) — affects content or the data model (e.g. a new media type, a new slide kind, a scripture provider whose output is stored). Required on every installation that consumes the content. A desktop client connecting to a server that has shared plugins it lacks must resolve the gap (see below).
+  - `desktop` — client-side only: output adapters (e.g. NDI), device integrations, local automations. May also be installed on a server, but a client connecting to that server is never required to have it.
+  - `server` — server-side only: external API integrations, scheduled jobs, import pipelines. Clients connecting to the server are unaffected.
+- **Shared-plugin reconciliation on connect.** When a client connects or syncs to a server, the server advertises its installed `shared` plugins (ID + version). The client compares against its own set and must: install/upgrade to a version compatible with both the app version and the server (resolved through the plugin's `versions[]` ranges), or explicitly decline — in which case content requiring the missing plugin is flagged/unavailable rather than silently mis-rendered. Plugin installs triggered this way still go through the store path (manifest + pinned SHA), never blind code transfer from the server.
+- **Required UX.** A blocking dialog appears on connect/sync when a shared plugin is missing: it names the required plugin(s) and offers install/upgrade before sync proceeds. If sync runs anyway (or was declined), a post-sync report states exactly which and how many items failed ("3 items require plugin X") — nothing fails silently. If the current user lacks permission to install plugins (e.g. a read-only or guest account), the dialog says so and that an administrator must install it, instead of offering an install button that would fail.
+- **Store = registry repo.** A dedicated GitHub repo (`praisesuite-plugins` or similar) holds the plugin index (`pluginList.json`). Authors submit a PR; CI scans the submission (manifest schema validation, permission audit, banned-API/pattern checks, license presence, privacy-block completeness); an admin approves and merges. The store lists only a link to the author's repo — plugins are never vendored or re-hosted.
+- **In-app plugin manager.** Three sections like FPP's: Installed / Available / Incompatible (per `versions[]` ranges). Install = fetch the repo at the manifest-pinned branch/SHA for the running app version; update = move to newer pinned commit; uninstall removes cleanly.
+- **Security tiers still apply** (TAS 14.2): store listing is a curation signal, not a trust grant. Web plugins run sandboxed with only their declared permissions; native-side plugins are trusted in-process code and flagged as such in the store. The manifest permission declarations are enforced at runtime, not just displayed.
+- **NDI output is an explicit future plugin example** — not part of the base application.
+- The first-party `pluginInfo.json` schema + `PLUGIN_GUIDELINES` doc are written when the plugin runtime lands (M13); the registry repo can be created any time after the public git remote exists.
+
 ### Font strategy
 
 OpenSong styles reference old platform font names (`System`, `SmallSystem`, `Helvetica`, `Arial`, `Courier New`). Those font files are not shipped or referenced; instead:
@@ -209,7 +226,7 @@ The parity inventory comes from the opensong_3.4.8 source. Anything OpenSong doe
 - Activity log / song usage history (parity with `Entities/ActivityLog`)
 - CCLI metadata fields and reporting basics
 - Transpose/key editing completeness; language/i18n plumbing (translations as data)
-- NDI output: evaluated here; OpenSong 3.4 added it, but it is a niche pro-video feature — likely an output adapter later rather than a parity gate
+- NDI output: **decided — not in the base app.** Becomes a plugin once the plugin system exists (see plugin strategy).
 
 **M0–M9 = the initial release: a complete OpenSong replacement that also imports everything a user has.** This is the expanded reading of PRD Section 17 — the 10 criteria are a subset, not the whole bar.
 
@@ -217,7 +234,7 @@ The parity inventory comes from the opensong_3.4.8 source. Anything OpenSong doe
 - M10 — Sessions and musician experience: multiple simultaneous sessions, multiple outputs per session, musician displays, instrument profiles, follow/hybrid navigation, QR/session-code joining, guest access (PRD Phase 2)
 - M11 — Sync + deployment: bidirectional sync with conflict resolution, headless server + Docker Compose + PostgreSQL, Windows portable package (PortableApps.com), backup/restore archive (PRD Phase 4)
 - M12 — Android app (PRD Phase 5)
-- M13 — Extensions and integrations: public plugin API, additional import/export formats, optional Cast adapter, additional backup destinations (PRD Phase 6)
+- M13 — Extensions and integrations: public plugin API + `pluginInfo.json` manifest schema, plugin store (registry repo + PR submission + CI scanning + in-app manager per the plugin strategy), NDI as an early plugin, additional import/export formats, optional Cast adapter, additional backup destinations (PRD Phase 6)
 - M14 — Hosted and organizational features (PRD Phase 7)
 
 Each later phase gets its own short plan when it becomes the active milestone; the specs govern until then.
