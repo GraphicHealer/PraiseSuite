@@ -91,11 +91,14 @@ function RoleEditor({
 export function SettingsPage(): ReactNode {
   const [style, setStyle] = useState<SlideStyle | null>(null);
   const [bibles, setBibles] = useState<{ id: string; name: string; abbreviation: string; books: number }[]>([]);
+  const [net, setNet] = useState<{ lanEnabled: boolean; addresses: string[] } | null>(null);
+  const [syncAddr, setSyncAddr] = useState("");
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
     void api.style().then(setStyle);
     void api.bibles().then(setBibles).catch(() => {});
+    void api.network().then(setNet).catch(() => {});
   }, []);
 
   const importBible = async (files: FileList | null) => {
@@ -211,6 +214,42 @@ export function SettingsPage(): ReactNode {
         <div className="mt-2 text-xs text-zinc-500">
           {style.backgroundKey ? `Background image: ${style.backgroundKey}` : "No background image."}
           {style.logoKey ? ` Logo: ${style.logoKey}` : " No logo set."}
+        </div>
+      </fieldset>
+
+      <fieldset className="rounded border border-zinc-200 p-3 dark:border-zinc-800">
+        <legend className="px-1 text-sm font-medium">Sync &amp; remote access</legend>
+        <div className="space-y-2 text-xs">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={net?.lanEnabled ?? false}
+              disabled={!net}
+              onChange={(e) => void api.setNetwork(e.target.checked).then(setNet)}
+            />
+            Allow LAN access (receiver/stage on other devices)
+          </label>
+          <p className="text-zinc-500">
+            {net?.lanEnabled
+              ? `Listening on: ${net.addresses.join(", ")} — sign-in is required for remote devices.`
+              : "Local only (127.0.0.1) — no sign-in needed. Enabling LAN access turns the login gate back on."}
+          </p>
+          <div className="flex items-center gap-2 pt-1">
+            <input
+              className="w-56 rounded border border-zinc-300 bg-transparent px-2 py-1 dark:border-zinc-700"
+              placeholder="Server address (e.g. host:8080)"
+              value={syncAddr}
+              onChange={(e) => setSyncAddr(e.target.value)}
+            />
+            <button
+              className="rounded border border-zinc-300 px-3 py-1 opacity-50 dark:border-zinc-700"
+              title="Server sync arrives in a later milestone"
+              disabled
+            >
+              Connect to server
+            </button>
+            <span className="text-zinc-400">coming with server sync</span>
+          </div>
         </div>
       </fieldset>
 

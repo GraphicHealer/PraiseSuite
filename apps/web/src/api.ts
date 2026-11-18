@@ -106,6 +106,14 @@ class Api {
   };
   logout = () => this.setToken(null);
 
+  // server network / sync
+  network = () => this.req<{ lanEnabled: boolean; addresses: string[] }>("/api/v1/server/network");
+  setNetwork = (lanEnabled: boolean) =>
+    this.req<{ lanEnabled: boolean; addresses: string[] }>("/api/v1/server/network", {
+      method: "POST",
+      body: { lanEnabled },
+    });
+
   // songs
   songs = (query?: string) =>
     this.req<SongSummary[]>(`/api/v1/songs${query ? `?query=${encodeURIComponent(query)}` : ""}`);

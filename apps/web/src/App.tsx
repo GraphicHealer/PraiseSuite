@@ -63,6 +63,7 @@ function LoginGate({ onDone }: { onDone: () => void }) {
 
 export function App(): ReactNode {
   const [authed, setAuthed] = useState(api.isAuthed);
+  const [authRequired, setAuthRequired] = useState(true);
   const [page, setPage] = useState<Page>("library");
   const [songId, setSongId] = useState<string | null>(null);
   const [dark, setDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
@@ -72,6 +73,7 @@ export function App(): ReactNode {
     fetch("/api/v1/health")
       .then((r) => r.json())
       .then((h: { authRequired?: boolean }) => {
+        setAuthRequired(h.authRequired !== false);
         if (h.authRequired === false) setAuthed(true);
       })
       .catch(() => {});
@@ -117,15 +119,17 @@ export function App(): ReactNode {
           <button onClick={() => setDark((d) => !d)} className="rounded px-2 py-1 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800">
             {dark ? "Light" : "Dark"}
           </button>
-          <button
-            onClick={() => {
-              api.logout();
-              setAuthed(false);
-            }}
-            className="rounded px-2 py-1 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
-          >
-            Sign out
-          </button>
+          {authRequired && (
+            <button
+              onClick={() => {
+                api.logout();
+                setAuthed(false);
+              }}
+              className="rounded px-2 py-1 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            >
+              Sign out
+            </button>
+          )}
         </div>
       </header>
       <main className="flex-1">
