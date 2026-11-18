@@ -5,6 +5,7 @@ import { MainPage } from "./pages/MainPage.js";
 import { ImportPage } from "./pages/ImportPage.js";
 import { PresentPage } from "./pages/PresentPage.js";
 import { SettingsPage } from "./pages/SettingsPage.js";
+import { PrintWindow } from "./PrintPreview.js";
 
 type Page = "main" | "import" | "present" | "settings";
 
@@ -62,6 +63,11 @@ export function App(): ReactNode {
   const [authed, setAuthed] = useState(api.isAuthed);
   const [authRequired, setAuthRequired] = useState(true);
   const [page, setPage] = useState<Page>("main");
+  // Popup print window: opened via openPrintPreview (?print=<url>) — standalone UI, no nav chrome.
+  const [printParams] = useState(() => {
+    const p = new URLSearchParams(window.location.search);
+    return p.get("print") !== null ? p : null;
+  });
   const [presentReq, setPresentReq] = useState<{ service: Service; itemId: string | undefined } | null>(null);
   const [dark, setDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
 
@@ -86,6 +92,10 @@ export function App(): ReactNode {
         <LoginGate onDone={() => setAuthed(true)} />
       </div>
     );
+  }
+
+  if (printParams !== null) {
+    return <PrintWindow params={printParams} />;
   }
 
   const present = (service: Service, itemId?: string) => {

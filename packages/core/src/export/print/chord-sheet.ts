@@ -142,7 +142,10 @@ function groupHtml(wl: WrittenLine, cfg: PrintConfig, tr: number, capo: number, 
           let inner = t;
           if (c.shift) inner = `<span style="margin-left:-${c.shift}ch;display:inline-block">${inner}</span>`;
           if (c.indent) inner = `<span style="margin-left:1em">${inner}</span>`;
-          return `<td style="${roleCss(roles[lang2 ? "lyrics_language2" : "lyrics"])};padding:${sp.before}pt 0 ${sp.after}pt 0">${inner}</td>`;
+          // white-space:pre keeps the slice's own trailing space — it is the
+          // visual gap to the next column; a td boundary would otherwise
+          // collapse it and mash words together.
+          return `<td style="${roleCss(roles[lang2 ? "lyrics_language2" : "lyrics"])};padding:${sp.before}pt 0 ${sp.after}pt 0;white-space:pre">${inner}</td>`;
         })
         .join("") +
     `</tr>`,

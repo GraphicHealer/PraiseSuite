@@ -8,4 +8,6 @@ contextBridge.exposeInMainWorld("ps", {
   print: (url) => ipcRenderer.invoke("ps:print", url),
   /** Save-to-PDF dialog; resolves the saved path or null when cancelled. */
   printToPdf: (url, filename) => ipcRenderer.invoke("ps:print-pdf", { url, filename }),
+  /** Open the print-preview window (a real BrowserWindow, not an overlay). */
+  openPrintWindow: (query) => ipcRenderer.invoke("ps:open-print", query),
 });

@@ -80,6 +80,7 @@ export function createApp(options: AppOptions): PraiseSuiteApp {
       storage.setSetting("server.lanEnabled", String(v));
     },
     getLanEnabled: () => lanEnabled,
+    ...(webRoot !== null ? { webRoot } : {}),
   });
   // LAN off = localhost-only = trusted local user, no token needed.
   const isOpenLocal = () => !lanEnabled;

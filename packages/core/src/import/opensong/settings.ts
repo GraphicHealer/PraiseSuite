@@ -152,6 +152,68 @@ export const DEFAULT_PRINT_CONFIG: PrintConfig = {
   page: { width: 612, height: 792, margin: 72 },
 };
 
+/** OpenSong's own PrintSettings defaults (Settings/PrintSettings fixture). */
+const printRoleBase = (): TextStyle => ({ ...defaultSlideStyle().body, align: "left" });
+export const PRINT_ROLE_DEFAULTS: Record<string, TextStyle> = {
+  title: { ...printRoleBase(), font: "Arial", size: 20, bold: true },
+  author: { ...printRoleBase(), font: "Times New Roman", size: 12, italic: true },
+  heading: { ...printRoleBase(), font: "Arial", size: 10, bold: true, color: "#800000" },
+  chords: { ...printRoleBase(), font: "Times New Roman", size: 11, bold: true, color: "#000080" },
+  capo_chords: { ...printRoleBase(), font: "Times New Roman", size: 10, italic: true, color: "#008000" },
+  lyrics: { ...printRoleBase(), font: "Arial Narrow", size: 12 },
+  lyrics_language2: { ...printRoleBase(), font: "Arial Narrow", size: 8 },
+  copyright: { ...printRoleBase(), font: "Courier New", size: 9, italic: true },
+};
+
+/**
+ * Per-request print overrides (print-window options panel). Query params:
+ * `cFont/cSize/cColor/cBold/cItalic` -> chords role (capo_chords follows the
+ * same family); `lFont/lSize/lColor/lBold/lItalic` -> lyrics + language2;
+ * `landscape=1` -> swaps the page box dimensions.
+ */
+export function applyPrintOverrides(cfg: PrintConfig, q: URLSearchParams | Record<string, string | undefined>): PrintConfig {
+  cfg = structuredClone(cfg);
+  const get = (k: string) => (q instanceof URLSearchParams ? q.get(k) ?? undefined : q[k]);
+  const bool = (v: string | undefined) => (v === undefined ? undefined : v === "1" || v === "true");
+  const num = (v: string | undefined) => {
+    if (v === undefined) return undefined;
+    const n = Number.parseFloat(v);
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  };
+
+  const role = (name: string, prefix: string, inheritFont?: string): void => {
+    const base = cfg.roles[name] ?? PRINT_ROLE_DEFAULTS[name];
+    const font = get(`${prefix}Font`) ?? inheritFont;
+    const size = num(get(`${prefix}Size`));
+    const color = get(`${prefix}Color`);
+    const bold = bool(get(`${prefix}Bold`));
+    const italic = bool(get(`${prefix}Italic`));
+    if (!base || (font === undefined && size === undefined && color === undefined && bold === undefined && italic === undefined)) return;
+    cfg.roles[name] = {
+      ...base,
+      ...(font !== undefined ? { font } : {}),
+      ...(size !== undefined ? { size } : {}),
+      ...(color !== undefined ? { color } : {}),
+      ...(bold !== undefined ? { bold } : {}),
+      ...(italic !== undefined ? { italic } : {}),
+    };
+  };
+
+  role("chords", "c");
+  // Capo row tracks the chord family but keeps its own size/color.
+  role("capo_chords", "capo", get("cFont"));
+  role("lyrics", "l");
+  role("lyrics_language2", "l2", get("lFont"));
+
+  if (bool(get("landscape"))) {
+    const { width, height } = cfg.page;
+    if (height > width) {
+      cfg.page = { ...cfg.page, width: height, height: width };
+    }
+  }
+  return cfg;
+}
+
 export function parsePrintConfig(xml: string): PrintConfig {
   const doc = parseXml(xml);
   const root = asRecord(asRecord(doc)["print_settings"]);

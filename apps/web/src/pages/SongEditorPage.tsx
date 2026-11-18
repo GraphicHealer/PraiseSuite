@@ -14,7 +14,7 @@ import {
 import { api } from "../api.js";
 import { opensongLanguage } from "../opensong-language.js";
 import { useDark } from "../use-dark.js";
-import { PrintPreview } from "../PrintPreview.js";
+import { openPrintPreview } from "../PrintPreview.js";
 
 const input =
   "rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800";
@@ -66,7 +66,10 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
   const [capo, setCapo] = useState("");
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState("");
-  const [printUrl, setPrintUrl] = useState<string | null>(null);
+  // Print buttons open the standalone preview window (Chrome-style popup).
+  const setPrintUrl = (url: string | null) => {
+    if (url !== null) openPrintPreview({ url, filename: `${song?.title ?? "song"}.pdf`, logUrl: api.printUrl(`/api/v1/songs/${encodeURIComponent(id)}/log?action=6`) });
+  };
   const [userLabels, setUserLabels] = useState<string[]>([]);
   const viewRef = useRef<EditorView | null>(null);
   const dark = useDark();
@@ -429,7 +432,6 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
         <button onClick={ins.multiVerse} className={btn}>Multi-Verse</button>
         <button onClick={ins.section} className={btn}>Section</button>
       </div>
-      {printUrl && <PrintPreview url={printUrl} filename={`${song?.title ?? "song"}.pdf`} logUrl={`/api/v1/songs/${encodeURIComponent(song.id)}/log?action=6`} onClose={() => setPrintUrl(null)} />}
       <div className="min-h-0 flex-1 overflow-hidden rounded border border-zinc-300 dark:border-zinc-700">
         <CodeMirror
           value={source}

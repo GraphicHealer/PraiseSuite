@@ -1,4 +1,6 @@
 import { networkInterfaces } from "node:os";
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 import { API_VERSION } from "@praisesuite/api-contracts";
 import type {
@@ -20,6 +22,7 @@ import type { AuthService } from "./auth.js";
 import {
   analyzeImport,
   applyImport,
+  applyPrintOverrides,
   buildPlan,
   chordSheetHtml,
   defaultSlideStyle,
@@ -58,6 +61,8 @@ export interface AppDeps {
   broadcastToSession(sessionId: string, message: unknown): void;
   setLanEnabled(enabled: boolean): void;
   getLanEnabled(): boolean;
+  /** Built web UI directory — used to inject bundled-font @font-face into print docs. */
+  webRoot?: string | undefined;
 }
 
 function lanAddresses(): string[] {
@@ -596,7 +601,7 @@ export function buildRoutes(deps: AppDeps): Route[] {
     r("GET", "/api/v1/print/song/:id", "admin", "Song sheet: ?mode=chord|lyrics, &transpose=N, &capo=N", async (ctx) => {
       const song = await deps.repos.songs.get(ctx.params["id"]! as SongId);
       if (!song) throw new ApiError(404, "not_found", "Song not found");
-      const print = printConfig(deps.storage);
+      const print = applyPrintOverrides(printConfig(deps.storage), ctx.query);
       const mode = ctx.query.get("mode") ?? "chord";
       const tr = Number.parseInt(ctx.query.get("transpose") ?? "0", 10) || 0;
       const capoRaw = ctx.query.get("capo");
@@ -605,7 +610,7 @@ export function buildRoutes(deps: AppDeps): Route[] {
         ? lyricsSheetHtml(song, { print })
         : chordSheetHtml(song, { print, transpose: tr, capo });
       ctx.res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      ctx.res.end(html);
+      ctx.res.end(withFonts(html, deps.webRoot));
       return undefined;
     }),
     r("POST", "/api/v1/songs/:id/log", "admin", "Record a song activity (printed/copied) — called by print/export actions", async (ctx) => {
@@ -619,7 +624,7 @@ export function buildRoutes(deps: AppDeps): Route[] {
       const svc = await deps.repos.services.get(ctx.params["id"]! as Service["id"]);
       if (!svc) throw new ApiError(404, "not_found", "Service not found");
       ctx.res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      ctx.res.end(setListHtml(svc, printConfig(deps.storage).roles));
+      ctx.res.end(withFonts(setListHtml(svc, applyPrintOverrides(printConfig(deps.storage), ctx.query).roles), deps.webRoot));
       return undefined;
     }),
     // "Print songs" (OpenSong btn_set_print_songs): every song item's chord
@@ -628,16 +633,17 @@ export function buildRoutes(deps: AppDeps): Route[] {
       const svc = await deps.repos.services.get(ctx.params["id"]! as Service["id"]);
       if (!svc) throw new ApiError(404, "not_found", "Service not found");
       const parts: string[] = [];
+      const cfg = applyPrintOverrides(printConfig(deps.storage), ctx.query);
       for (const item of svc.items.filter((i) => i.kind === "song" && i.songId !== null)) {
         const song = await deps.repos.songs.get(item.songId!);
-        if (song) parts.push(chordSheetHtml(song, { print: printConfig(deps.storage) }));
+        if (song) parts.push(chordSheetHtml(song, { print: cfg }));
       }
       if (parts.length === 0) throw new ApiError(404, "not_found", "No songs in service");
       const html = parts
         .map((h) => h.replace(/^[\s\S]*?<body[^>]*>/i, "").replace(/<\/body>[\s\S]*$/i, ""))
         .join(`<div style="page-break-after:always"></div>`);
       ctx.res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      ctx.res.end(`<!doctype html><html><body>${html}</body></html>`);
+      ctx.res.end(withFonts(`<!doctype html><html><head><style>@page{size:${cfg.page.width}pt ${cfg.page.height}pt;margin:${cfg.page.margin}pt}</style></head><body>${html}</body></html>`, deps.webRoot));
       return undefined;
     }),
     // OpenSong-format export (MainWindow "Export" buttons).
@@ -686,7 +692,7 @@ export function buildRoutes(deps: AppDeps): Route[] {
     r("GET", "/api/v1/print/songbook", "admin", "Songbook / TOC grouped by theme", async (ctx) => {
       const songs = await deps.repos.songs.list();
       ctx.res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      ctx.res.end(songbookHtml(songs, printConfig(deps.storage).roles));
+      ctx.res.end(withFonts(songbookHtml(songs, applyPrintOverrides(printConfig(deps.storage), ctx.query).roles), deps.webRoot));
       return undefined;
     }),
 
@@ -825,6 +831,39 @@ function printConfig(storage: SqliteStorage): import("@praisesuite/core").PrintC
   } catch {
     return DEFAULT_PRINT_CONFIG;
   }
+}
+
+/**
+ * @font-face rules for the bundled UI fonts (Inter / Source Serif 4 /
+ * JetBrains Mono). Print documents render in their own window — without this
+ * they fall back to system fonts even when a role names a bundled family.
+ * Scanned once from the web build's hashed asset names.
+ */
+let fontFacesCache: string | null = null;
+function fontFacesCss(webRoot: string | undefined): string {
+  if (fontFacesCache !== null) return fontFacesCache;
+  fontFacesCache = "";
+  if (webRoot === undefined) return fontFacesCache;
+  try {
+    const files = readdirSync(join(webRoot, "assets"));
+    const rules: string[] = [];
+    for (const [slug, family] of [["inter", "Inter"], ["source-serif-4", "Source Serif 4"], ["jetbrains-mono", "JetBrains Mono"]] as const) {
+      for (const weight of [400, 700]) {
+        const file = files.find((n) => n.startsWith(`${slug}-latin-${weight}-normal-`) && n.endsWith(".woff2"));
+        if (file) rules.push(`@font-face{font-family:'${family}';font-weight:${weight};font-style:normal;src:url('/assets/${file}') format('woff2')}`);
+      }
+    }
+    fontFacesCache = rules.join("\n");
+  } catch {
+    // no web build (dev mode) — print docs use system fonts
+  }
+  return fontFacesCache;
+}
+
+/** Inject bundled-font @font-face into a rendered print document. */
+function withFonts(html: string, webRoot: string | undefined): string {
+  const css = fontFacesCss(webRoot);
+  return css === "" ? html : html.replace("</head>", `<style>${css}</style></head>`);
 }
 
 function biblesIndex(storage: SqliteStorage): { id: string; name: string; abbreviation: string; books: number; copyright: string | null }[] {

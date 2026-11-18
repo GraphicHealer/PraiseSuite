@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Service, ServiceItem, ServiceItemId, SongSummary } from "@praisesuite/core";
 import { api } from "../api.js";
-import { PrintPreview } from "../PrintPreview.js";
+import { openPrintPreview } from "../PrintPreview.js";
 import { SongEditorPage } from "./SongEditorPage.js";
 
 const btn =
@@ -25,7 +25,10 @@ export function MainPage({
   onImport: () => void;
 }): ReactNode {
   const [mode, setMode] = useState<"songs" | "sets">("songs");
-  const [printUrl, setPrintUrl] = useState<string | null>(null);
+  // Print buttons open the standalone preview window (Chrome-style popup).
+  const setPrintUrl = (url: string | null) => {
+    if (url !== null) openPrintPreview({ url });
+  };
 
   return (
     <div className="flex h-[calc(100vh-53px)] flex-col">
@@ -50,7 +53,6 @@ export function MainPage({
           <SetsMode onPresentService={onPresentService} setPrintUrl={setPrintUrl} />
         )}
       </div>
-      {printUrl && <PrintPreview url={printUrl} filename="document.pdf" onClose={() => setPrintUrl(null)} />}
     </div>
   );
 }

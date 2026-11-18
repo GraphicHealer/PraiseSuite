@@ -98,6 +98,21 @@ ipcMain.handle("ps:print", async (_e, url) => {
   await shell.openPath(tmp);
 });
 
+/**
+ * Print preview: a real popup window (Chrome-print-preview style) holding the
+ * app at /?print=<url> — its own options panel + paged.js page sheets.
+ */
+ipcMain.handle("ps:open-print", async (_e, query) => {
+  const win = new BrowserWindow({
+    width: 1180,
+    height: 840,
+    autoHideMenuBar: true,
+    title: "Print preview — PraiseSuite",
+    webPreferences: { contextIsolation: true, preload: path.join(dir, "preload.mjs") },
+  });
+  await win.loadURL(`${BASE}/?${query}`);
+});
+
 ipcMain.handle("ps:print-pdf", async (e, { url, filename }) => {
   const win = await hiddenPrintWindow(url);
   const pdf = await win.webContents.printToPDF({ printBackground: true });

@@ -7,6 +7,8 @@ import {
   parseChord,
   parsePrintConfig,
   parseOpenSongLyrics,
+  applyPrintOverrides,
+  DEFAULT_PRINT_CONFIG,
   type Service,
   type Song,
 } from "../src/index.js";
@@ -69,6 +71,14 @@ describe("chordSheetHtml (SongML slice model)", () => {
     expect(html).toContain('<table class="grp"');
     expect(html).toContain("choosing");   // "_" stripped in print too
     expect(html).not.toContain("choo___sing");
+  });
+
+  it("keeps slice-internal spaces (td boundaries don't mash words)", () => {
+    // white-space:pre preserves the slice's trailing space — without it the
+    // td boundary collapses the gap and "choosing a mighty" becomes one word.
+    const lyRow = html.split("\n").find((l) => l.includes('class="ly"'))!;
+    expect(lyRow).toContain("white-space:pre");
+    expect(lyRow).toContain("mighty "); // trailing slice space preserved -> gap to next column
   });
 
   it("places chords at slice boundaries in the chord row", () => {
@@ -150,6 +160,35 @@ describe("chordSheetHtml (SongML slice model)", () => {
     expect(h).toContain("Pre-chorus");
     expect(h).toContain("Bridge 2");
     expect(h).toContain("Tag");
+  });
+});
+
+describe("applyPrintOverrides", () => {
+  it("overrides the chords role without touching lyric layout", () => {
+    const cfg = applyPrintOverrides(DEFAULT_PRINT_CONFIG, {
+      cFont: "JetBrains Mono", cSize: "14", cColor: "#ff0000", cBold: "0", cItalic: "1",
+    });
+    expect(cfg.roles["chords"]).toMatchObject({ font: "JetBrains Mono", size: 14, color: "#ff0000", bold: false, italic: true });
+    expect(cfg.roles["lyrics"]).toBeUndefined(); // untouched
+    // capo row inherits the chord family but keeps its own size/color
+    expect(cfg.roles["capo_chords"]).toMatchObject({ font: "JetBrains Mono", size: 10, color: "#008000" });
+  });
+
+  it("overrides lyrics font+size for both language rows", () => {
+    const cfg = applyPrintOverrides(DEFAULT_PRINT_CONFIG, { lFont: "Inter", lSize: "16" });
+    expect(cfg.roles["lyrics"]).toMatchObject({ font: "Inter", size: 16 });
+    expect(cfg.roles["lyrics_language2"]).toMatchObject({ font: "Inter", size: 8 }); // family follows, size keeps default
+  });
+
+  it("landscape swaps the page box", () => {
+    const cfg = applyPrintOverrides(DEFAULT_PRINT_CONFIG, { landscape: "1" });
+    expect(cfg.page).toMatchObject({ width: 792, height: 612 });
+  });
+
+  it("does not mutate the input config", () => {
+    const src = { ...DEFAULT_PRINT_CONFIG };
+    applyPrintOverrides(src, { cSize: "20" });
+    expect(src.roles["chords"]).toBeUndefined();
   });
 });
 
