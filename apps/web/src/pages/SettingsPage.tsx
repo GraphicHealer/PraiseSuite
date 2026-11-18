@@ -93,12 +93,14 @@ export function SettingsPage(): ReactNode {
   const [bibles, setBibles] = useState<{ id: string; name: string; abbreviation: string; books: number }[]>([]);
   const [net, setNet] = useState<{ lanEnabled: boolean; addresses: string[] } | null>(null);
   const [syncAddr, setSyncAddr] = useState("");
+  const [displayMode, setDisplayMode] = useState<string>("auto");
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
     void api.style().then(setStyle);
     void api.bibles().then(setBibles).catch(() => {});
     void api.network().then(setNet).catch(() => {});
+    void api.setting<string>("present.displayMode").then((s) => setDisplayMode(s.value ?? "auto")).catch(() => {});
   }, []);
 
   const importBible = async (files: FileList | null) => {
@@ -114,6 +116,7 @@ export function SettingsPage(): ReactNode {
   const save = async () => {
     if (!style) return;
     await api.saveStyle(style);
+    await api.saveSetting("present.displayMode", displayMode).catch(() => {});
     setMsg("Saved.");
     setTimeout(() => setMsg(""), 2000);
   };
@@ -214,6 +217,29 @@ export function SettingsPage(): ReactNode {
         <div className="mt-2 text-xs text-zinc-500">
           {style.backgroundKey ? `Background image: ${style.backgroundKey}` : "No background image."}
           {style.logoKey ? ` Logo: ${style.logoKey}` : " No logo set."}
+        </div>
+      </fieldset>
+
+      <fieldset className="rounded border border-zinc-200 p-3 dark:border-zinc-800">
+        <legend className="px-1 text-sm font-medium">Monitors</legend>
+        <div className="flex flex-wrap items-center gap-4 text-xs">
+          <label className="flex items-center gap-2">
+            Default Monitor Mode
+            <select
+              value={displayMode}
+              onChange={(e) => setDisplayMode(e.target.value)}
+              className="rounded border border-zinc-300 bg-transparent px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900"
+            >
+              <option value="auto">Automatic</option>
+              <option value="single">Single Screen</option>
+              <option value="dual">Dual Screen</option>
+              <option value="preview">Preview Dual Screen</option>
+            </select>
+          </label>
+          <p className="text-zinc-500">
+            Dual puts fullscreen output on a projector; single opens a resizable output window;
+            preview uses only the helper&apos;s slide previews. Applies on next launch.
+          </p>
         </div>
       </fieldset>
 

@@ -128,34 +128,70 @@ ipcMain.handle("ps:print-pdf", async (e, { url, filename }) => {
 });
 
 /**
- * Presentation output: fullscreen borderless window on the first
- * non-primary display (projector), falling back to a normal window when
- * there's only one display.
+ * Presentation output modes (OpenSong Present → single/dual/preview):
+ *   auto    — dual_screen when a second display exists, else preview.
+ *   dual    — fullscreen borderless on the first non-primary display;
+ *             a resizable window on the primary when there is only one.
+ *   single  — a resizable receiver window on the primary display.
+ *   preview — no output window; the helper's previews are the output.
  */
+let displayMode = "auto";
+
+async function loadDisplayMode() {
+  try {
+    const res = await fetch(`${BASE}/api/v1/settings/present.displayMode`);
+    if (res.ok) displayMode = ((await res.json()).value ?? "auto") || "auto";
+  } catch {
+    displayMode = "auto";
+  }
+}
+
 function openOutputWindow() {
+  if (outputWindow !== null) return;
   const displays = screen.getAllDisplays();
   const primary = screen.getPrimaryDisplay();
   const target = displays.find((d) => d.id !== primary.id);
+  const mode = displayMode === "auto" ? (target ? "dual" : "preview") : displayMode;
 
-  // Single display: skip the output window — the presenter can open
-  // /receiver in a tab or plug in a projector to auto-attach.
-  if (!target) {
-    console.log("single display — no output window (plug in a projector for fullscreen output)");
+  if (mode === "preview") {
+    console.log("preview mode — helper window previews are the output");
     return;
   }
 
-  outputWindow = new BrowserWindow({
-    x: target.bounds.x,
-    y: target.bounds.y,
-    fullscreen: true,
-    frame: false,
-    alwaysOnTop: false,
-    backgroundColor: "#000000",
-    webPreferences: { contextIsolation: true },
-  });
+  if (mode === "dual" && target) {
+    outputWindow = new BrowserWindow({
+      x: target.bounds.x,
+      y: target.bounds.y,
+      fullscreen: true,
+      frame: false,
+      backgroundColor: "#000000",
+      webPreferences: { contextIsolation: true },
+    });
+  } else {
+    // single (or dual with only one display): resizable window on primary.
+    outputWindow = new BrowserWindow({
+      width: 960,
+      height: 540,
+      backgroundColor: "#000000",
+      webPreferences: { contextIsolation: true },
+    });
+    outputWindow.setMenuBarVisibility(false);
+  }
   outputWindow.loadURL(`${BASE}/receiver`);
   outputWindow.on("closed", () => (outputWindow = null));
 }
+
+// [M] Full Screen / Normal Screen on the operator console.
+ipcMain.handle("ps:toggle-output", () => {
+  if (outputWindow === null) {
+    displayMode = "single";
+    openOutputWindow();
+    return "windowed";
+  }
+  const fs = outputWindow.isFullScreen();
+  outputWindow.setFullScreen(!fs);
+  return fs ? "windowed" : "fullscreen";
+});
 
 app.whenReady().then(async () => {
   startServer();
@@ -165,6 +201,7 @@ app.whenReady().then(async () => {
     console.error(e.message);
   }
   openControlWindow();
+  await loadDisplayMode();
   openOutputWindow();
 
   screen.on("display-added", () => {

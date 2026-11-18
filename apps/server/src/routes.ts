@@ -485,6 +485,18 @@ export function buildRoutes(deps: AppDeps): Route[] {
       return style;
     }),
 
+    // Generic key/value settings (present.displayMode, alert style, …).
+    r("GET", "/api/v1/settings/:key", "guest", "Read a stored setting", async (ctx) => {
+      const raw = deps.storage.getSetting(ctx.params["key"]!);
+      return { key: ctx.params["key"], value: raw === null ? null : (JSON.parse(raw) as unknown) };
+    }),
+
+    r("PUT", "/api/v1/settings/:key", "admin", "Store a setting", async (ctx) => {
+      const body = z.object({ value: z.unknown() }).parse(await ctx.body());
+      deps.storage.setSetting(ctx.params["key"]!, JSON.stringify(body.value));
+      return { key: ctx.params["key"], value: body.value };
+    }),
+
     r("POST", "/api/v1/import/opensong/settings", "admin", "Import OpenSong PresentSettings/PrintSettings", async (ctx) => {
       const body = z
         .object({

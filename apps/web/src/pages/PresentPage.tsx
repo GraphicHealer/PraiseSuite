@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { PresentationSession, Service, ServiceItem } from "@praisesuite/core";
 import { AddItemDialog, type AddItemTab } from "../components/AddItemDialog.js";
+import { SlideCanvas } from "../components/SlideCanvas.js";
 import { api, type PresentMode, type SlideResponse } from "../api.js";
-import { fontStack } from "../fonts";
-import type { SlideStyle, TextStyle } from "../slide-types";
 
 const btn =
   "rounded border border-zinc-300 px-2 py-1 text-left text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800 disabled:opacity-50";
@@ -23,99 +22,6 @@ type PlanSlide = {
   itemNotes: string | null;
 };
 type Plan = { slides: PlanSlide[]; current: number; total: number };
-
-type SlideStyleLike = SlideStyle | undefined;
-
-function mediaUrl(key: string): string {
-  return `/api/v1/media/${encodeURIComponent(key.split("/").pop() ?? key)}`;
-}
-
-function textCss(s: TextStyle, scale = 1): CSSProperties {
-  return {
-    fontFamily: fontStack(s.font),
-    fontSize: `${Math.max(9, s.size * scale * 0.5)}px`,
-    fontWeight: s.bold ? 700 : 400,
-    fontStyle: s.italic ? "italic" : "normal",
-    textDecoration: s.underline ? "underline" : "none",
-    color: s.color,
-    textAlign: s.align,
-  };
-}
-
-/** Miniature output canvas — mirrors the receiver's mode/background/text stack. */
-function SlidePreview({
-  title,
-  lines,
-  style,
-  backgroundKey,
-  logoKey,
-  mode,
-  blanked,
-  next,
-}: {
-  title: string;
-  lines: string[];
-  style: SlideStyleLike;
-  backgroundKey?: string | null;
-  logoKey?: string | null;
-  mode?: PresentMode;
-  blanked?: boolean;
-  next?: { title: string } | null;
-}): ReactNode {
-  const black = blanked || mode === "blank";
-  const white = mode === "white";
-  const hidden = mode === "hidden";
-  const logo = mode === "logo";
-  const bg = backgroundKey ? mediaUrl(backgroundKey) : null;
-  return (
-    <div
-      className="relative aspect-video w-full overflow-hidden rounded border border-zinc-300 bg-black dark:border-zinc-700"
-      title={title}
-    >
-      {bg && !black && !white && (
-        <img src={bg} alt="" className="absolute inset-0 h-full w-full object-cover" />
-      )}
-      {!bg && !black && !white && (
-        <div className="absolute inset-0" style={{ backgroundColor: style?.backgroundColor ?? "#000" }} />
-      )}
-      {white && <div className="absolute inset-0 bg-white" />}
-      {logo && logoKey && !black && !white && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black">
-          <img src={mediaUrl(logoKey)} alt="logo" className="max-h-[70%] max-w-[70%]" />
-        </div>
-      )}
-      {!black && !white && !hidden && !logo && style && (
-        <div
-          className="absolute inset-0 flex flex-col justify-center px-3"
-          style={{
-            justifyContent:
-              style.body.valign === "top" ? "flex-start" : style.body.valign === "bottom" ? "flex-end" : "center",
-            alignItems:
-              style.body.align === "left" ? "flex-start" : style.body.align === "right" ? "flex-end" : "center",
-          }}
-        >
-          {style.title.enabled && (
-            <div className="absolute top-0 right-0 left-0 px-2 pt-1" style={textCss(style.title, 0.55)}>
-              {title}
-            </div>
-          )}
-          <div className="max-w-full space-y-1">
-            {lines.map((l, i) => (
-              <p key={i} style={textCss(style.body, 0.55)} className="leading-tight">
-                {l}
-              </p>
-            ))}
-          </div>
-          {style.subtitle.enabled && (
-            <div className="absolute right-0 bottom-0 left-0 px-2 pb-1" style={textCss(style.subtitle, 0.55)}>
-              {style.descriptiveSubtitles ? next?.title ?? "" : title.split(" — ")[0]}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 /**
  * OpenSong Presentation Helper — operator console matching
@@ -283,7 +189,14 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
   /** OpenSong [Q]/[S] quick-insert opens the shared Add Item dialog. */
   const openAdd = useCallback((tab: AddItemTab) => setAddTab(tab), []);
 
+  // [M] toggles the OUTPUT window (OpenSong Full Screen); falls back to
+  // this window's fullscreen in plain browsers.
   const toggleFullscreen = useCallback(() => {
+    const ps = (window as unknown as { ps?: { toggleOutput?: () => Promise<string> } }).ps;
+    if (ps?.toggleOutput) {
+      void ps.toggleOutput().then((s) => setFullscreen(s === "fullscreen"));
+      return;
+    }
     if (document.fullscreenElement) {
       void document.exitFullscreen();
       setFullscreen(false);
@@ -543,16 +456,20 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
             <div className="flex-1">
               <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Current slide preview</p>
               {shownSlide?.slide ? (
-                <SlidePreview
-                  title={shownSlide.slide.title}
-                  lines={shownSlide.slide.lines}
-                  style={shownSlide.slide.style}
-                  backgroundKey={shownSlide.slide.backgroundKey}
-                  logoKey={shownSlide.slide.logoKey}
-                  mode={activeMode}
-                  blanked={shownSlide.blanked}
-                  next={shownSlide.slide.next}
-                />
+                <div className="aspect-video w-full overflow-hidden rounded border border-zinc-300 dark:border-zinc-700">
+                  <SlideCanvas
+                    title={shownSlide.slide.title}
+                    lines={shownSlide.slide.lines}
+                    style={shownSlide.slide.style}
+                    backgroundKey={shownSlide.slide.backgroundKey}
+                    backgroundAsText={shownSlide.slide.backgroundAsText}
+                    mediaKey={shownSlide.slide.mediaKey}
+                    logoKey={shownSlide.slide.logoKey}
+                    mode={activeMode}
+                    blanked={shownSlide.blanked}
+                    next={shownSlide.slide.next}
+                  />
+                </div>
               ) : (
                 <div className="aspect-video w-full rounded border border-zinc-300 bg-black dark:border-zinc-700" />
               )}
@@ -560,11 +477,13 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
             <div className="flex-1">
               <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Next slide preview</p>
               {slide?.slide?.next ? (
-                <SlidePreview
-                  title={slide.slide.next.title}
-                  lines={slide.slide.next.lines}
-                  style={slide.slide.style}
-                />
+                <div className="aspect-video w-full overflow-hidden rounded border border-zinc-300 dark:border-zinc-700">
+                  <SlideCanvas
+                    title={slide.slide.next.title}
+                    lines={slide.slide.next.lines}
+                    style={slide.slide.style}
+                  />
+                </div>
               ) : (
                 <div className="aspect-video w-full rounded border border-zinc-300 bg-black dark:border-zinc-700" />
               )}

@@ -82,7 +82,8 @@ export function defaultSlideStyle(): SlideStyle {
     title: defaultTextStyle({ size: 26, italic: true, valign: "bottom", autoScale: false }),
     body: defaultTextStyle({ size: 34 }),
     subtitle: defaultTextStyle({ size: 18, italic: true, valign: "bottom", autoScale: false }),
-    alert: defaultTextStyle({ size: 28, bold: true, border: false, shadow: true }),
+    // OpenSong default alert: 40pt bold, red fill, left/top.
+    alert: defaultTextStyle({ size: 40, bold: true, border: false, shadow: false, fill: true, fillColor: "#FF0000", align: "left", valign: "top" }),
     descriptiveSubtitles: false,
     highlightChorus: true,
     backgroundColor: "#408080",

@@ -63,6 +63,16 @@ export function AddItemDialog({
   const [bibles, setBibles] = useState<{ id: string; name: string; abbreviation: string }[]>([]);
   const [bibleId, setBibleId] = useState("");
   const [bibleRef, setBibleRef] = useState("");
+  const [bibleDoc, setBibleDoc] = useState<{
+    name: string;
+    books: { number: number; name: string; chapters: string[][] }[];
+  } | null>(null);
+  const [bookNum, setBookNum] = useState(0);
+  const [chapter, setChapter] = useState(1);
+  const [vFrom, setVFrom] = useState(1);
+  const [vTo, setVTo] = useState(1);
+  const [vPerSlide, setVPerSlide] = useState(2);
+  const [showNums, setShowNums] = useState(true);
   const [customTitle, setCustomTitle] = useState("");
   const [customBody, setCustomBody] = useState("");
   const [externalUrl, setExternalUrl] = useState("");
@@ -110,11 +120,46 @@ export function AddItemDialog({
     setPreviewSong(null);
   };
 
+  // ScripturePickerWindow: bible doc loads lazily for the book/chapter/verse lists.
+  useEffect(() => {
+    if (tab === "scripture" && bibleId && bibleDoc === null)
+      void api.bible(bibleId).then(setBibleDoc).catch(() => {});
+  }, [tab, bibleId, bibleDoc]);
+
+  const book = bibleDoc?.books.find((b) => b.number === bookNum) ?? null;
+  const verses = book?.chapters[chapter - 1] ?? [];
+  const to = Math.max(vFrom, Math.min(vTo, verses.length));
+
+  // OpenSong scripture slide text: "v. text v. text" per slide, N verses/slide.
+  const scriptureSlides = () => {
+    const sel = verses.slice(vFrom - 1, to);
+    const slides: { body: string }[] = [];
+    for (let i = 0; i < sel.length; i += Math.max(1, vPerSlide)) {
+      const group = sel.slice(i, i + Math.max(1, vPerSlide));
+      slides.push({
+        body: group.map((v, j) => (showNums ? `${vFrom + i + j} ${v}` : v)).join(" "),
+      });
+    }
+    return slides;
+  };
+  const scrTitle = book ? `${book.name} ${chapter}:${vFrom}${to > vFrom ? `-${to}` : ""}` : "";
+  const scrPreview = scriptureSlides().map((s) => s.body).join("\n\n");
+
   const addScripture = async () => {
-    if (!bibleId || !bibleRef.trim()) return;
     try {
-      const p = await api.passage(bibleId, bibleRef.trim());
-      await onAdd([makeItem({ kind: "scripture", title: p.title, slides: p.slides })]);
+      // Structured pick (book/chapter/verses) or a typed quick reference.
+      if (book && verses.length > 0) {
+        const slides = scriptureSlides();
+        if (slides.length === 0) return;
+        const abbr = bibles.find((b) => b.id === bibleId)?.abbreviation ?? null;
+        await onAdd([
+          makeItem({ kind: "scripture", title: scrTitle, subtitle: abbr, slides }),
+        ]);
+      } else {
+        if (!bibleId || !bibleRef.trim()) return;
+        const p = await api.passage(bibleId, bibleRef.trim());
+        await onAdd([makeItem({ kind: "scripture", title: p.title, slides: p.slides })]);
+      }
       setBibleRef("");
       onClose();
     } catch (e) {
@@ -284,29 +329,130 @@ export function AddItemDialog({
         )}
 
         {tab === "scripture" && (
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-semibold">
-              Translation
-              <select value={bibleId} onChange={(e) => setBibleId(e.target.value)} className={`${input} mt-0.5 w-full font-normal`}>
-                {bibles.map((b) => (
-                  <option key={b.id} value={b.id}>{b.abbreviation} — {b.name}</option>
-                ))}
-              </select>
-            </label>
-            <label className="text-xs font-semibold">
-              Reference
-              <input
-                autoFocus
-                value={bibleRef}
-                onChange={(e) => setBibleRef(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && void addScripture()}
-                placeholder="John 3:16-17"
-                className={`${input} mt-0.5 w-full font-normal`}
-              />
-            </label>
-            <button onClick={() => void addScripture()} className="mt-1 self-end rounded bg-indigo-600 px-6 py-1.5 text-sm text-white hover:bg-indigo-500">
-              Insert
-            </button>
+          <div className="flex min-h-0 flex-1 flex-col gap-2">
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-1.5 text-xs">
+                <span className="font-semibold">Version:</span>
+                <select
+                  value={bibleId}
+                  onChange={(e) => { setBibleId(e.target.value); setBibleDoc(null); setBookNum(0); }}
+                  className={input}
+                >
+                  {bibles.map((b) => (
+                    <option key={b.id} value={b.id}>{b.abbreviation} — {b.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-1 items-center gap-1.5 text-xs">
+                <span className="font-semibold">Quick reference:</span>
+                <input
+                  value={bibleRef}
+                  onChange={(e) => { setBibleRef(e.target.value); if (e.target.value) setBookNum(0); }}
+                  onKeyDown={(e) => e.key === "Enter" && void addScripture()}
+                  placeholder="John 3:16-17"
+                  className={`${input} flex-1`}
+                />
+              </label>
+            </div>
+            <div className="flex min-h-0 flex-1 gap-2">
+              {/* OT / NT book lists */}
+              {(["OT", "NT"] as const).map((testament) => (
+                <div key={testament} className="flex w-1/5 min-w-0 flex-col">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                    {testament === "OT" ? "Old Testament" : "New Testament"}
+                  </p>
+                  <ul className="min-h-0 flex-1 overflow-auto rounded border border-zinc-300 dark:border-zinc-700">
+                    {(bibleDoc?.books ?? [])
+                      .filter((b) => (testament === "OT" ? b.number <= 39 : b.number > 39))
+                      .map((b) => (
+                        <li key={b.number}>
+                          <button
+                            onClick={() => { setBookNum(b.number); setChapter(1); setVFrom(1); setVTo(1); setBibleRef(""); }}
+                            className={`w-full truncate px-1.5 py-0.5 text-left text-xs ${bookNum === b.number ? "bg-indigo-100 dark:bg-indigo-950" : "hover:bg-zinc-50 dark:hover:bg-zinc-800"}`}
+                          >
+                            {b.name}
+                          </button>
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              ))}
+              {/* Chapter */}
+              <div className="flex w-14 shrink-0 flex-col">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Chapter</p>
+                <ul className="min-h-0 flex-1 overflow-auto rounded border border-zinc-300 dark:border-zinc-700">
+                  {book?.chapters.map((_, i) => (
+                    <li key={i}>
+                      <button
+                        onClick={() => { setChapter(i + 1); setVFrom(1); setVTo(1); }}
+                        className={`w-full px-1.5 py-0.5 text-center text-xs ${chapter === i + 1 ? "bg-indigo-100 dark:bg-indigo-950" : "hover:bg-zinc-50 dark:hover:bg-zinc-800"}`}
+                      >
+                        {i + 1}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              {/* From / To verse */}
+              {(["from", "to"] as const).map((which) => (
+                <div key={which} className="flex w-14 shrink-0 flex-col">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                    {which === "from" ? "Verse" : "Through"}
+                  </p>
+                  <ul className="min-h-0 flex-1 overflow-auto rounded border border-zinc-300 dark:border-zinc-700">
+                    {verses.map((_, i) => (
+                      <li key={i}>
+                        <button
+                          onClick={() => (which === "from" ? setVFrom(i + 1) : setVTo(i + 1))}
+                          className={`w-full px-1.5 py-0.5 text-center text-xs ${
+                            (which === "from" ? vFrom : Math.max(vFrom, vTo)) === i + 1 ? "bg-indigo-100 dark:bg-indigo-950" : "hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                          }`}
+                        >
+                          {i + 1}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+              {/* Preview */}
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                  Preview {scrTitle && `— ${scrTitle}`}
+                </p>
+                <textarea
+                  readOnly
+                  value={scrPreview}
+                  className="min-h-0 flex-1 resize-none rounded border border-zinc-300 bg-zinc-50 p-1.5 text-xs leading-snug dark:border-zinc-700 dark:bg-zinc-950"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-1.5 text-xs">
+                <span className="font-semibold">Verses per slide:</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={vPerSlide}
+                  onChange={(e) => setVPerSlide(Number(e.target.value) || 1)}
+                  className={`${input} w-14`}
+                />
+              </label>
+              <label className="flex items-center gap-1.5 text-xs">
+                <input type="checkbox" checked={showNums} onChange={(e) => setShowNums(e.target.checked)} />
+                Show verse numbers
+              </label>
+              <div className="flex-1" />
+              <button
+                disabled={!book && !bibleRef.trim()}
+                onClick={() => void addScripture()}
+                className="rounded bg-indigo-600 px-6 py-1.5 text-sm text-white hover:bg-indigo-500 disabled:opacity-50"
+              >
+                Insert
+              </button>
+              <button onClick={onClose} className={dlgBtn}>Done</button>
+            </div>
           </div>
         )}
 

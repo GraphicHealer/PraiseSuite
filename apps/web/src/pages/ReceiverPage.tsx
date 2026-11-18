@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { fontStack } from "../fonts";
-import type { SlideStyle, TextStyle } from "../slide-types";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { SlideCanvas } from "../components/SlideCanvas.js";
+import type { SlideStyle } from "../slide-types";
 
 interface SlidePayload {
   index: number;
@@ -25,31 +25,6 @@ interface SlideState {
   mode: "normal" | "blank" | "white" | "hidden" | "logo" | "freeze";
   alert: string | null;
   slide: SlidePayload | null;
-}
-
-function mediaUrl(key: string): string {
-  return `/api/v1/media/${encodeURIComponent(key.split("/").pop() ?? key)}`;
-}
-
-const VIDEO_EXT = /\.(mp4|webm|mov|m4v|ogv)$/i;
-const isVideo = (key: string) => VIDEO_EXT.test(key);
-
-function textCss(s: TextStyle): CSSProperties {
-  return {
-    fontFamily: fontStack(s.font),
-    fontSize: `clamp(1rem, ${(s.size / 1080) * 1920}px, ${s.size * 4}px)`,
-    fontWeight: s.bold ? 700 : 400,
-    fontStyle: s.italic ? "italic" : "normal",
-    textDecoration: s.underline ? "underline" : "none",
-    color: s.color,
-    textAlign: s.align,
-    textShadow: [
-      s.border ? `-${s.borderThickness}px -${s.borderThickness}px 0 ${s.borderColor}, ${s.borderThickness}px -${s.borderThickness}px 0 ${s.borderColor}, -${s.borderThickness}px ${s.borderThickness}px 0 ${s.borderColor}, ${s.borderThickness}px ${s.borderThickness}px 0 ${s.borderColor}` : "",
-      s.shadow ? `0 ${s.borderThickness * 2}px ${s.borderThickness * 3}px ${s.shadowColor}` : "",
-    ]
-      .filter(Boolean)
-      .join(", ") || "none",
-  };
 }
 
 /**
@@ -146,118 +121,29 @@ export function ReceiverPage(): ReactNode {
   }
   const shown = state?.mode === "freeze" ? frozen ?? state : state;
   const slide = shown?.slide ?? null;
-  const style = slide?.style;
-  const bg = slide?.backgroundKey ? mediaUrl(slide.backgroundKey) : null;
-  const black = !state || state.blanked || state.mode === "blank" || !slide;
-  const logoOnly = state?.mode === "logo" && slide?.logoKey;
-  // OpenSong modes: [W] White = all-white screen; [H] Hidden = background only.
-  const white = state?.mode === "white";
-  const textHidden = state?.mode === "hidden";
   const lines = slide?.lines ?? [];
   // Looping announcements cycle their lines within the current slide.
   const visible = slide?.loopSeconds ? [lines[loopIdx % Math.max(1, lines.length)] ?? ""] : lines;
 
   return (
-    <div
-      className="relative flex min-h-screen flex-col overflow-hidden bg-black transition-opacity"
-      style={{ transitionDuration: `${style?.transitionMs ?? 100}ms` }}
-    >
-      {!black && style && (
-        <>
-          {bg && isVideo(slide?.backgroundKey ?? "") ? (
-            <video
-              key={bg}
-              src={bg}
-              autoPlay
-              loop
-              muted
-              playsInline
-              className="absolute inset-0 h-full w-full object-cover"
-            />
-          ) : bg ? (
-            <img
-              src={bg}
-              alt=""
-              className="absolute inset-0 h-full w-full object-cover transition-opacity"
-              style={{ transitionDuration: `${style.transitionMs}ms` }}
-            />
-          ) : null}
-          <div
-            className="absolute inset-0"
-            style={{ backgroundColor: bg ? "transparent" : style.backgroundColor }}
-          />
-        </>
-      )}
-      {slide?.mediaKey && !black && !logoOnly && (
-        isVideo(slide.mediaKey) ? (
-          <video
-            key={slide.mediaKey}
-            src={mediaUrl(slide.mediaKey)}
-            autoPlay
-            loop
-            muted
-            playsInline
-            className="absolute inset-0 z-[1] h-full w-full object-contain bg-black"
-          />
-        ) : (
-          <img
-            src={mediaUrl(slide.mediaKey)}
-            alt=""
-            className="absolute inset-0 z-[1] h-full w-full object-contain bg-black"
-          />
-        )
-      )}
-      {logoOnly && slide?.logoKey && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black">
-          <img src={mediaUrl(slide.logoKey)} alt="logo" className="max-h-[60vh] max-w-[60vw]" />
-        </div>
-      )}
-      {white && <div className="absolute inset-0 z-[5] bg-white" />}
-      {!black && !logoOnly && !textHidden && style && !(slide?.backgroundAsText && bg) && (
-        <div
-          className="relative flex min-h-screen flex-1 flex-col justify-center"
-          style={{
-            padding: style.margin,
-            justifyContent:
-              style.body.valign === "top" ? "flex-start" : style.body.valign === "bottom" ? "flex-end" : "center",
-            alignItems:
-              style.body.align === "left" ? "flex-start" : style.body.align === "right" ? "flex-end" : "center",
-            transition: style.transition ? `opacity ${style.transitionMs}ms` : "none",
-          }}
-        >
-          {style.title.enabled && (
-            <div className="absolute top-0 right-0 left-0 px-8 pt-4" style={textCss(style.title)}>
-              {slide.title}
-            </div>
-          )}
-          <div className="max-w-full space-y-4">
-            {visible.map((l, i) => (
-              <p key={`${slide.index}-${loopIdx}-${i}`} style={textCss(style.body)} className="leading-snug">
-                {l}
-              </p>
-            ))}
-          </div>
-          {style.subtitle.enabled && (
-            <div className="absolute right-0 bottom-0 left-0 px-8 pb-4" style={textCss(style.subtitle)}>
-              {style.descriptiveSubtitles
-                ? (slide.next ? `${slide.next.title}` : "")
-                : slide.title.split(" — ")[0]}
-            </div>
-          )}
-        </div>
-      )}
-      {state?.alert && (
-        <div className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 rounded-xl bg-amber-500/95 px-8 py-4 text-3xl font-bold text-black shadow-2xl">
-          {state.alert}
-        </div>
-      )}
+    <div className="fixed inset-0 bg-black">
+      <SlideCanvas
+        title={slide?.title ?? ""}
+        lines={visible}
+        style={slide?.style}
+        backgroundKey={slide?.backgroundKey}
+        backgroundAsText={slide?.backgroundAsText}
+        mediaKey={slide?.mediaKey}
+        logoKey={slide?.logoKey}
+        mode={state?.mode ?? "normal"}
+        blanked={state?.blanked ?? false}
+        next={slide?.next}
+        alert={state?.alert}
+        index={slide?.index}
+        total={slide?.total}
+      />
       {!connected && (
         <span className="fixed bottom-2 right-3 text-xs text-zinc-700">connecting…</span>
-      )}
-      {slide && !black && !logoOnly && (
-        <div className="fixed bottom-2 right-3 text-xs text-zinc-600/60">
-          {slide.index + 1}/{slide.total}
-        </div>
       )}
     </div>
   );

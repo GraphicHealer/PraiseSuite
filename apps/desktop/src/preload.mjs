@@ -10,4 +10,6 @@ contextBridge.exposeInMainWorld("ps", {
   printToPdf: (url, filename) => ipcRenderer.invoke("ps:print-pdf", { url, filename }),
   /** Open the print-preview window (a real BrowserWindow, not an overlay). */
   openPrintWindow: (query) => ipcRenderer.invoke("ps:open-print", query),
+  /** Toggle the presentation output window fullscreen/windowed. */
+  toggleOutput: () => ipcRenderer.invoke("ps:toggle-output"),
 });

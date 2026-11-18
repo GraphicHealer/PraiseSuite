@@ -17,7 +17,9 @@ export interface SlideResponse {
     lines: string[];
     kind: string;
     style: SlideStyle;
+    mediaKey: string | null;
     backgroundKey: string | null;
+    backgroundAsText?: boolean;
     logoKey: string | null;
     loopSeconds: number | null;
     next: { title: string; lines: string[] } | null;
@@ -201,6 +203,15 @@ class Api {
     this.req<{ alert: string | null }>(`/api/v1/sessions/${encodeURIComponent(id)}/alert`, {
       method: "POST",
       body: { message },
+    });
+
+  // settings (generic key/value)
+  setting = <T = unknown>(key: string) =>
+    this.req<{ key: string; value: T | null }>(`/api/v1/settings/${encodeURIComponent(key)}`);
+  saveSetting = (key: string, value: unknown) =>
+    this.req<{ key: string; value: unknown }>(`/api/v1/settings/${encodeURIComponent(key)}`, {
+      method: "PUT",
+      body: { value },
     });
 
   // styles
