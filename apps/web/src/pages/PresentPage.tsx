@@ -374,46 +374,23 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
   const activeMode: PresentMode = slide?.blanked ? "blank" : slide?.mode ?? "normal";
   const curPlanSlide = plan?.slides[plan.current];
 
-  // OpenSong lst_all_slides rows = set slide nodes: one row per section
-  // instance (song) or slide (other kinds); screen slices merge into one row.
-  const listRows = (plan?.slides ?? []).reduce<
-    {
-      key: string;
-      itemId: string;
-      itemTitle: string;
-      kind: string;
-      slideId: string;
-      firstLine: string;
-      index: number;
-      emphasized: boolean;
-      loop: boolean;
-      newGroup: boolean;
-    }[]
-  >((rows, s) => {
-    const prev = rows[rows.length - 1];
-    if (prev && s.itemId === prev.itemId && s.sectionInstanceId !== null && s.sectionInstanceId === prev.key) {
-      return rows;
-    }
-    rows.push({
-      key: s.sectionInstanceId ?? `slide-${s.index}`,
-      itemId: s.itemId,
-      itemTitle: s.itemTitle,
-      kind: s.itemKind,
-      slideId: s.slideId ?? String(s.slideInItem),
-      firstLine: s.firstLine,
-      index: s.index,
-      // OpenSong @emphasize (chorus) bolds the ID cell.
-      emphasized: s.slideId !== null && !/^[v]/i.test(s.slideId),
-      loop: s.loopSeconds > 0,
-      newGroup: prev === undefined || prev.itemId !== s.itemId,
-    });
-    return rows;
-  }, []);
-  const curRow = listRows.findIndex(
-    (r, i) =>
-      r.index <= (plan?.current ?? -1) &&
-      (i === listRows.length - 1 || listRows[i + 1]!.index > (plan?.current ?? -1)),
-  );
+  // OpenSong lst_all_slides: one row PER SLIDE (the screenshot shows V1
+  // twice when || splits it). Title shows on every row; the 4px top border
+  // marks each new set item.
+  const listRows = (plan?.slides ?? []).map((s, i, all) => ({
+    key: `${s.index}`,
+    itemId: s.itemId,
+    itemTitle: s.itemTitle,
+    kind: s.itemKind,
+    slideId: s.slideId ?? String(s.slideInItem),
+    firstLine: s.firstLine,
+    index: s.index,
+    // OpenSong @emphasize (chorus) bolds the ID cell.
+    emphasized: s.slideId !== null && !/^[v]/i.test(s.slideId),
+    loop: s.loopSeconds > 0,
+    newGroup: i === 0 || all[i - 1]!.itemId !== s.itemId,
+  }));
+  const curRow = plan?.current ?? -1;
   const MODES: { key: string; mode: PresentMode; label: string }[] = [
     { key: "N", mode: "normal", label: "Normal" },
     { key: "K", mode: "blank", label: "Black" },
@@ -480,7 +457,7 @@ export function PresentPage({ startService, startItemId }: { startService?: Serv
                       } ${cur ? "bg-indigo-100 dark:bg-indigo-950" : `${alt} hover:bg-zinc-50 dark:hover:bg-zinc-900`}`}
                     >
                       <td className="px-2 py-1 font-medium">
-                        {r.newGroup ? (r.loop ? `(Loop) ${r.itemTitle}` : r.itemTitle) : ""}
+                        {r.loop ? `(Loop) ${r.itemTitle}` : r.itemTitle}
                       </td>
                       <td className={`px-1 py-1 text-center ${r.emphasized ? "font-bold" : ""}`}>{r.slideId}</td>
                       <td className="truncate px-2 py-1">{r.firstLine}</td>
