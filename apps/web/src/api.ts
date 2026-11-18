@@ -177,9 +177,13 @@ class Api {
     });
 
   // styles
-  style = () => this.req<SlideStyle>("/api/v1/style");
+  style = () => this.req<SlideStyle & { userFieldLabels?: string[] }>("/api/v1/style");
   saveStyle = (style: SlideStyle) =>
     this.req<SlideStyle>("/api/v1/style", { method: "PUT", body: style as unknown as Record<string, unknown> });
+
+  /** Record a song activity (printed/copied) — fired by print/export actions. */
+  logSongActivity = (id: string, action: number) =>
+    this.req(`/api/v1/songs/${encodeURIComponent(id)}/log?action=${action}`, { method: "POST" }).catch(() => {});
   importOpenSongSettings = (presentSettings?: string, printSettings?: string) =>
     this.req<{ warnings: string[]; media: string[]; printRoles: string[] }>(
       "/api/v1/import/opensong/settings",

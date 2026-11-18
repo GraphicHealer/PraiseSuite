@@ -22,6 +22,8 @@ export interface SongSummary {
   title: string;
   authors: string[];
   theme: string | null;
+  /** OpenSong Songs-folder path the song lives under; null = library root. */
+  folder: string | null;
 }
 
 export interface SongRepository {

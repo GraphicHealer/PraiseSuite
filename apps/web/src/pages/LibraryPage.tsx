@@ -7,6 +7,7 @@ export function LibraryPage({ onOpenSong }: { onOpenSong: (id: string) => void }
   const [songs, setSongs] = useState<SongSummary[]>([]);
   const [query, setQuery] = useState("");
   const [theme, setTheme] = useState<string | null>(null);
+  const [folder, setFolder] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [printUrl, setPrintUrl] = useState<string | null>(null);
 
@@ -28,7 +29,14 @@ export function LibraryPage({ onOpenSong }: { onOpenSong: (id: string) => void }
       [...new Set(songs.map((s) => s.theme).filter((t): t is string => t !== null))].sort(),
     [songs],
   );
-  const filtered = theme ? songs.filter((s) => s.theme === theme) : songs;
+  const folders = useMemo(
+    () =>
+      [...new Set(songs.map((s) => s.folder).filter((f): f is string => f !== null))].sort(),
+    [songs],
+  );
+  const filtered = songs
+    .filter((s) => (theme === null || s.theme === theme))
+    .filter((s) => (folder === null || s.folder === folder));
 
   return (
     <div className="mx-auto flex max-w-6xl gap-6 p-4">
@@ -49,6 +57,26 @@ export function LibraryPage({ onOpenSong }: { onOpenSong: (id: string) => void }
             {t}
           </button>
         ))}
+        {folders.length > 0 && (
+          <>
+            <h2 className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-zinc-500">Folders</h2>
+            <button
+              onClick={() => setFolder(null)}
+              className={`block w-full rounded px-2 py-1 text-left text-sm ${folder === null ? "bg-indigo-100 dark:bg-indigo-950" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
+            >
+              All folders
+            </button>
+            {folders.map((f) => (
+              <button
+                key={f}
+                onClick={() => setFolder(f)}
+                className={`block w-full rounded px-2 py-1 text-left text-sm ${folder === f ? "bg-indigo-100 dark:bg-indigo-950" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
+              >
+                {f}
+              </button>
+            ))}
+          </>
+        )}
       </aside>
       <div className="min-w-0 flex-1">
         {printUrl && <PrintPreview url={printUrl} filename="songbook.pdf" onClose={() => setPrintUrl(null)} />}
@@ -67,6 +95,13 @@ export function LibraryPage({ onOpenSong }: { onOpenSong: (id: string) => void }
             Songbook
           </button>
           <button
+            onClick={() => setPrintUrl(api.printUrl("/api/v1/print/activity"))}
+            className="shrink-0 rounded border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            title="CCLI usage report from the activity log"
+          >
+            CCLI report
+          </button>
+          <button
             onClick={() => void api.createSong("New Song").then((s) => onOpenSong(s.id))}
             className="shrink-0 rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500"
           >
@@ -83,7 +118,8 @@ export function LibraryPage({ onOpenSong }: { onOpenSong: (id: string) => void }
               >
                 <span className="font-medium">{s.title}</span>
                 <span className="truncate text-sm text-zinc-500">{s.authors.join(", ")}</span>
-                {s.theme && <span className="ml-auto shrink-0 text-xs text-zinc-400">{s.theme}</span>}
+                {s.folder && folder === null && <span className="ml-auto shrink-0 text-xs text-zinc-400">{s.folder}</span>}
+                {s.theme && <span className={`${s.folder === null || folder !== null ? "ml-auto " : ""}shrink-0 text-xs text-zinc-400`}>{s.theme}</span>}
               </button>
             </li>
           ))}

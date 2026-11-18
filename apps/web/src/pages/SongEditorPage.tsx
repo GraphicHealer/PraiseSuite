@@ -61,6 +61,7 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState("");
   const [printUrl, setPrintUrl] = useState<string | null>(null);
+  const [userLabels, setUserLabels] = useState<string[]>([]);
   const viewRef = useRef<EditorView | null>(null);
   const dark = useDark();
 
@@ -71,6 +72,7 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
       setPresentation(presentationOf(s));
       setCapo(s.arrangements[0]?.capo?.toString() ?? "");
     });
+    api.style().then((s) => setUserLabels(s.userFieldLabels ?? []));
   }, [id]);
 
   const update = (patch: Partial<Song>) => {
@@ -283,6 +285,7 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
               update({ theme: t || null, secondaryTheme: alt || null });
             }}
           />
+          <Field label="Folder" value={song.folder ?? ""} onChange={(v) => update({ folder: v || null })} />
           <Field label="Key" value={song.defaultKey ?? ""} onChange={(v) => update({ defaultKey: v || null })} />
           <Field label="Key Line" value={song.keyLine ?? ""} onChange={(v) => update({ keyLine: v || null })} />
           <Field label="Tempo" value={song.tempo ?? ""} onChange={(v) => update({ tempo: v || null })} />
@@ -293,9 +296,9 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
       )}
       {tab === "advanced" && (
         <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-4">
-          <Field label="User Defined 1" value={song.userFields.user1} onChange={(v) => update({ userFields: { ...song.userFields, user1: v } })} />
-          <Field label="User Defined 2" value={song.userFields.user2} onChange={(v) => update({ userFields: { ...song.userFields, user2: v } })} />
-          <Field label="User Defined 3" value={song.userFields.user3} onChange={(v) => update({ userFields: { ...song.userFields, user3: v } })} />
+          <Field label={userLabels[0] ?? "User Defined 1"} value={song.userFields.user1} onChange={(v) => update({ userFields: { ...song.userFields, user1: v } })} />
+          <Field label={userLabels[1] ?? "User Defined 2"} value={song.userFields.user2} onChange={(v) => update({ userFields: { ...song.userFields, user2: v } })} />
+          <Field label={userLabels[2] ?? "User Defined 3"} value={song.userFields.user3} onChange={(v) => update({ userFields: { ...song.userFields, user3: v } })} />
           <Field label="Background" value={song.background ?? ""} onChange={(v) => update({ background: v || null })} />
           <Field label="Notes" value={song.notes ?? ""} onChange={(v) => update({ notes: v || null })} className="col-span-2" />
         </div>
@@ -366,7 +369,7 @@ export function SongEditorPage({ id, onBack }: { id: string; onBack: () => void 
         <button onClick={ins.multiVerse} className={btn}>Multi-Verse</button>
         <button onClick={ins.section} className={btn}>Section</button>
       </div>
-      {printUrl && <PrintPreview url={printUrl} filename={`${song?.title ?? "song"}.pdf`} onClose={() => setPrintUrl(null)} />}
+      {printUrl && <PrintPreview url={printUrl} filename={`${song?.title ?? "song"}.pdf`} logUrl={`/api/v1/songs/${encodeURIComponent(song.id)}/log?action=6`} onClose={() => setPrintUrl(null)} />}
       <div className="min-h-0 flex-1 overflow-hidden rounded border border-zinc-300 dark:border-zinc-700">
         <CodeMirror
           value={source}

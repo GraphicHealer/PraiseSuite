@@ -64,6 +64,22 @@ const MIGRATIONS: string[] = [
     value TEXT NOT NULL
   );
   `,
+  `
+  CREATE TABLE IF NOT EXISTS activity_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at TEXT NOT NULL,
+    action INTEGER NOT NULL,
+    song_id TEXT,
+    filename TEXT,
+    title TEXT NOT NULL,
+    authors TEXT NOT NULL,
+    ccli_number TEXT,
+    has_chords INTEGER NOT NULL DEFAULT 0
+  );
+  `,
+  `
+  ALTER TABLE songs ADD COLUMN folder TEXT;
+  `,
 ];
 
 export function migrate(db: Database.Database): void {

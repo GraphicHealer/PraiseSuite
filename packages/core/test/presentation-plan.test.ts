@@ -17,7 +17,7 @@ function song(id: string): Song {
     title: "Test Song",
     authors: [],
     copyright: null, ccliNumber: null, defaultKey: null, tempo: null, timeSignature: null,
-    aka: null, keyLine: null, theme: null, secondaryTheme: null,
+    aka: null, keyLine: null, theme: null, secondaryTheme: null, folder: null,
     userFields: { user1: "", user2: "", user3: "" },
     sections: [
       {

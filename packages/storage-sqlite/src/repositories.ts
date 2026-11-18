@@ -76,6 +76,7 @@ export class SqliteSongRepository implements SongRepository {
         secondaryTheme: song.secondaryTheme,
         ccliNumber: song.ccliNumber,
         defaultKey: song.defaultKey,
+        folder: song.folder,
         revisionId: song.revision.id,
         revisionParentId: song.revision.parentId,
         data,
@@ -89,6 +90,7 @@ export class SqliteSongRepository implements SongRepository {
           secondaryTheme: song.secondaryTheme,
           ccliNumber: song.ccliNumber,
           defaultKey: song.defaultKey,
+          folder: song.folder,
           revisionId: song.revision.id,
           revisionParentId: song.revision.parentId,
           data,
@@ -122,15 +124,17 @@ export class SqliteSongRepository implements SongRepository {
         title: schema.songs.title,
         authors: schema.songs.authors,
         theme: schema.songs.theme,
+        folder: schema.songs.folder,
       })
       .from(schema.songs)
-      .orderBy(asc(schema.songs.title))
+      .orderBy(asc(schema.songs.folder), asc(schema.songs.title))
       .all();
     return rows.map((r) => ({
       id: r.id as SongId,
       title: r.title,
       authors: JSON.parse(r.authors) as string[],
       theme: r.theme,
+      folder: r.folder,
     }));
   }
 

@@ -164,6 +164,9 @@ export async function applyImport(
       }
     }
     const song = materializeSong(analyzed.song, ids);
+    // OpenSong Songs/ subfolders -> library folder (from the import path).
+    const slash = analyzed.path.replaceAll("\\", "/").lastIndexOf("/");
+    if (slash > 0) song.folder = analyzed.path.slice(0, slash);
     await repos.songs.save(song);
     report.importedSongs++;
     report.warnings.push(...analyzed.warnings.map((w) => `${analyzed.path}: ${w}`));

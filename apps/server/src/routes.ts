@@ -29,8 +29,10 @@ import {
   parseOpenSongBible,
   parsePresentSettings,
   parsePrintConfig,
+  parseMainSettings,
   DEFAULT_PRINT_CONFIG,
   parseReference,
+  ACTIVITY,
   positionOfSlide,
   resolveSlideStyle,
   scriptureSlideGroup,
@@ -149,22 +151,30 @@ export function buildRoutes(deps: AppDeps): Route[] {
       const body = await ctx.body();
       const created = z.object({ title: z.string(), authors: z.array(z.string()).optional() }).safeParse(body);
       if (created.success) {
-        return deps.transport.command("songs.create", created.data);
+        const song = (await deps.transport.command("songs.create", created.data)) as Song;
+        const full = await deps.repos.songs.get(song.id);
+        if (full) logSongActivity(deps.storage, full, ACTIVITY.created);
+        return song;
       }
       const song = SongSchema.parse(body) as unknown as Song;
       await deps.repos.songs.save(song);
+      logSongActivity(deps.storage, song, ACTIVITY.created);
       return song;
     }),
 
     r("PUT", "/api/v1/songs/:id", "admin", "Update a song", async (ctx) => {
       const song = SongSchema.parse(await ctx.body()) as unknown as Song;
       song.id = ctx.params["id"]! as SongId;
+      const before = await deps.repos.songs.get(song.id);
       await deps.repos.songs.save(song);
+      logSongActivity(deps.storage, song, before && before.folder !== song.folder ? ACTIVITY.moved : ACTIVITY.modified);
       return song;
     }),
 
     r("DELETE", "/api/v1/songs/:id", "admin", "Delete a song", async (ctx) => {
+      const song = await deps.repos.songs.get(ctx.params["id"]! as SongId);
       await deps.repos.songs.delete(ctx.params["id"]! as SongId);
+      if (song) logSongActivity(deps.storage, song, ACTIVITY.deleted);
       return { ok: true };
     }),
 
@@ -278,6 +288,11 @@ export function buildRoutes(deps: AppDeps): Route[] {
         body.action === "jump"
           ? positionOfSlide(plan, Math.min(body.index ?? 0, plan.slides.length - 1), session.id)
           : navigate(plan, session.position, body.action);
+      // Activity log: a song is "presented" when its first slide goes live.
+      if (position.songId !== session.position.songId && position.songId !== null) {
+        const song = await deps.repos.songs.get(position.songId);
+        if (song) logSongActivity(deps.storage, song, ACTIVITY.presented);
+      }
       const updated: PresentationSession = {
         ...session,
         position,
@@ -370,8 +385,10 @@ export function buildRoutes(deps: AppDeps): Route[] {
       return report;
     }),
 
-    r("GET", "/api/v1/style", "guest", "Global presentation slide style", async () =>
-      loadStyle(deps.storage)),
+    r("GET", "/api/v1/style", "guest", "Global presentation slide style", async () => ({
+      ...loadStyle(deps.storage),
+      userFieldLabels: (JSON.parse(deps.storage.getSetting("style.userFields") ?? "[]") as string[]).filter((l) => l !== ""),
+    })),
 
     r("PUT", "/api/v1/style", "admin", "Save global presentation slide style", async (ctx) => {
       const body = z.record(z.string(), z.unknown()).parse(await ctx.body());
@@ -385,6 +402,7 @@ export function buildRoutes(deps: AppDeps): Route[] {
         .object({
           presentSettings: z.string().optional(),
           printSettings: z.string().optional(),
+          mainSettings: z.string().optional(),
           /** Whether to apply imported fonts/styles over the current style. */
           applyStyle: z.boolean().optional(),
         })
@@ -435,6 +453,11 @@ export function buildRoutes(deps: AppDeps): Route[] {
         const cfg = parsePrintConfig(body.printSettings);
         deps.storage.setSetting("style.print", JSON.stringify(cfg));
         out.printRoles = Object.keys(cfg.roles);
+      }
+      if (body.mainSettings !== undefined) {
+        const main = parseMainSettings(body.mainSettings);
+        deps.storage.setSetting("style.userFields", JSON.stringify(main.userFieldLabels));
+        out.warnings.push(...main.userFieldLabels.filter((l) => l !== "").map((l) => `user field label: ${l}`));
       }
       return out;
     }),
@@ -547,6 +570,13 @@ export function buildRoutes(deps: AppDeps): Route[] {
       ctx.res.end(html);
       return undefined;
     }),
+    r("POST", "/api/v1/songs/:id/log", "admin", "Record a song activity (printed/copied) — called by print/export actions", async (ctx) => {
+      const song = await deps.repos.songs.get(ctx.params["id"]! as SongId);
+      if (!song) throw new ApiError(404, "not_found", "Song not found");
+      const action = Number.parseInt(ctx.query.get("action") ?? `${ACTIVITY.printed}`, 10);
+      logSongActivity(deps.storage, song, action);
+      return { ok: true };
+    }),
     r("GET", "/api/v1/print/service/:id", "admin", "Service set list", async (ctx) => {
       const svc = await deps.repos.services.get(ctx.params["id"]! as Service["id"]);
       if (!svc) throw new ApiError(404, "not_found", "Service not found");
@@ -558,6 +588,43 @@ export function buildRoutes(deps: AppDeps): Route[] {
       const songs = await deps.repos.songs.list();
       ctx.res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       ctx.res.end(songbookHtml(songs, printConfig(deps.storage).roles));
+      return undefined;
+    }),
+
+    // Activity log (OpenSong ActivityLog): query + printable CCLI report.
+    r("GET", "/api/v1/activity", "admin", "Activity log entries (?from&to&action)", async (ctx) =>
+      deps.storage.activityLog({
+        from: ctx.query.get("from") ?? undefined,
+        to: ctx.query.get("to") ?? undefined,
+        action: ctx.query.get("action") === null ? undefined : Number.parseInt(ctx.query.get("action")!, 10),
+      })),
+    r("GET", "/api/v1/print/activity", "admin", "CCLI activity report (?from&to)", async (ctx) => {
+      const from = ctx.query.get("from") ?? undefined;
+      const to = ctx.query.get("to") ?? undefined;
+      const entries = deps.storage.activityLog({ from, to, limit: 5000 }).filter(
+        (e) => e.action === ACTIVITY.presented || e.action === ACTIVITY.printed,
+      );
+      const bySong = new Map<string, { title: string; authors: string; ccli: string; times: number; last: string }>();
+      for (const e of entries) {
+        const key = e.songId ?? `${e.title}|${e.ccliNumber ?? ""}`;
+        const row = bySong.get(key) ?? { title: e.title, authors: e.authors.join("; "), ccli: e.ccliNumber ?? "", times: 0, last: e.at };
+        row.times++;
+        if (e.at > row.last) row.last = e.at;
+        bySong.set(key, row);
+      }
+      const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+      const range = `${from ?? "start"} – ${to ?? "now"}`;
+      const rows = [...bySong.values()]
+        .sort((a, b) => a.title.localeCompare(b.title))
+        .map((r) => `<tr><td>${esc(r.title)}</td><td>${esc(r.authors)}</td><td>${esc(r.ccli)}</td><td style="text-align:center">${r.times}</td><td>${esc(r.last.slice(0, 10))}</td></tr>`)
+        .join("\n");
+      ctx.res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      ctx.res.end(
+        `<!doctype html><html><head><meta charset="utf-8"><title>CCLI activity report</title>
+<style>@page{margin:2cm}body{font-family:sans-serif;font-size:10pt}table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #ccc;padding:3pt 6pt;text-align:left}h1{font-size:16pt}</style>
+</head><body><h1>CCLI song activity</h1><p>${esc(range)} — ${entries.length} events, ${bySong.size} songs</p>
+<table><tr><th>Title</th><th>Authors</th><th>CCLI #</th><th>Times used</th><th>Last used</th></tr>${rows}</table></body></html>`,
+      );
       return undefined;
     }),
 
@@ -639,6 +706,20 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
 }
 
 /** Imported PrintSettings config (style.print setting) for the print engine. */
+/** Record an OpenSong-style activity entry for a song. */
+function logSongActivity(storage: SqliteStorage, song: Song, action: number): void {
+  storage.logActivity({
+    at: new Date().toISOString(),
+    action,
+    songId: song.id,
+    filename: song.folder !== null ? `${song.folder}/${song.title}` : song.title,
+    title: song.title,
+    authors: song.authors,
+    ccliNumber: song.ccliNumber,
+    hasChords: (song.sections ?? []).some((s) => s.lines.some((l) => l.chords.length > 0)),
+  });
+}
+
 function printConfig(storage: SqliteStorage): import("@praisesuite/core").PrintConfig {
   try {
     return { ...DEFAULT_PRINT_CONFIG, ...(JSON.parse(storage.getSetting("style.print") ?? "{}") as import("@praisesuite/core").PrintConfig) };

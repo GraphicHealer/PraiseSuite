@@ -128,6 +128,20 @@ export interface PrintConfig {
   page: { width: number; height: number; margin: number };
 }
 
+/** MainSettings bits we use: custom labels for the user1-3 song fields. */
+export function parseMainSettings(xml: string): { userFieldLabels: string[] } {
+  const doc = parseXml(xml);
+  const root = asRecord(asRecord(doc)["main_settings"] ?? asRecord(doc)["settings"]);
+  const ud = asRecord(root["user_defined"]);
+  return {
+    userFieldLabels: [
+      asString(ud["@_user1"]),
+      asString(ud["@_user2"]),
+      asString(ud["@_user3"]),
+    ],
+  };
+}
+
 export const DEFAULT_PRINT_CONFIG: PrintConfig = {
   roles: {},
   spacing: {},

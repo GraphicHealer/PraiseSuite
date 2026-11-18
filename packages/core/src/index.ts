@@ -9,6 +9,7 @@ export * from "./domain/services/types.js";
 export * from "./domain/sessions/types.js";
 export * from "./domain/styles/types.js";
 export * from "./domain/bible/types.js";
+export * from "./domain/activity/types.js";
 export * from "./application/fonts.js";
 export * from "./ports/index.js";
 export * from "./application/transport.js";

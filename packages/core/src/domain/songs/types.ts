@@ -96,6 +96,8 @@ export interface Song extends Revisioned {
   theme: string | null;
   /** Secondary theme/category (OpenSong `alttheme`). */
   secondaryTheme: string | null;
+  /** Library folder this song belongs to (OpenSong Songs/ subfolders; from import path). */
+  folder: string | null;
   /** User-defined fields; labels come from installation settings (OpenSong user1-3). */
   userFields: { user1: string; user2: string; user3: string };
   sections: SongSection[];

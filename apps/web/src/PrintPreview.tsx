@@ -16,13 +16,22 @@ declare global {
  * bridge is present (OS print dialog); browsers fall back to iframe.print().
  * "Save as PDF" uses webContents.printToPDF — Electron only.
  */
-export function PrintPreview({ url, filename, onClose }: { url: string; filename?: string; onClose: () => void }): ReactNode {
+export function PrintPreview({ url, filename, logUrl, onClose }: { url: string; filename?: string; logUrl?: string; onClose: () => void }): ReactNode {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const [busy, setBusy] = useState(false);
   const pdf = window.ps?.printToPdf !== undefined;
   const pdfName = filename ?? "document.pdf";
+  /** Fire-and-forget activity log entry (printed) — once per preview open. */
+  const logged = useRef(false);
+  const logPrint = () => {
+    if (logUrl && !logged.current) {
+      logged.current = true;
+      void fetch(logUrl, { method: "POST", credentials: "include" }).catch(() => {});
+    }
+  };
 
   const doPrint = async () => {
+    logPrint();
     if (window.ps) {
       setBusy(true);
       try {
@@ -36,6 +45,7 @@ export function PrintPreview({ url, filename, onClose }: { url: string; filename
   };
 
   const doPdf = async () => {
+    logPrint();
     setBusy(true);
     try {
       await window.ps?.printToPdf(url, pdfName);

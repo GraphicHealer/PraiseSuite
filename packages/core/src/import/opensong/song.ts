@@ -140,6 +140,7 @@ export function parseOpenSongSong(xml: string): SongParseResult {
       keyLine: str(root["key_line"]),
       theme: str(root["theme"]),
       secondaryTheme: str(root["alttheme"]),
+      folder: null,
       userFields: {
         user1: asString(root["user1"]),
         user2: asString(root["user2"]),

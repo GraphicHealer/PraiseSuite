@@ -114,6 +114,27 @@ describe("api v1", () => {
     expect(await res.text()).toContain("Printable Song");
   });
 
+  it("activity log records song actions and CCLI report renders", async () => {
+    let res = await api("/api/v1/songs", {
+      method: "POST",
+      body: JSON.stringify({ title: "Logged Song", authors: ["Author B"] }),
+    });
+    const created = (await res.json()) as { id: string };
+
+    res = await api(`/api/v1/songs/${created.id}/log?action=6`, { method: "POST" }, adminToken);
+    expect(res.status).toBe(200);
+
+    res = await api("/api/v1/activity", {}, adminToken);
+    expect(res.status).toBe(200);
+    const entries = (await res.json()) as { action: number; title: string }[];
+    expect(entries.some((e) => e.action === 1 && e.title === "Logged Song")).toBe(true);
+    expect(entries.some((e) => e.action === 6 && e.title === "Logged Song")).toBe(true);
+
+    res = await api("/api/v1/print/activity");
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("Logged Song");
+  });
+
   it("guest tokens are session-scoped", async () => {
     const session = {
       id: "sess-1",
