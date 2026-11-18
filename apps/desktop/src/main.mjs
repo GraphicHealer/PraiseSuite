@@ -1,4 +1,4 @@
-import { app, BrowserWindow, screen, ipcMain, dialog } from "electron";
+import { app, BrowserWindow, screen, ipcMain, dialog, shell } from "electron";
 import { spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -83,15 +83,19 @@ async function hiddenPrintWindow(url) {
   return win;
 }
 
+/**
+ * "Print…": Windows' system print dialog shows "this app doesn't support
+ * print preview" for Electron — it can't be fed a preview stream. So we
+ * render to PDF and open it in the default PDF viewer, which has a real
+ * preview and its own print dialog.
+ */
 ipcMain.handle("ps:print", async (_e, url) => {
   const win = await hiddenPrintWindow(url);
-  await new Promise((resolve, reject) =>
-    win.webContents.print({ printBackground: true }, (ok, reason) => {
-      win.destroy();
-      if (ok) resolve();
-      else reject(new Error(reason));
-    }),
-  );
+  const pdf = await win.webContents.printToPDF({ printBackground: true });
+  win.destroy();
+  const tmp = path.join(app.getPath("temp"), `praisesuite-print-${Date.now()}.pdf`);
+  await writeFile(tmp, pdf);
+  await shell.openPath(tmp);
 });
 
 ipcMain.handle("ps:print-pdf", async (e, { url, filename }) => {
