@@ -21,10 +21,15 @@ function chordLine(line: { text: string; chords: { offset: number; chord: { disp
   if (line.chords.length === 0) return "";
   const chars: string[] = [];
   for (const c of line.chords) {
-    const col = c.offset + 1; // '.' occupies column 0
+    // chars[k] renders at column k+1 (the '.' occupies column 0), and lyric
+    // offset p also maps to column p+1 (the number prefix sits at column 0)
+    // — so the chord lands at chars index `offset` exactly. Spread the name:
+    // pushing it whole would count one element for several columns and push
+    // every later chord right by (name.length - 1).
+    const col = c.offset;
     while (chars.length < col) chars.push(" ");
     if (chars.length > col) chars.push(" "); // previous name overran: keep a gap
-    chars.push(c.chord.display);
+    chars.push(...c.chord.display);
   }
   return "." + chars.join("").trimEnd();
 }

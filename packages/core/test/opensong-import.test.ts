@@ -229,10 +229,11 @@ describe("round-trip export", () => {
     expect(reparsed.sections.map((s) => s.label)).toEqual(
       song.sections.map((s) => s.label),
     );
-    // chord annotations survive the round trip
+    // chord annotations survive the round trip — names AND lyric offsets
+    // (the serializer must not shift chord columns)
     for (let i = 0; i < song.sections.length; i++) {
-      const a = song.sections[i]!.lines.flatMap((l) => l.chords.map((c) => c.chord.display));
-      const b = reparsed.sections[i]!.lines.flatMap((l) => l.chords.map((c) => c.chord.display));
+      const a = song.sections[i]!.lines.flatMap((l) => l.chords.map((c) => `${c.chord.display}@${c.offset}`));
+      const b = reparsed.sections[i]!.lines.flatMap((l) => l.chords.map((c) => `${c.chord.display}@${c.offset}`));
       expect(b).toEqual(a);
     }
   });
