@@ -22,6 +22,8 @@ export * from "./file-store.js";
 export interface SqliteStorage {
   repositories: Repositories;
   db: Database.Database;
+  getSetting(key: string): string | null;
+  setSetting(key: string, value: string): void;
   close(): void;
 }
 
@@ -53,6 +55,17 @@ export function openStorage(options: {
       media: new SqliteMediaRepository(db),
     },
     db: sqlite,
+    getSetting: (key) => {
+      const row = sqlite.prepare("SELECT value FROM settings WHERE key = ?").get(key) as
+        | { value: string }
+        | undefined;
+      return row?.value ?? null;
+    },
+    setSetting: (key, value) => {
+      sqlite
+        .prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        .run(key, value);
+    },
     close: () => sqlite.close(),
   };
 }

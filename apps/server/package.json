@@ -1,0 +1,24 @@
+{
+  "name": "@praisesuite/server",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --experimental-strip-types src/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@praisesuite/api-contracts": "workspace:*",
+    "@praisesuite/core": "workspace:*",
+    "@praisesuite/storage-sqlite": "workspace:*",
+    "ws": "^8.18.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/ws": "^8.5.10",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

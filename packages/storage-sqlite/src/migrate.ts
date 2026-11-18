@@ -58,6 +58,12 @@ const MIGRATIONS: string[] = [
     PRIMARY KEY (object_type, object_id, revision_id)
   );
   `,
+  `
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+  `,
 ];
 
 export function migrate(db: Database.Database): void {
