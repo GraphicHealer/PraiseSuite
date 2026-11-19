@@ -956,10 +956,13 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
       ? ref
       : await repos.media.findByFilename(ref);
   const next = plan.slides[idx + 1] ?? null;
+  const nextItem = next ? service?.items.find((i) => i.id === next.serviceItemId) : null;
   return {
     index: idx,
     total: plan.slides.length,
-    title: slide.title,
+    /* On-slide title = the item's name (OpenSong draws slide_group @name);
+     * the "— V1" section suffix only exists for the helper's slide list. */
+    title: item?.title ?? slide.title,
     lines: slide.lines,
     kind: slide.kind,
     mediaKey: slide.mediaKey,
@@ -973,7 +976,7 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
     logoKey: style.logoKey,
     /** Announcement-loop timing in seconds (OpenSong item loop interval). */
     loopSeconds: typeof item?.config["loopSeconds"] === "number" ? (item.config["loopSeconds"] as number) : null,
-    next: next ? { title: next.title, lines: next.lines } : null,
+    next: next ? { title: nextItem?.title ?? next.title, lines: next.lines } : null,
   };
 }
 
