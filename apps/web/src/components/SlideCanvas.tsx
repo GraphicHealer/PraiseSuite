@@ -36,8 +36,53 @@ const ZOOM = DESIGN_W / 640;
 /** OpenSong RealBorder = g.Width / 50 — the global inset around text areas. */
 const REAL_BORDER = DESIGN_W / 50;
 
+/** Halve RGB brightness — OpenSong paints the shadow in a DarkerColor. */
+function darker(hex: string): string {
+  const m = /^#?([0-9a-f]{6})/i.exec(hex);
+  if (!m) return hex;
+  const n = parseInt(m[1] ?? "0", 16);
+  return `rgb(${((n >> 16) & 0xff) >> 1},${((n >> 8) & 0xff) >> 1},${(n & 0xff) >> 1})`;
+}
+
+/** Border radius — OpenSong CalcBorderSize: max(round(TextHeight×thickness/40),1). */
+function borderRadiusPx(s: TextStyle, zoom: number): number {
+  if (!s.border) return 0;
+  const textH = s.size * zoom * ZOOM * 1.2;
+  return Math.max(Math.round((textH * s.borderThickness) / 40), 1);
+}
+/** Shadow offset — OpenSong CalcShadowSize: max(round(TextHeight×thickness/50),1). */
+function shadowOffsetPx(s: TextStyle, zoom: number): number {
+  if (!s.shadow) return 0;
+  const textH = s.size * zoom * ZOOM * 1.2;
+  return Math.max(Math.round((textH * s.borderThickness) / 50), 1);
+}
+
+/**
+ * OpenSong DrawFontSingleLine border: the text is re-drawn at every offset of
+ * a diamond ring of radius borderSize — flat runs along the four sides plus a
+ * diagonal staircase filling the corners — producing a continuous outline.
+ * (Four corner shadows leave gaps on curved/diagonal glyph edges.)
+ */
+function outlineOffsets(r: number): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  const b2 = Math.floor(r / 2);
+  for (let dx = -b2; dx <= b2; dx++) {
+    out.push([dx, -r], [dx, r], [-r, dx], [r, dx]);
+  }
+  let dy = 1 - r;
+  for (let dx = b2 + 1; dx < r; dx++) {
+    out.push([dx, dy], [dx, -dy], [-dx, dy], [-dx, -dy]);
+    dy += 1;
+  }
+  return out;
+}
+
 function textCss(s: TextStyle, zoom = 1): CSSProperties {
-  const t = s.borderThickness * ZOOM;
+  const r = borderRadiusPx(s, zoom);
+  const sh = shadowOffsetPx(s, zoom);
+  const shadows: string[] = [];
+  if (r > 0) for (const [dx, dy] of outlineOffsets(r)) shadows.push(`${dx}px ${dy}px 0 ${s.borderColor}`);
+  if (sh > 0) shadows.push(`${sh}px ${sh}px 0 ${darker(s.shadowColor)}`);
   return {
     fontFamily: fontStack(s.font),
     fontSize: s.size * zoom * ZOOM,
@@ -46,21 +91,15 @@ function textCss(s: TextStyle, zoom = 1): CSSProperties {
     textDecoration: s.underline ? "underline" : "none",
     color: s.color,
     textAlign: s.align,
-    textShadow: [
-      s.border
-        ? `-${t}px -${t}px 0 ${s.borderColor}, ${t}px -${t}px 0 ${s.borderColor}, -${t}px ${t}px 0 ${s.borderColor}, ${t}px ${t}px 0 ${s.borderColor}`
-        : "",
-      s.shadow ? `0 ${t * 2}px ${t * 3}px ${s.shadowColor}` : "",
-    ]
-      .filter(Boolean)
-      .join(", ") || "none",
+    // OpenSong g.CharacterSpacing = 2·Border + Shadow (design units).
+    letterSpacing: r || sh ? ((r ? 2 : 0) + (sh ? 1 : 0)) * zoom * ZOOM : undefined,
+    textShadow: shadows.join(", ") || "none",
   };
 }
 
 /** OpenSong FontFaceHeight = TextHeight + 2·border + shadow — extra leading for decorations. */
 function lineLeading(s: TextStyle, zoom = 1): number {
-  const t = s.borderThickness * ZOOM * zoom;
-  return (s.border ? 2 * t : 0) + (s.shadow ? t : 0);
+  return 2 * borderRadiusPx(s, zoom) + shadowOffsetPx(s, zoom);
 }
 
 /**
@@ -335,7 +374,8 @@ export function SlideCanvas({
            * text only. Drawn over every mode, frozen included. */
           (() => {
             const a = style?.alert;
-            const border = (a?.borderThickness ?? 2) * ((a?.size ?? 40) * (DESIGN_W / 500)) / 40 || 10;
+            // OpenSong DrawAlert box insets are multiples of CalcBorderSize.
+            const border = a ? Math.max(borderRadiusPx(a, DESIGN_W / 500 / ZOOM), 1) : 10;
             // Row flex: main axis = horizontal (alert @align), cross = vertical (@valign).
             const justify = a?.align === "right" ? "flex-end" : a?.align === "center" ? "center" : "flex-start";
             const align = a?.valign === "bottom" ? "flex-end" : a?.valign === "middle" ? "center" : "flex-start";

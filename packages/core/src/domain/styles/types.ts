@@ -48,6 +48,9 @@ export interface SlideStyle {
   margin: number;
   transition: boolean;
   transitionMs: number;
+  /** OpenSong style/@thickness — global factor scaling every font's
+   *  border (TextHeight*thickness/40 px) and shadow (/50) radius. */
+  thickness: number;
   /** OpenSong <song_subtitle> — '|'-joined field keys composing song subtitles
    *  (copyright|hymn_number|author|ccli_number|ccli_license). */
   songSubtitle: string[];
@@ -108,6 +111,7 @@ export function defaultSlideStyle(): SlideStyle {
     margin: 24,
     transition: true,
     transitionMs: 100,
+    thickness: 2,
     songSubtitle: ["author"],
     initialMode: "N",
     backgroundFit: "cover",

@@ -5,7 +5,12 @@ import type {
 } from "../../domain/styles/types.js";
 
 function mergeText(base: TextStyle, over?: Partial<TextStyle>): TextStyle {
-  return over ? { ...base, ...over } : base;
+  if (!over) return base;
+  // borderThickness is the global ThicknessFactor (style/@thickness), not a
+  // per-font attribute — never let an override font clobber it.
+  const rest = { ...over };
+  delete rest.borderThickness;
+  return { ...base, ...rest };
 }
 
 /**

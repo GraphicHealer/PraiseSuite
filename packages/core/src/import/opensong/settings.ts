@@ -127,6 +127,11 @@ export function parsePresentSettings(xml: string): PresentSettingsResult {
   style.transition = options.transition;
   style.transitionMs = options.transitionTime;
   style.initialMode = options.initialMode;
+  // GraphicsX.ThicknessFactor is a global multiplier applied to every font's
+  // border (TextHeight*thickness/40) and shadow (/50) radius.
+  const thickness = num(styleEl["@_thickness"], style.thickness);
+  style.thickness = thickness;
+  for (const f of [style.title, style.body, style.subtitle, style.alert]) f.borderThickness = thickness;
 
   return {
     style,
