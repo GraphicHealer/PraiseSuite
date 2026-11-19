@@ -1,4 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+
+// OpenSong's single transition is a crossfade: the old frame fades out
+// over the new one. Injected once; duration comes from @transition_time.
+const FADE_CSS = "@keyframes psSlideFadeOut{from{opacity:1}to{opacity:0}}";
+let fadeCssInjected = false;
+function injectFadeCss() {
+  if (fadeCssInjected || typeof document === "undefined") return;
+  const el = document.createElement("style");
+  el.textContent = FADE_CSS;
+  document.head.appendChild(el);
+  fadeCssInjected = true;
+}
 import { fontStack } from "../fonts";
 import type { PresentMode } from "../api.js";
 import type { SlideStyle, TextStyle } from "../slide-types";
@@ -74,6 +86,9 @@ export function SlideCanvas({
   subtitle,
   emphasize = false,
   verseMap,
+  transition = 0,
+  imageResize = "",
+  imageKeepAspect = true,
 }: {
   title: string;
   lines: string[];
@@ -93,9 +108,15 @@ export function SlideCanvas({
   emphasize?: boolean | undefined;
   /** OpenSong title/@include_verse — "name: 1, 2, **3**, 4". */
   verseMap?: { prev: string[]; curr: string; rest: string[] } | null | undefined;
+  /** OpenSong slide_group @transition — 0=style default, 1=force on, 2=off. */
+  transition?: number | undefined;
+  /** OpenSong image-group @resize ("screen"|"body"|"") and @keep_aspect. */
+  imageResize?: string | undefined;
+  imageKeepAspect?: boolean | undefined;
 }): ReactNode {
   const boxRef = useRef<HTMLDivElement | null>(null);
   const measureRef = useRef<HTMLDivElement | null>(null);
+  injectFadeCss();
   const [box, setBox] = useState({ w: DESIGN_W, h: DESIGN_H });
   const [bodyZoom, setBodyZoom] = useState(1);
 
@@ -110,7 +131,7 @@ export function SlideCanvas({
   }, []);
 
   const inset = REAL_BORDER + (style?.margin ?? 0);
-  const availW = DESIGN_W - inset * 2;
+  const availW = DESIGN_W - inset * 2 - ((style?.body.marginLeft ?? 0) + (style?.body.marginRight ?? 0)) * ZOOM;
   // MainHeight = screen − header/footer — title and subtitle claim their space first.
   const headerH = style?.title.enabled ? style.title.size * ZOOM * 1.3 + lineLeading(style.title) : 0;
   const footerH = style?.subtitle.enabled ? style.subtitle.size * ZOOM * 1.3 + lineLeading(style.subtitle) : 0;
@@ -149,8 +170,11 @@ export function SlideCanvas({
 
   // OpenSong stacks by valign: title/subtitle default valign=bottom → they
   // sit at the bottom (title above subtitle); body centers in what remains.
+  /** OpenSong @margin-* per element, px@640 -> design px. */
+  const margins = (t: TextStyle | undefined): string =>
+    `${(t?.marginTop ?? 0) * ZOOM}px ${(t?.marginRight ?? 0) * ZOOM}px ${(t?.marginBottom ?? 0) * ZOOM}px ${(t?.marginLeft ?? 0) * ZOOM}px`;
   const titleEl = style?.title.enabled ? (
-    <div style={textCss(style.title)}>
+    <div style={{ ...textCss(style.title), padding: margins(style.title) }}>
       {verseMap ? (
         <>
           {title}: {verseMap.prev.join(", ")}{verseMap.prev.length > 0 ? ", " : ""}
@@ -165,7 +189,7 @@ export function SlideCanvas({
   // OpenSong stacks subtitle lines at its valign (bottom → below title, source order).
   const subtitleLines = (subtitle ?? "").split("\n").filter((l) => l !== "");
   const subtitleEl = style?.subtitle.enabled && subtitleLines.length > 0 ? (
-    <div style={textCss(style.subtitle)}>
+    <div style={{ ...textCss(style.subtitle), padding: margins(style.subtitle) }}>
       {subtitleLines.map((l, i) => (
         <div key={i}>{l}</div>
       ))}
@@ -178,7 +202,7 @@ export function SlideCanvas({
       {style.subtitle.valign === "top" && subtitleEl}
       <div
         className="flex min-h-0 flex-1 flex-col"
-        style={{ justifyContent: justify, alignItems: align }}
+        style={{ justifyContent: justify, alignItems: align, padding: margins(style.body) }}
       >
         <div className="max-w-full" style={{ display: "flex", flexDirection: "column" }}>
           {lines.map((l, i) => (
@@ -192,6 +216,74 @@ export function SlideCanvas({
       {style.subtitle.valign !== "top" && subtitleEl}
     </div>
   );
+
+  // OpenSong transition: one crossfade — the previous frame fades out over
+  // the new frame for style/@transition_time ms. Per-item @transition:
+  // 0 = follow the style flag, 1 = force on, 2 = force off.
+  const transitionMs =
+    transition === 2 ? 0 : transition === 1 || (style?.transition ?? false) ? style?.transitionMs ?? 0 : 0;
+  const frame = (
+    <>
+      {!black && !white && (
+        <>
+          {bg && isVideo(backgroundKey ?? "") ? (
+            <video key={bg} src={bg} autoPlay loop muted playsInline className="absolute inset-0 h-full w-full object-cover" />
+          ) : bg ? (
+            // OpenSong background/@image_fit (cover|contain|fill|center).
+            <img
+              src={bg}
+              alt=""
+              className={`absolute inset-0 h-full w-full ${
+                style?.backgroundFit === "contain" ? "object-contain" : style?.backgroundFit === "fill" ? "object-fill" : "object-cover"
+              }`}
+              style={style?.backgroundFit === "center" ? { width: "auto", height: "auto", top: "50%", left: "50%", transform: "translate(-50%,-50%)" } : undefined}
+            />
+          ) : (
+            <div className="absolute inset-0" style={{ backgroundColor: style?.backgroundColor ?? "#000" }} />
+          )}
+        </>
+      )}
+      {white && <div className="absolute inset-0 bg-white" />}
+      {mediaKey && !black && !white && !logo && (
+        // OpenSong image-group @resize: "screen" fills the canvas, "body"
+        // fits inside the text area, "" draws natural size centered;
+        // @keep_aspect decides fit vs stretch.
+        (() => {
+          const cls = `absolute inset-0 h-full w-full bg-black ${
+            imageResize === "" ? "" : imageKeepAspect
+              ? imageResize === "screen" ? "object-cover" : "object-contain"
+              : "object-fill"
+          }`;
+          const sty = imageResize === "" ? { width: "auto", height: "auto", top: "50%", left: "50%", transform: "translate(-50%,-50%)" } : undefined;
+          return isVideo(mediaKey) ? (
+            <video key={mediaKey} src={mediaUrl(mediaKey)} autoPlay loop muted playsInline className={cls} style={sty} />
+          ) : (
+            <img src={mediaUrl(mediaKey)} alt="" className={cls} style={sty} />
+          );
+        })()
+      )}
+      {logo && logoKey && !black && !white && (
+        // OpenSong mode "L": the style background shows, logo centered shrink-only.
+        <div className="absolute inset-0 flex items-center justify-center">
+          <img src={mediaUrl(logoKey)} alt="logo" style={{ maxHeight: "100%", maxWidth: "100%" }} />
+        </div>
+      )}
+      {!black && !white && !hidden && !logo && !(backgroundAsText && bg) && body}
+    </>
+  );
+  const prevFrameRef = useRef<ReactNode>(null);
+  const prevIndexRef = useRef(index);
+  const [fadingFrame, setFadingFrame] = useState<ReactNode>(null);
+  useEffect(() => {
+    if (index === prevIndexRef.current) return;
+    prevIndexRef.current = index;
+    if (transitionMs > 0 && prevFrameRef.current !== null) {
+      setFadingFrame(prevFrameRef.current);
+      const t = setTimeout(() => setFadingFrame(null), transitionMs);
+      return () => clearTimeout(t);
+    }
+  }, [index, transitionMs]);
+  prevFrameRef.current = frame;
 
   return (
     <div ref={boxRef} className="relative h-full w-full overflow-hidden bg-black">
@@ -215,40 +307,15 @@ export function SlideCanvas({
           </div>
         )}
 
-        {!black && !white && (
-          <>
-            {bg && isVideo(backgroundKey ?? "") ? (
-              <video key={bg} src={bg} autoPlay loop muted playsInline className="absolute inset-0 h-full w-full object-cover" />
-            ) : bg ? (
-              // OpenSong background/@image_fit (cover|contain|fill|center).
-              <img
-                src={bg}
-                alt=""
-                className={`absolute inset-0 h-full w-full ${
-                  style?.backgroundFit === "contain" ? "object-contain" : style?.backgroundFit === "fill" ? "object-fill" : "object-cover"
-                }`}
-                style={style?.backgroundFit === "center" ? { width: "auto", height: "auto", top: "50%", left: "50%", transform: "translate(-50%,-50%)" } : undefined}
-              />
-            ) : (
-              <div className="absolute inset-0" style={{ backgroundColor: style?.backgroundColor ?? "#000" }} />
-            )}
-          </>
-        )}
-        {white && <div className="absolute inset-0 bg-white" />}
-        {mediaKey && !black && !white && !logo && (
-          isVideo(mediaKey) ? (
-            <video key={mediaKey} src={mediaUrl(mediaKey)} autoPlay loop muted playsInline className="absolute inset-0 h-full w-full bg-black object-contain" />
-          ) : (
-            <img src={mediaUrl(mediaKey)} alt="" className="absolute inset-0 h-full w-full bg-black object-contain" />
-          )
-        )}
-        {logo && logoKey && !black && !white && (
-          // OpenSong mode "L": the style background shows, logo centered shrink-only.
-          <div className="absolute inset-0 flex items-center justify-center">
-            <img src={mediaUrl(logoKey)} alt="logo" style={{ maxHeight: "100%", maxWidth: "100%" }} />
+        {frame}
+        {fadingFrame !== null && (
+          <div
+            className="absolute inset-0"
+            style={{ animation: `psSlideFadeOut ${transitionMs}ms linear forwards` }}
+          >
+            {fadingFrame}
           </div>
         )}
-        {!black && !white && !hidden && !logo && !(backgroundAsText && bg) && body}
         {alert && (
           /* OpenSong DrawAlert: text inside a box inset Border*3 horizontally /
            * Border*7 vertically, positioned by alert @align/@valign, font

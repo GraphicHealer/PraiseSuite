@@ -215,6 +215,41 @@ describe("buildPlan", () => {
     expect(p.slides.filter((s) => s.blank).every((s) => s.seconds === 0 && !s.loop)).toBe(true);
   });
 
+  it("type=style items emit no slides and push/pop the set-level style", () => {
+    const item = (id: string, kind: Service["items"][0]["kind"], config = {}) => ({
+      id: id as Service["items"][0]["id"], kind, songId: null,
+      arrangementId: null, mediaAssetId: null, title: id, subtitle: null, notes: null,
+      slides: [{ body: "body" }], loopSeconds: 0, config,
+    });
+    const dark = { backgroundColor: "#000020" };
+    const svc: Service = {
+      ...service,
+      items: [
+        item("a", "custom-slides"),
+        item("s1", "style", { action: "new", style: dark }),
+        item("b", "custom-slides"),
+        item("s2", "style", { action: "revert" }),
+        item("c", "custom-slides"),
+      ],
+    };
+    const p = buildPlan(svc, new Map());
+    const content = p.slides.filter((s) => !s.blank);
+    // Style groups emit no slides: 3 items x 1 body slide each.
+    expect(content.map((s) => s.title)).toEqual(["a", "b", "c"]);
+    // "b" is under the pushed style; "a" and "c" are not.
+    const byTitle = (t: string) => content.find((s) => s.title === t)!;
+    expect(byTitle("a").styleOverride).toBeNull();
+    expect(byTitle("a").setStyleActive).toBe(false);
+    expect(byTitle("b").styleOverride?.backgroundColor).toBe("#000020");
+    expect(byTitle("b").setStyleActive).toBe(true);
+    expect(byTitle("c").styleOverride).toBeNull();
+    // Item's own <style> merges over the style-change (item wins).
+    const svc2 = { ...svc, items: svc.items.map((i, n) => n === 2 ? { ...i, config: { ...i.config, style: { backgroundColor: "#FF0000" } } } : i) };
+    const p2 = buildPlan(svc2, new Map());
+    const b2 = p2.slides.find((s) => !s.blank && s.title === "b")!;
+    expect(b2.styleOverride?.backgroundColor).toBe("#FF0000");
+  });
+
   it("navigates with clamping", () => {
     const sess = "sess" as never;
     const p0 = positionOfSlide(plan, 0, sess);

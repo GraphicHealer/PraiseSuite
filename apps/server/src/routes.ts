@@ -628,6 +628,9 @@ export function buildRoutes(deps: AppDeps): Route[] {
         }
         deps.storage.setSetting("style.present", JSON.stringify(style));
         deps.storage.setSetting("style.options", JSON.stringify(parsed.options));
+        // OpenSong <scripture_style> — applied to scripture-type groups.
+        if (parsed.scriptureStyle)
+          deps.storage.setSetting("style.scripture", JSON.stringify(parsed.scriptureStyle));
         out.style = style;
         out.warnings.push(...parsed.warnings);
       }
@@ -942,6 +945,17 @@ function loadStyle(storage: SqliteStorage): SlideStyle {
   }
 }
 
+/** OpenSong <scripture_style> — scripture groups render with this style when
+ *  the set-level style is still the default (no style-change active). */
+function loadScriptureStyle(storage: SqliteStorage): SlideStyle | null {
+  try {
+    const raw = storage.getSetting("style.scripture");
+    return raw === null ? null : { ...defaultSlideStyle(), ...(JSON.parse(raw) as Partial<SlideStyle>) };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Resolve the session's current slide content for receivers: lines plus the
  * effective style chain (global -> item/song overrides), background, logo,
@@ -954,10 +968,15 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
   if (!slide) return null;
   const item = service?.items.find((i) => i.id === slide.serviceItemId);
   const song = slide.songId ? await repos.songs.get(slide.songId) : null;
-  const style = resolveSlideStyle(
-    loadStyle(storage),
-    item?.config["style"] as SlideStyleOverride | undefined,
-  );
+  // Style chain (OpenSong ProcessStyles/GetSlideStyle): global default —
+  // scripture_style for scripture groups while the set style is default —
+  // the slide's resolved override (style-change stack merged under the
+  // item's own <style>, computed in buildPlan).
+  const base =
+    slide.kind === "scripture" && !slide.setStyleActive
+      ? (loadScriptureStyle(storage) ?? loadStyle(storage))
+      : loadStyle(storage);
+  const style = resolveSlideStyle(base, slide.styleOverride ?? undefined);
   // Background refs may be storage keys ("media/<sha>") or OpenSong filenames
   // ("Backgrounds/x.jpg") — resolve filenames through the media registry.
   const resolveBg = async (ref: string | null): Promise<string | null> =>
@@ -1035,7 +1054,18 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
     logoKey: style.logoKey,
     /** Announcement-loop timing in seconds (OpenSong item loop interval). */
     loopSeconds: typeof item?.config["loopSeconds"] === "number" ? (item.config["loopSeconds"] as number) : null,
-    subtitle: subtitleFor(),
+    /** OpenSong image-group @resize/@keep_aspect for media slides. */
+    imageResize: slide.kind === "media" ? ((item?.config["resize"] as string | undefined) ?? "") : null,
+    imageKeepAspect: slide.kind === "media" ? item?.config["keepAspect"] !== "false" : true,
+    subtitle: (() => {
+      const base = subtitleFor();
+      // @descriptions_in_subtitle appends the image's description line.
+      if (slide.kind !== "media" || item?.config["descriptionsInSubtitle"] !== "true") return base;
+      const imgs = Array.isArray(item.config["images"]) ? (item.config["images"] as { description?: string }[]) : [];
+      const desc = imgs[slide.sliceIndex]?.description;
+      if (!desc) return base;
+      return base === null ? desc : `${base}\n${desc}`;
+    })(),
     /** OpenSong slide @emphasize — chorus italic inversion (highlight_chorus). */
     emphasize: slide.emphasize,
     /** OpenSong slide_group @seconds/@loop/@transition per-item overrides. */
@@ -1043,6 +1073,14 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
     loop: slide.loop,
     transition: slide.transition,
     verseMap: verseMap(),
+    /** OpenSong style/@mouse_cursor on the present window. */
+    mouseCursor: (() => {
+      try {
+        return (JSON.parse(storage.getSetting("style.options") ?? "{}") as { mouseCursor?: string }).mouseCursor ?? "hidden";
+      } catch {
+        return "hidden";
+      }
+    })(),
     next: next ? { title: nextItem?.title ?? next.title, lines: next.lines } : null,
   };
 }

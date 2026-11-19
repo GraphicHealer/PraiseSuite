@@ -47,6 +47,13 @@ export interface PlanSlide {
   loop: boolean;
   /** OpenSong slide_group @transition — 0=default, 1=force on, 2=force off. */
   transition: number;
+  /**
+   * Resolved style override for this slide: the active mid-set style-change
+   * stack merged under the item's own <style> (item wins). Null = default.
+   */
+  styleOverride: import("../../domain/styles/types.js").SlideStyleOverride | null;
+  /** True while a style-change item is in effect (scripture_style suppressed). */
+  setStyleActive: boolean;
 }
 
 const itemTiming = (item: ServiceItem) => ({
@@ -150,10 +157,36 @@ export function buildPlan(
       seconds: 0,
       loop: false,
       transition: 0,
+      styleOverride: effectiveStyle(item),
+      setStyleActive: styleStack.length > 0,
     });
   let prevName: string | null = null;
+  // OpenSong ProcessStyles: type="style" groups push (@action=new) or pop
+  // (@action=revert) the set-level style for the groups that follow them.
+  type StyleOverride = import("../../domain/styles/types.js").SlideStyleOverride;
+  const styleStack: StyleOverride[] = [];
+  const mergeOverride = (a: StyleOverride | undefined, b: StyleOverride | undefined): StyleOverride | null => {
+    if (!a && !b) return null;
+    const pick = <K extends "title" | "body" | "subtitle">(k: K) =>
+      a?.[k] || b?.[k] ? { ...(a?.[k] ?? {}), ...(b?.[k] ?? {}) } : undefined;
+    const out: StyleOverride = { ...(a ?? {}), ...(b ?? {}) };
+    for (const k of ["title", "body", "subtitle"] as const) {
+      const m = pick(k);
+      if (m) out[k] = m;
+    }
+    return out;
+  };
+  const effectiveStyle = (item: ServiceItem) =>
+    mergeOverride(styleStack[styleStack.length - 1], item.config["style"] as StyleOverride | undefined);
 
   for (const item of service.items) {
+    if (item.kind === "style") {
+      // Style-change groups produce no slides and no separator blanks.
+      const action = item.config["action"];
+      if (action === "revert") styleStack.pop();
+      else if (item.config["style"]) styleStack.push(item.config["style"] as StyleOverride);
+      continue;
+    }
     const name = item.title;
     if (name !== prevName) pushBlank(item, -1);
     prevName = name;
@@ -201,6 +234,8 @@ export function buildPlan(
                 blank: false,
                 emphasize: /^c/i.test(raw.label),
                 ...timing,
+                styleOverride: effectiveStyle(item),
+                setStyleActive: styleStack.length > 0,
               });
             });
           }
@@ -240,6 +275,8 @@ export function buildPlan(
           blank: false,
           emphasize: false,
           ...timing,
+          styleOverride: effectiveStyle(item),
+          setStyleActive: styleStack.length > 0,
         });
       }
       continue;
@@ -263,6 +300,8 @@ export function buildPlan(
         blank: false,
         emphasize: false,
         ...timing,
+        styleOverride: effectiveStyle(item),
+        setStyleActive: styleStack.length > 0,
       });
     }
     if (item.slides.length === 0) {
@@ -282,6 +321,8 @@ export function buildPlan(
         blank: false,
         emphasize: false,
         ...timing,
+        styleOverride: effectiveStyle(item),
+        setStyleActive: styleStack.length > 0,
       });
     }
   }

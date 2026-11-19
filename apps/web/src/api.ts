@@ -28,6 +28,9 @@ export interface SlideResponse {
     loop: boolean;
     transition: number;
     verseMap: { prev: string[]; curr: string; rest: string[] } | null;
+    imageResize: string | null;
+    imageKeepAspect: boolean;
+    mouseCursor?: string;
     next: { title: string; lines: string[] } | null;
   } | null;
 }

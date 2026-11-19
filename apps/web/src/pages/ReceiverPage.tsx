@@ -25,7 +25,14 @@ interface SlidePayload {
   /** OpenSong slide_group @seconds/@loop — auto-advance + group wrap. */
   seconds: number;
   loop: boolean;
+  /** OpenSong slide_group @transition — 0=default, 1=force, 2=off. */
+  transition: number;
+  /** OpenSong image-group @resize/@keep_aspect. */
+  imageResize?: string | null;
+  imageKeepAspect?: boolean;
   verseMap: { prev: string[]; curr: string; rest: string[] } | null;
+  /** OpenSong style/@mouse_cursor (arrow|cross|hidden|hourglass|ibeam). */
+  mouseCursor?: string;
   next: { title: string; lines: string[] } | null;
 }
 
@@ -314,7 +321,14 @@ export function ReceiverPage(): ReactNode {
   const slide = shown?.slide ?? null;
 
   return (
-    <div className="fixed inset-0 bg-black">
+    <div
+      className="fixed inset-0 bg-black"
+      style={{
+        cursor: (
+          { arrow: "default", cross: "crosshair", hourglass: "wait", ibeam: "text" } as Record<string, string>
+        )[slide?.mouseCursor ?? "hidden"] ?? "none",
+      }}
+    >
       <SlideCanvas
         title={slide?.title ?? ""}
         lines={slide?.lines ?? []}
@@ -331,6 +345,9 @@ export function ReceiverPage(): ReactNode {
         subtitle={slide?.subtitle}
         emphasize={slide?.emphasize}
         verseMap={slide?.verseMap}
+        transition={slide?.transition}
+        imageResize={slide?.imageResize ?? ""}
+        imageKeepAspect={slide?.imageKeepAspect ?? true}
       />
       {!connected && (
         <span className="fixed bottom-2 right-3 text-xs text-zinc-700">connecting…</span>

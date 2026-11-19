@@ -18,6 +18,10 @@ export interface TextStyle {
   enabled: boolean;
   autoScale: boolean;
   includeVerse?: boolean;
+  marginLeft?: number;
+  marginRight?: number;
+  marginTop?: number;
+  marginBottom?: number;
 }
 
 export interface SlideStyle {

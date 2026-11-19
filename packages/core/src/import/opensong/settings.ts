@@ -2,12 +2,15 @@ import { resolveFont } from "../../application/fonts.js";
 import {
   defaultSlideStyle,
   type SlideStyle,
+  type SlideStyleOverride,
   type TextStyle,
 } from "../../domain/styles/types.js";
 import { asRecord, asString, parseXml } from "./xml.js";
 
 export interface PresentSettingsResult {
   style: SlideStyle;
+  /** OpenSong <scripture_style> — the style applied to scripture groups. */
+  scriptureStyle: SlideStyle | null;
   /** Base64-decodable image data captured from the settings file. */
   backgroundData: string | null;
   logoData: string | null;
@@ -21,6 +24,8 @@ export interface PresentSettingsResult {
     transitionTime: number;
     blankIsSlideChange: boolean;
     blankUsesNext: boolean;
+    /** OpenSong style/@mouse_cursor on the present window (default hidden). */
+    mouseCursor: string;
   };
   warnings: string[];
 }
@@ -55,6 +60,11 @@ function textStyle(el: unknown, base: TextStyle): TextStyle {
     enabled: e["@_enabled"] === undefined ? true : bool(e["@_enabled"]),
     autoScale: bool(e["@_auto_scale"]),
     ...(e["@_include_verse"] !== undefined ? { includeVerse: bool(e["@_include_verse"]) } : {}),
+    // OpenSong @margin-* per element, px in the 640-unit design space.
+    ...(e["@_margin-left"] !== undefined ? { marginLeft: num(e["@_margin-left"], 0) } : {}),
+    ...(e["@_margin-right"] !== undefined ? { marginRight: num(e["@_margin-right"], 0) } : {}),
+    ...(e["@_margin-top"] !== undefined ? { marginTop: num(e["@_margin-top"], 0) } : {}),
+    ...(e["@_margin-bottom"] !== undefined ? { marginBottom: num(e["@_margin-bottom"], 0) } : {}),
   };
 }
 
@@ -70,29 +80,36 @@ export function parsePresentSettings(xml: string): PresentSettingsResult {
     throw new Error("Invalid PresentSettings: no <present_settings> root");
   }
   const styleEl = asRecord(root["style"]);
+
+  // <default_style> and <scripture_style> share the full SlideStyle XML shape.
+  const parseStyleEl = (el: unknown): SlideStyle => {
+    const e = asRecord(el);
+    const style = defaultSlideStyle();
+    style.title = textStyle(e["title"], style.title);
+    style.body = textStyle(e["body"], style.body);
+    style.subtitle = textStyle(e["subtitle"], style.subtitle);
+    style.descriptiveSubtitles = bool(asRecord(e["subtitle"])["@_descriptive"]);
+    style.highlightChorus = bool(asRecord(e["body"])["@_highlight_chorus"]);
+    const bg = asRecord(e["background"]);
+    style.backgroundColor = asString(bg["@_color"]) || style.backgroundColor;
+    style.backgroundKey = asString(bg["@_filename"]) || null;
+    // OpenSong ObjectFit enum: cover=0 contain=1 fill=2 none/center=3|99.
+    const fit = num(bg["@_image_fit"], -1);
+    if (fit === 0 || fit === 1 || fit === 2 || fit === 3 || fit === 99)
+      style.backgroundFit = fit === 1 ? "contain" : fit === 2 ? "fill" : "cover";
+    style.backgroundStripFooter = num(bg["@_strip_footer"], 0);
+    // <song_subtitle> text = '|'-joined field keys (author|copyright|…).
+    const songSub = asString(asRecord(e["song_subtitle"])["#text"] ?? e["song_subtitle"]);
+    if (songSub !== "") style.songSubtitle = songSub.split("|").filter((s) => s !== "");
+    return style;
+  };
+
   const defaults = asRecord(root["default_style"]);
-  const style = defaultSlideStyle();
-
-  style.title = textStyle(defaults["title"], style.title);
-  style.body = textStyle(defaults["body"], style.body);
-  style.subtitle = textStyle(defaults["subtitle"], style.subtitle);
-  style.descriptiveSubtitles = bool(asRecord(defaults["subtitle"])["@_descriptive"]);
-  style.highlightChorus = bool(asRecord(defaults["body"])["@_highlight_chorus"]);
-
-  // <background> sits inside <default_style>; <logo>/<logo_mask> are root strings.
-  const bg = asRecord(defaults["background"]);
-  style.backgroundColor = asString(bg["@_color"]) || style.backgroundColor;
-  const bgData = asString(bg["#text"] ?? "") || null;
+  const style = parseStyleEl(defaults);
+  // <background> image data (base64 text) — registered as media by the caller.
+  const bgData = asString(asRecord(defaults["background"])["#text"] ?? "") || null;
   style.backgroundKey = null; // media registered by the caller
-  // OpenSong ObjectFit enum: cover=0 contain=1 fill=2 none/center=3|99.
-  const fit = num(bg["@_image_fit"], -1);
-  if (fit === 0 || fit === 1 || fit === 2 || fit === 3 || fit === 99)
-    style.backgroundFit = fit === 1 ? "contain" : fit === 2 ? "fill" : "cover";
-  style.backgroundStripFooter = num(bg["@_strip_footer"], 0);
-
-  // <song_subtitle> text = '|'-joined field keys (author|copyright|…).
-  const songSub = asString(asRecord(defaults["song_subtitle"])["#text"] ?? defaults["song_subtitle"]);
-  if (songSub !== "") style.songSubtitle = songSub.split("|").filter((s) => s !== "");
+  const scriptureStyle = root["scripture_style"] !== undefined ? parseStyleEl(root["scripture_style"]) : null;
 
   const logoData = asString(asRecord(root["logo"])["#text"] ?? root["logo"] ?? "");
   const maskData = asString(asRecord(root["logo_mask"])["#text"] ?? root["logo_mask"] ?? "");
@@ -105,6 +122,7 @@ export function parsePresentSettings(xml: string): PresentSettingsResult {
     transitionTime: num(styleEl["@_transition_time"], 100),
     blankIsSlideChange: bool(styleEl["@_blank_is_slide_change"]),
     blankUsesNext: bool(styleEl["@_blank_uses_next"]),
+    mouseCursor: asString(styleEl["@_mouse_cursor"]) || "hidden",
   };
   style.transition = options.transition;
   style.transitionMs = options.transitionTime;
@@ -112,6 +130,7 @@ export function parsePresentSettings(xml: string): PresentSettingsResult {
 
   return {
     style,
+    scriptureStyle,
     backgroundData: bgData,
     logoData: logoData || null,
     logoMaskData: maskData || null,
@@ -119,6 +138,25 @@ export function parsePresentSettings(xml: string): PresentSettingsResult {
     options,
     warnings,
   };
+}
+
+/**
+ * Parse a <slide_group><style> node (per-item override / style-change item)
+ * into a deep-partial SlideStyleOverride — same XML shape as default_style.
+ */
+export function parseStyleOverride(el: unknown): SlideStyleOverride {
+  const e = asRecord(el);
+  const base = defaultSlideStyle();
+  const out: SlideStyleOverride = {};
+  if (e["title"] !== undefined) out.title = textStyle(e["title"], base.title);
+  if (e["body"] !== undefined) out.body = textStyle(e["body"], base.body);
+  if (e["subtitle"] !== undefined) out.subtitle = textStyle(e["subtitle"], base.subtitle);
+  const bg = asRecord(e["background"]);
+  if (bg["@_color"] !== undefined) out.backgroundColor = asString(bg["@_color"]);
+  const bgFile = asString(bg["@_filename"]);
+  if (bgFile !== "") out.backgroundKey = bgFile;
+  else if (asString(bg["#text"] ?? "") !== "") out.backgroundKey = asString(bg["#text"]);
+  return out;
 }
 
 /** Per-role print styles (PrintSettings), for the M8 print engine. */

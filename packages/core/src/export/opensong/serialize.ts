@@ -271,6 +271,15 @@ export function serializeOpenSongSet(
       if (item.kind === "scripture") {
         return `${attrs("scripture", item.title)}${common}${slides(item)}\n    </slide_group>`;
       }
+      if (item.kind === "style") {
+        // OpenSong style-change item: @action new|revert + <style> doc.
+        const action = typeof item.config["action"] === "string" ? ` action="${escapeXml(item.config["action"] as string)}"` : "";
+        const styleXml =
+          typeof item.config["styleXml"] === "string"
+            ? `\n      ${item.config["styleXml"]}`
+            : styleOverrideXml(item.config["style"] as import("../../domain/styles/types.js").SlideStyleOverride | undefined);
+        return `${attrs("style", item.title, action)}${styleXml}\n    </slide_group>`;
+      }
       if (item.kind === "media" && item.config["openSongType"] === "image") {
         const name = typeof item.config["imagePath"] === "string" ? item.config["imagePath"] : item.title;
         const resize = typeof item.config["resize"] === "string" ? ` resize="${escapeXml(item.config["resize"] as string)}"` : "";
@@ -306,4 +315,27 @@ export function serializeOpenSongSet(
     `<?xml version="1.0" encoding="UTF-8"?>\n<set name="${escapeXml(service.name)}">\n` +
     `  <slide_groups>\n${groups}\n  </slide_groups>\n</set>\n`
   );
+}
+
+/** Serialize a <style> override node back to OpenSong XML (style-change items). */
+function styleOverrideXml(
+  o: import("../../domain/styles/types.js").SlideStyleOverride | undefined,
+): string {
+  if (o === undefined) return "";
+  const font = (t: import("../../domain/styles/types.js").TextStyleOverride | undefined, name: string) => {
+    if (t === undefined) return "";
+    const a: string[] = [];
+    const push = (k: string, v: unknown) => { if (v !== undefined) a.push(`${k}="${escapeXml(String(v))}"`); };
+    push("font", t.font); push("size", t.size); push("bold", t.bold); push("italic", t.italic);
+    push("underline", t.underline); push("color", t.color); push("border", t.border);
+    push("border_color", t.borderColor); push("shadow", t.shadow); push("shadow_color", t.shadowColor);
+    push("fill", t.fill); push("fill_color", t.fillColor); push("align", t.align); push("valign", t.valign);
+    push("enabled", t.enabled); push("auto_scale", t.autoScale);
+    return `\n      <${name} ${a.join(" ")}/>`;
+  };
+  const bg =
+    o.backgroundColor === undefined && o.backgroundKey === undefined
+      ? ""
+      : `\n      <background${o.backgroundColor !== undefined ? ` color="${escapeXml(o.backgroundColor)}"` : ""}${o.backgroundKey != null && !String(o.backgroundKey).startsWith("media/") ? ` filename="${escapeXml(String(o.backgroundKey))}"` : ""}/>`;
+  return `<style>${font(o.title, "title")}${font(o.body, "body")}${font(o.subtitle, "subtitle")}${bg}\n      </style>`;
 }

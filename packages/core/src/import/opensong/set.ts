@@ -1,6 +1,7 @@
 import type { Service, ServiceItem } from "../../domain/services/types.js";
 import type { Song } from "../../domain/songs/types.js";
 import { asRecord, asString, parseXml } from "./xml.js";
+import { parseStyleOverride } from "./settings.js";
 
 export interface SetParseResult {
   name: string;
@@ -103,7 +104,14 @@ export function parseOpenSongSet(xml: string, fallbackName: string): SetParseRes
       if (resize) config["resize"] = resize;
       const keepAspect = asString(group["@_keep_aspect"]);
       if (keepAspect) config["keepAspect"] = keepAspect;
+      const descSub = asString(group["@_descriptions_in_subtitle"]);
+      if (descSub) config["descriptionsInSubtitle"] = descSub;
       items.push({ ...base, kind: "media", images: imagesOf(group) });
+    } else if (type === "style") {
+      // OpenSong mid-set style change: @action new|revert + <style> doc.
+      config["action"] = asString(group["@_action"]) || "new";
+      if (group["style"] !== undefined) config["style"] = parseStyleOverride(group["style"]);
+      items.push({ ...base, kind: "style" });
     } else if (type === "custom") {
       items.push(base);
     } else {

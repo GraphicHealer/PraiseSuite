@@ -13,7 +13,9 @@ export type ServiceItemKind =
   | "custom-slides"
   | "announcement"
   | "media"
-  | "note";
+  | "note"
+  /** OpenSong <slide_group type="style"> — mid-set style change (no slides). */
+  | "style";
 
 /**
  * A single item in a service plan. References reusable content by ID but keeps

@@ -23,6 +23,11 @@ export interface TextStyle {
   autoScale: boolean;
   /** OpenSong title/@include_verse — append the verse map to the title. */
   includeVerse?: boolean;
+  /** OpenSong @margin-* per element, px in the 640-unit design space. */
+  marginLeft?: number;
+  marginRight?: number;
+  marginTop?: number;
+  marginBottom?: number;
 }
 
 export interface SlideStyle {

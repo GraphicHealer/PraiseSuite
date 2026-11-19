@@ -18,7 +18,11 @@ export function setListHtml(service: Service, roles: Record<string, TextStyle> =
   if (service.date) parts.push(`<div style="${roleCss(roles["author"])};color:#666">${esc(service.date)}</div>`);
   if (service.description) parts.push(`<div style="${roleCss(roles["author"])};color:#666">${esc(service.description)}</div>`);
   parts.push(`<table style="margin-top:10pt;border-collapse:collapse;font-family:sans-serif;font-size:11pt">`);
-  service.items.forEach((item, i) => {
+  // OpenSong SetListReport: @print=false items and "--"-prefixed names are skipped.
+  const printable = service.items.filter(
+    (item) => item.config["print"] !== "false" && !item.title.startsWith("--"),
+  );
+  printable.forEach((item, i) => {
     const detail = itemDetail(item);
     parts.push(
       `<tr>` +
