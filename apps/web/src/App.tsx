@@ -113,11 +113,11 @@ export function App(): ReactNode {
     setPage("present");
   };
 
-  /** Every Present action asks which output mode first (desktop only —
-   *  browsers have no output windows, so they go straight to the helper). */
+  /** Every Present action asks which output mode first. On desktop the
+   *  choice applies to the output window via IPC; in a browser it no-ops
+   *  but the popup still documents the available outputs. */
   const present = (service: Service | null, itemId?: string) => {
-    if (ps()?.setDisplayMode) setPresentPicker({ service, itemId });
-    else launchPresent(service, itemId);
+    setPresentPicker({ service, itemId });
   };
 
   const pickMode = async (choice: ModeChoice) => {

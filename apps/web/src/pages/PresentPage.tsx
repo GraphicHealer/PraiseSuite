@@ -346,11 +346,8 @@ export function PresentPage({
     await refreshPlan(session.id);
   };
 
-  const makeReceiverUrl = async () => {
-    if (!session) return;
-    const { token } = await api.guestToken(session.id, ["view"]);
-    setReceiverUrl(`${window.location.origin}/receiver?session=${session.id}&token=${token}`);
-  };
+  // Receivers auto-join the latest live session — the bare URL is enough.
+  const makeReceiverUrl = () => setReceiverUrl(`${window.location.origin}/receiver`);
 
   if (!session) {
     return (
