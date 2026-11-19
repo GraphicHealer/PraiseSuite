@@ -1039,16 +1039,24 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
     index: idx,
     total: plan.slides.length,
     /* On-slide title = the item's name (OpenSong draws slide_group @name);
-     * the "— V1" section suffix only exists for the helper's slide list. */
-    title: item?.title ?? slide.title,
+     * the "— V1" section suffix only exists for the helper's slide list.
+     * Blank separator slides have no <title> — they draw background only. */
+    title: slide.blank ? "" : (item?.title ?? slide.title),
     lines: slide.lines,
     kind: slide.kind,
     mediaKey: slide.mediaKey,
     style,
-    /** Per-verse background wins over song-level, which wins over style. */
+    /** Per-verse background wins over song-level, which wins over style.
+     *  An OpenSong @verse="" entry is the song's default background — it
+     *  also backs blank separator slides (which have no verse). */
     backgroundKey:
       (await resolveBg(slide.backgroundKey)) ??
-      (await resolveBg(song?.background ?? null)) ??
+      (await resolveBg(
+        (() => {
+          const d = song?.backgrounds?.items.find((b) => b.verse === "");
+          return (d?.key ?? d?.filename) || song?.background || null;
+        })(),
+      )) ??
       (await resolveBg(style.backgroundKey)),
     backgroundAsText: slide.backgroundAsText,
     logoKey: style.logoKey,
@@ -1058,6 +1066,7 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
     imageResize: slide.kind === "media" ? ((item?.config["resize"] as string | undefined) ?? "") : null,
     imageKeepAspect: slide.kind === "media" ? item?.config["keepAspect"] !== "false" : true,
     subtitle: (() => {
+      if (slide.blank) return null; // OpenSong blank groups draw no title/subtitle
       const base = subtitleFor();
       // @descriptions_in_subtitle appends the image's description line.
       if (slide.kind !== "media" || item?.config["descriptionsInSubtitle"] !== "true") return base;

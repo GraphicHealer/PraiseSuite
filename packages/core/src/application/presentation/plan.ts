@@ -207,10 +207,12 @@ export function buildPlan(
               : { ...raw, lines: raw.lines.filter((l) => l.prefix === as.prefix) };
           // Verse backgrounds for this section, cycled across slices
           // (OpenSong background[@verse='V'|'v'], xbackIndex per sub-section).
+          // A @verse="" entry is the song-level default — it applies to
+          // every section when no verse-specific background exists.
           const label = raw.label.toLowerCase();
-          const backs = (song.backgrounds?.items ?? []).filter(
-            (b) => b.verse.toLowerCase() === label,
-          );
+          const allBacks = song.backgrounds?.items ?? [];
+          const verseBacks = allBacks.filter((b) => b.verse.toLowerCase() === label);
+          const backs = verseBacks.length > 0 ? verseBacks : allBacks.filter((b) => b.verse === "");
           const repeats = Math.max(1, as.repeats);
           for (let rep = 0; rep < repeats; rep++) {
             slicesOfSection(section).forEach((lines, sliceIndex) => {

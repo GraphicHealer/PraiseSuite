@@ -60,6 +60,28 @@ export function createApp(options: AppOptions): PraiseSuiteApp {
   const auth = new AuthService(storage);
   let lanEnabled = storage.getSetting("server.lanEnabled") === "true";
 
+  // Boot cleanup: sessions pointing at a deleted service are dead — drop
+  // them so receivers don't auto-join a session with an empty plan, and
+  // remove scratch "(Presented Song)" services no session references.
+  void (async () => {
+    try {
+      const live = await storage.repositories.sessions.listActive();
+      const refs = new Set<string>();
+      for (const s of live) {
+        if (s.serviceId === null) continue;
+        if ((await storage.repositories.services.get(s.serviceId)) === null)
+          await storage.repositories.sessions.delete(s.id);
+        else refs.add(s.serviceId);
+      }
+      for (const svc of await storage.repositories.services.list()) {
+        if (svc.name === "(Presented Song)" && !refs.has(svc.id))
+          await storage.repositories.services.delete(svc.id);
+      }
+    } catch {
+      /* cleanup is best-effort */
+    }
+  })();
+
   const registry = createRegistry();
   registerSongCommands(registry);
   const transport = new LocalTransport(registry, {
