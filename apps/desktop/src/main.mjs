@@ -136,8 +136,8 @@ ipcMain.handle("ps:print-pdf", async (e, { url, filename }) => {
  *             falls back to preview when only one display is present.
  *   single  — fullscreen output window on the primary display; controlled
  *             by the OpenSong keymap (handled by the receiver page itself).
- *   preview — dual-screen test: no output window, the helper's Current/Next
- *             previews act as the output.
+ *   preview — dual-screen test: a windowed output on the primary display's
+ *             right half, standing in for a second monitor.
  *   network — no local output window; remote devices open /receiver over LAN.
  */
 let displayMode = "auto";
@@ -158,9 +158,9 @@ function openOutputWindow() {
   const target = displays.find((d) => d.id !== primary.id);
   const mode = displayMode === "auto" ? (target ? "dual" : "preview") : displayMode;
 
-  // Only single/dual create a local output window; preview, network, and
+  // single/dual/preview create a local output window; network and
   // plugin-provided modes (e.g. a future "plugin:obs:*" output) do not.
-  if (mode !== "single" && mode !== "dual") {
+  if (mode === "network" || mode.startsWith("plugin:")) {
     console.log(`${mode} mode — no local output window`);
     return;
   }
@@ -169,19 +169,37 @@ function openOutputWindow() {
     return;
   }
 
-  // dual → fullscreen on the second display; single → fullscreen on primary.
-  const bounds = mode === "dual" && target ? target.bounds : primary.bounds;
-  outputWindow = new BrowserWindow({
-    x: bounds.x,
-    y: bounds.y,
-    fullscreen: true,
-    frame: false,
-    backgroundColor: "#000000",
-    webPreferences: {
-      contextIsolation: true,
-      preload: path.join(dir, "preload.mjs"),
-    },
-  });
+  // dual → fullscreen on the second display; single → fullscreen on primary;
+  // preview (dual-screen test) → a windowed "screen" on the primary's right
+  // half, framed so it can be moved/resized like a real second monitor.
+  if (mode === "preview") {
+    const wa = primary.workArea;
+    outputWindow = new BrowserWindow({
+      x: wa.x + Math.floor(wa.width / 2),
+      y: wa.y,
+      width: Math.floor(wa.width / 2),
+      height: wa.height,
+      title: "Presentation Output (Test)",
+      backgroundColor: "#000000",
+      webPreferences: {
+        contextIsolation: true,
+        preload: path.join(dir, "preload.mjs"),
+      },
+    });
+  } else {
+    const bounds = mode === "dual" && target ? target.bounds : primary.bounds;
+    outputWindow = new BrowserWindow({
+      x: bounds.x,
+      y: bounds.y,
+      fullscreen: true,
+      frame: false,
+      backgroundColor: "#000000",
+      webPreferences: {
+        contextIsolation: true,
+        preload: path.join(dir, "preload.mjs"),
+      },
+    });
+  }
   outputWindow.loadURL(`${BASE}/receiver`);
   outputWindow.on("closed", () => (outputWindow = null));
 }

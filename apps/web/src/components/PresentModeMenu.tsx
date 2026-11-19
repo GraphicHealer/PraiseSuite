@@ -77,7 +77,7 @@ export function PresentModeMenu({
     options.push({
       id: "preview",
       label: "Dual-Screen Test",
-      desc: "Dual-screen controls with the output previewed inside the helper.",
+      desc: "A windowed output on this display acting as the second screen — demo dual-screen controls.",
       mode: "preview",
     });
   }

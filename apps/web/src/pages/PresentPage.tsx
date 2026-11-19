@@ -410,7 +410,7 @@ export function PresentPage({
   ];
 
   return (
-    <div className="flex h-screen flex-col p-2">
+    <div className="flex h-full flex-col p-2">
       {/* Title strip — OpenSong's helper shows only the window caption. */}
       <div className="mb-2 flex items-center gap-2 text-sm">
         <span className="font-semibold">Presentation Helper</span>

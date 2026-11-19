@@ -132,7 +132,7 @@ export function App(): ReactNode {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+    <div className="flex h-screen flex-col bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <header className="flex items-center gap-4 border-b border-zinc-200 bg-white px-4 py-2 dark:border-zinc-800 dark:bg-zinc-900">
         <button
           onClick={() => setPage("main")}
@@ -182,7 +182,7 @@ export function App(): ReactNode {
           )}
         </div>
       </header>
-      <main className="flex-1">
+      <main className="min-h-0 flex-1 overflow-auto">
         <DialogProvider>
           {page === "main" && (
             <MainPage
