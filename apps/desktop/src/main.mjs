@@ -173,12 +173,22 @@ function openOutputWindow() {
   // preview (dual-screen test) → a windowed "screen" on the primary's right
   // half, framed so it can be moved/resized like a real second monitor.
   if (mode === "preview") {
+    // Dual-screen test: dock the helper on the left half and a 16:9 output
+    // window vertically centered on the right half — two side-by-side
+    // "screens" on one monitor.
     const wa = primary.workArea;
+    const half = Math.floor(wa.width / 2);
+    const w = half;
+    const h = Math.floor((w * 9) / 16);
+    if (controlWindow !== null && !controlWindow.isDestroyed()) {
+      controlWindow.unmaximize();
+      controlWindow.setBounds({ x: wa.x, y: wa.y, width: half, height: wa.height });
+    }
     outputWindow = new BrowserWindow({
-      x: wa.x + Math.floor(wa.width / 2),
-      y: wa.y,
-      width: Math.floor(wa.width / 2),
-      height: wa.height,
+      x: wa.x + half,
+      y: wa.y + Math.floor((wa.height - h) / 2),
+      width: w,
+      height: h,
       title: "Presentation Output (Test)",
       autoHideMenuBar: true,
       backgroundColor: "#000000",
