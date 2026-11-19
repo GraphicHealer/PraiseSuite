@@ -22,6 +22,12 @@ export interface SlideResponse {
     backgroundAsText?: boolean;
     logoKey: string | null;
     loopSeconds: number | null;
+    subtitle: string | null;
+    emphasize: boolean;
+    seconds: number;
+    loop: boolean;
+    transition: number;
+    verseMap: { prev: string[]; curr: string; rest: string[] } | null;
     next: { title: string; lines: string[] } | null;
   } | null;
 }
@@ -171,6 +177,10 @@ class Api {
         loopSeconds: number;
         itemNotes: string | null;
         blank: boolean;
+        seconds: number;
+        loop: boolean;
+        transition: number;
+        emphasize: boolean;
       }[];
       current: number;
       total: number;

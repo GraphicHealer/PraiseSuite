@@ -22,6 +22,9 @@ type PlanSlide = {
   loopSeconds: number;
   itemNotes: string | null;
   blank: boolean;
+  seconds: number;
+  loop: boolean;
+  emphasize: boolean;
 };
 type Plan = { slides: PlanSlide[]; current: number; total: number };
 
@@ -102,6 +105,10 @@ export function PresentPage({
   const startFor = useCallback(
     async (svc: Service, itemId?: string | null) => {
       const id = crypto.randomUUID();
+      // OpenSong style/@initial_mode — N/B/W/H/L/F → session mode on start.
+      const initialMode = await api.style()
+        .then((s) => ({ N: "normal", B: "blank", W: "white", H: "hidden", L: "logo", F: "freeze" } as const)[s.initialMode?.[0]?.toUpperCase() as "N" | "B" | "W" | "H" | "L" | "F"] ?? "normal")
+        .catch(() => "normal" as PresentMode);
       const session: PresentationSession = {
         id: id as PresentationSession["id"],
         serviceId: svc.id,
@@ -117,7 +124,7 @@ export function PresentPage({
           positionWithinSection: 0,
         },
         blanked: false,
-        mode: "normal",
+        mode: initialMode,
         alert: null,
         controlOwner: null,
         createdAt: new Date().toISOString(),
@@ -196,20 +203,21 @@ export function PresentPage({
     [plan, session, doNavigate],
   );
 
-  /** OpenSong GoPreviousSection (Left arrow AND Backspace): back to the
-   * FIRST slide of the current item; if already there, the previous item.
-   * Skips style/@blanks separators — backspace never lands on a blank. */
-  const prevSection = useCallback(() => {
+  /** OpenSong GoPreviousSection. Two variants (PresentWindow PrevSection):
+   *  - Left arrow / ACTION_PREV_SECTION lands ON the blank separator slide.
+   *  - Backspace / ACTION_FIRST_SLIDE_OF_SECTION lands on first CONTENT slide. */
+  const prevSection = useCallback((includeBlank: boolean) => {
     if (!plan || !session) return;
     const curItem = plan.slides[plan.current]?.itemId;
-    const firstOfItem = plan.slides.find((s) => s.itemId === curItem && !s.blank);
+    const match = (s: PlanSlide) => s.itemId === curItem && (includeBlank || !s.blank);
+    const firstOfItem = plan.slides.find(match);
     if (firstOfItem && plan.current > firstOfItem.index) {
       void doNavigate("jump", firstOfItem.index);
       return;
     }
     const ids = [...new Set(plan.slides.map((s) => s.itemId))];
     const prev = ids[Math.max(0, ids.indexOf(curItem ?? "") - 1)];
-    const target = plan.slides.find((s) => s.itemId === prev && !s.blank);
+    const target = plan.slides.find((s) => s.itemId === prev && (includeBlank || !s.blank));
     if (target) void doNavigate("jump", target.index);
   }, [plan, session, doNavigate]);
 
@@ -286,7 +294,8 @@ export function PresentPage({
       else if (key === "Home") { if (plan?.slides[0]) void doNavigate("jump", plan.slides[0].index); }
       else if (key === "End") { const last = plan?.slides[plan.slides.length - 1]; if (last) void doNavigate("jump", last.index); }
       else if (key === "ArrowRight") jumpToItem(1);
-      else if (key === "ArrowLeft" || key === "Backspace") prevSection();
+      else if (key === "ArrowLeft") prevSection(true);   // Left lands ON the separator blank
+      else if (key === "Backspace") prevSection(false);  // Backspace lands on first content slide
       else if (key === "Escape") confirmEnd();
       else if (/^F(\d|1[0-5])$/.test(key)) {
         const n = parseInt(key.slice(1), 10);
@@ -296,6 +305,11 @@ export function PresentPage({
         if (target) void doNavigate("jump", target.index);
       } else if (/^[1-9]$/.test(key)) {
         jumpToSection((s) => s.prefix === key || s.sectionLabel?.toLowerCase() === `v${key}`);
+      } else if (key === "~") {
+        // OpenSong ACTION_FIRST_SLIDE_OF_SECTION (~): first slide of the item.
+        const curItem = plan?.slides[plan.current]?.itemId;
+        const first = plan?.slides.find((s) => s.itemId === curItem && !s.blank);
+        if (first) void doNavigate("jump", first.index);
       } else {
         // OpenSong mode keys are toggles — pressing the active mode's key returns to normal.
         const toggle = (m: PresentMode) => setMode(session.mode === m ? "normal" : m);
@@ -311,6 +325,8 @@ export function PresentPage({
           case "q": openAdd("song"); break;
           case "s": openAdd("scripture"); break;
           case "m": toggleFullscreen(); break;
+          case "v": // OpenSong [V]: next verse within the current group (wraps).
+            jumpToSection((s) => s.sectionLabel?.toLowerCase().startsWith("v") ?? false); break;
           case "`": // backtick = Chorus, same as C
           case "c": jumpToSection((s) => s.sectionLabel?.toLowerCase().startsWith("c") ?? false); break;
           case "p": jumpToSection((s) => s.sectionLabel?.toLowerCase().startsWith("p") ?? false); break;
@@ -324,6 +340,26 @@ export function PresentPage({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [session, controlling, plan, doNavigate, jumpToItem, prevSection, jumpToSection, setMode, toggleFullscreen, leave, confirmEnd, openAdd]);
+
+  // OpenSong timerAdvance (slide_group @seconds): fires once per slide —
+  // past the last slide of the group, @loop wraps to its first slide,
+  // otherwise it advances. Driven here while this helper holds control.
+  useEffect(() => {
+    if (!session || !controlling || !plan) return;
+    const cur = plan.slides[plan.current];
+    if (!cur || cur.blank || cur.seconds <= 0) return;
+    const t = setTimeout(() => {
+      const inItem = plan.slides.filter((s) => s.itemId === cur.itemId && !s.blank);
+      const last = inItem[inItem.length - 1];
+      if (cur.loop && last && cur.index >= last.index) {
+        const first = inItem[0];
+        if (first) void doNavigate("jump", first.index);
+      } else {
+        void doNavigate("next");
+      }
+    }, cur.seconds * 1000);
+    return () => clearTimeout(t);
+  }, [session, controlling, plan, doNavigate]);
 
   const takeControl = async () => {
     if (!session) return;
@@ -395,10 +431,25 @@ export function PresentPage({
     blankTitle: s.blank ? s.itemTitle : "",
     index: s.index,
     // OpenSong @emphasize (chorus) bolds the ID cell.
-    emphasized: s.slideId !== null && !/^[v]/i.test(s.slideId),
-    loop: s.loopSeconds > 0,
+    emphasized: s.emphasize,
+    loop: s.loop,
+    seconds: s.seconds,
     newGroup: i === 0 || all[i - 1]!.itemId !== s.itemId,
   }));
+  // OpenSong lst_all_slides row colors (App.SlideStyleColor): verse blue
+  // shades, chorus blue, custom peach, scripture red, image yellow,
+  // external green, blank white.
+  const rowColor = (r: (typeof listRows)[number]): string | undefined => {
+    if (r.blank) return undefined; // white
+    if (r.kind === "scripture") return "rgba(239,83,80,0.25)";
+    if (r.kind === "media") return "rgba(255,235,59,0.28)";
+    if (r.kind !== "song") return "rgba(255,183,77,0.28)"; // custom/announcement peach
+    const id = (r.slideId ?? "").toUpperCase();
+    if (id.startsWith("C")) return "rgba(100,181,246,0.35)";
+    if (id.startsWith("B")) return "rgba(144,202,249,0.30)";
+    if (id.startsWith("P") || id.startsWith("T")) return "rgba(187,222,251,0.40)";
+    return "rgba(187,222,251,0.22)"; // verses light blue
+  };
   const curRow = plan?.current ?? -1;
   const MODES: { key: string; mode: PresentMode; label: string }[] = [
     { key: "N", mode: "normal", label: "Normal" },
@@ -440,16 +491,15 @@ export function PresentPage({
               <tbody>
                 {listRows.map((r, i) => {
                   const cur = i === curRow;
-                  // Alternating shading distinguishes consecutive rows (OpenSong listbox).
-                  const alt = i % 2 === 1 && !cur ? "bg-sky-50 dark:bg-sky-950/40" : "";
                   return (
                     <tr
                       key={r.key}
                       ref={cur ? curRowRef : undefined}
                       onClick={() => controlling && void doNavigate("jump", r.index)}
+                      style={cur ? undefined : { backgroundColor: rowColor(r) }}
                       className={`cursor-pointer select-none ${
                         r.newGroup && i > 0 ? "[&>td]:border-t-4 [&>td]:border-zinc-300 dark:[&>td]:border-zinc-600" : ""
-                      } ${cur ? "bg-indigo-100 dark:bg-indigo-950" : `${alt} hover:bg-zinc-50 dark:hover:bg-zinc-900`}`}
+                      } ${cur ? "bg-indigo-100 dark:bg-indigo-950" : "hover:bg-zinc-50 dark:hover:bg-zinc-900"}`}
                     >
                       <td className="px-2 py-1 font-medium">
                         {r.blank ? " " : r.loop ? `(Loop) ${r.itemTitle}` : r.itemTitle}
@@ -487,7 +537,9 @@ export function PresentPage({
                     logoKey={shownSlide.slide.logoKey}
                     mode={activeMode}
                     blanked={shownSlide.blanked}
-                    next={shownSlide.slide.next}
+                    subtitle={shownSlide.slide.subtitle}
+                    emphasize={shownSlide.slide.emphasize}
+                    verseMap={shownSlide.slide.verseMap}
                   />
                 </div>
               ) : (

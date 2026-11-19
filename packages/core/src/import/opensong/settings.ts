@@ -54,6 +54,7 @@ function textStyle(el: unknown, base: TextStyle): TextStyle {
     fillColor: asString(e["@_fill_color"]) || base.fillColor,
     enabled: e["@_enabled"] === undefined ? true : bool(e["@_enabled"]),
     autoScale: bool(e["@_auto_scale"]),
+    ...(e["@_include_verse"] !== undefined ? { includeVerse: bool(e["@_include_verse"]) } : {}),
   };
 }
 
@@ -83,6 +84,15 @@ export function parsePresentSettings(xml: string): PresentSettingsResult {
   style.backgroundColor = asString(bg["@_color"]) || style.backgroundColor;
   const bgData = asString(bg["#text"] ?? "") || null;
   style.backgroundKey = null; // media registered by the caller
+  // OpenSong ObjectFit enum: cover=0 contain=1 fill=2 none/center=3|99.
+  const fit = num(bg["@_image_fit"], -1);
+  if (fit === 0 || fit === 1 || fit === 2 || fit === 3 || fit === 99)
+    style.backgroundFit = fit === 1 ? "contain" : fit === 2 ? "fill" : "cover";
+  style.backgroundStripFooter = num(bg["@_strip_footer"], 0);
+
+  // <song_subtitle> text = '|'-joined field keys (author|copyright|…).
+  const songSub = asString(asRecord(defaults["song_subtitle"])["#text"] ?? defaults["song_subtitle"]);
+  if (songSub !== "") style.songSubtitle = songSub.split("|").filter((s) => s !== "");
 
   const logoData = asString(asRecord(root["logo"])["#text"] ?? root["logo"] ?? "");
   const maskData = asString(asRecord(root["logo_mask"])["#text"] ?? root["logo_mask"] ?? "");
@@ -98,6 +108,7 @@ export function parsePresentSettings(xml: string): PresentSettingsResult {
   };
   style.transition = options.transition;
   style.transitionMs = options.transitionTime;
+  style.initialMode = options.initialMode;
 
   return {
     style,

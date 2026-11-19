@@ -234,9 +234,19 @@ export function serializeOpenSongSet(
     .map((item) => {
       // OpenSong attrs: loop/seconds only for looping groups; print/
       // presentation/transition/path only when the item actually sets them.
-      const attrs = (type: string, name: string, extra = "") =>
-        `    <slide_group type="${type}" name="${escapeXml(name)}"` +
-        (item.loopSeconds > 0 ? ` loop="true" seconds="${item.loopSeconds}"` : "") +
+      const attrs = (type: string, name: string, extra = "") => {
+        // OpenSong @seconds (auto-advance) and @loop (group wrap) are
+        // independent attrs — config wins, loopSeconds is the legacy field.
+        const seconds =
+          typeof item.config["seconds"] === "number"
+            ? (item.config["seconds"] as number)
+            : item.loopSeconds;
+        const loop =
+          item.config["loop"] === true || item.config["loop"] === "true" || item.loopSeconds > 0;
+        return (
+          `    <slide_group type="${type}" name="${escapeXml(name)}"` +
+          (seconds > 0 ? ` seconds="${seconds}"` : "") +
+          (loop ? ` loop="true"` : "") +
         (typeof item.config["print"] === "string" ? ` print="${escapeXml(item.config["print"] as string)}"` : "") +
         (typeof item.config["presentation"] === "string"
           ? ` presentation="${escapeXml(item.config["presentation"] as string)}"`
@@ -245,7 +255,9 @@ export function serializeOpenSongSet(
           ? ` transition="${escapeXml(item.config["transition"] as string)}"`
           : "") +
         extra +
-        `>`;
+        `>`
+        );
+      };
       const common =
         (item.title ? `\n      <title>${escapeXml(item.title)}</title>` : "") +
         (item.subtitle ? `\n      <subtitle>${escapeXml(item.subtitle)}</subtitle>` : "") +

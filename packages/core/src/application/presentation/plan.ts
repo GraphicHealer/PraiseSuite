@@ -39,7 +39,21 @@ export interface PlanSlide {
    * the trailing blank uses the last item's.
    */
   blank: boolean;
+  /** OpenSong slide @emphasize — chorus slides flip italic under highlight_chorus. */
+  emphasize: boolean;
+  /** OpenSong slide_group @seconds — auto-advance interval (0 = off). */
+  seconds: number;
+  /** OpenSong slide_group @loop — on auto-advance past the last slide, wrap to the group's first. */
+  loop: boolean;
+  /** OpenSong slide_group @transition — 0=default, 1=force on, 2=force off. */
+  transition: number;
 }
+
+const itemTiming = (item: ServiceItem) => ({
+  seconds: typeof item.config["seconds"] === "number" ? (item.config["seconds"] as number) : item.loopSeconds,
+  loop: item.config["loop"] === true || item.config["loop"] === "true" || item.loopSeconds > 0,
+  transition: typeof item.config["transition"] === "number" ? (item.config["transition"] as number) : Number(item.config["transition"]) || 0,
+});
 
 export interface PresentationPlan {
   slides: PlanSlide[];
@@ -131,6 +145,11 @@ export function buildPlan(
       backgroundKey: null,
       backgroundAsText: false,
       blank: true,
+      // Blank groups carry no timing attrs in OpenSong — never auto-advance.
+      emphasize: false,
+      seconds: 0,
+      loop: false,
+      transition: 0,
     });
   let prevName: string | null = null;
 
@@ -144,6 +163,7 @@ export function buildPlan(
       const song = songsById.get(item.songId);
       const arrangement = song ? resolveArrangement(song, item.arrangementId) : null;
       if (song && arrangement) {
+        const timing = itemTiming(item);
         for (const as of sequenceForItem(song, arrangement, item)) {
           const raw = song.sections.find((s) => s.id === as.sectionId);
           if (!raw) continue;
@@ -179,6 +199,8 @@ export function buildPlan(
                 backgroundKey: (bg?.key ?? bg?.filename) || null,
                 backgroundAsText: bg !== null && (song.backgrounds?.asText ?? false),
                 blank: false,
+                emphasize: /^c/i.test(raw.label),
+                ...timing,
               });
             });
           }
@@ -190,6 +212,7 @@ export function buildPlan(
     // config.assetKeys (UI-added) or config.images[].storageKey (OpenSong
     // imported <image> groups, N4/R2).
     if (item.kind === "media") {
+      const timing = itemTiming(item);
       const fromAssets = Array.isArray(item.config["assetKeys"])
         ? (item.config["assetKeys"] as unknown[]).filter((k): k is string => typeof k === "string")
         : [];
@@ -215,11 +238,14 @@ export function buildPlan(
           backgroundKey: null,
           backgroundAsText: false,
           blank: false,
+          emphasize: false,
+          ...timing,
         });
       }
       continue;
     }
     // Non-song or unresolved items: inline slides.
+    const timing = itemTiming(item);
     for (const [i, slide] of item.slides.entries()) {
       slides.push({
         serviceItemId: item.id,
@@ -235,6 +261,8 @@ export function buildPlan(
         backgroundKey: null,
         backgroundAsText: false,
         blank: false,
+        emphasize: false,
+        ...timing,
       });
     }
     if (item.slides.length === 0) {
@@ -252,6 +280,8 @@ export function buildPlan(
         backgroundKey: null,
         backgroundAsText: false,
         blank: false,
+        emphasize: false,
+        ...timing,
       });
     }
   }

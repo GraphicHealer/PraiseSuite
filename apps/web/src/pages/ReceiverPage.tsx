@@ -20,6 +20,12 @@ interface SlidePayload {
   backgroundAsText?: boolean;
   logoKey: string | null;
   loopSeconds: number | null;
+  subtitle: string | null;
+  emphasize: boolean;
+  /** OpenSong slide_group @seconds/@loop — auto-advance + group wrap. */
+  seconds: number;
+  loop: boolean;
+  verseMap: { prev: string[]; curr: string; rest: string[] } | null;
   next: { title: string; lines: string[] } | null;
 }
 
@@ -50,7 +56,9 @@ export function ReceiverPage(): ReactNode {
   const [connected, setConnected] = useState(false);
   const [waiting, setWaiting] = useState(false);
   const [frozen, setFrozen] = useState<SlideState | null>(null);
-  const [loopIdx, setLoopIdx] = useState(0);
+  /** True when this window owns output control (single screen or Electron
+   *  output window) — network receivers never drive auto-advance. */
+  const [drives, setDrives] = useState(presenting);
   const wsRef = useRef<WebSocket | null>(null);
 
   // ?service=<id> (single-screen present): this window starts the session —
@@ -61,6 +69,10 @@ export function ReceiverPage(): ReactNode {
     startRef.current = true;
     void (async () => {
       const svc = await api.service(startServiceId);
+      // OpenSong style/@initial_mode — the mode a presentation opens in.
+      const initialMode = await api.style()
+        .then((s) => ({ N: "normal", B: "blank", W: "white", H: "hidden", L: "logo", F: "freeze" } as const)[s.initialMode?.[0]?.toUpperCase() as "N" | "B" | "W" | "H" | "L" | "F"] ?? "normal")
+        .catch(() => "normal" as PresentMode);
       const id = crypto.randomUUID() as PresentationSession["id"];
       const session: PresentationSession = {
         id,
@@ -77,7 +89,7 @@ export function ReceiverPage(): ReactNode {
           positionWithinSection: 0,
         },
         blanked: false,
-        mode: "normal",
+        mode: initialMode,
         alert: null,
         controlOwner: null,
         createdAt: new Date().toISOString(),
@@ -155,17 +167,6 @@ export function ReceiverPage(): ReactNode {
     if (state && state.mode !== "freeze") setFrozen(state);
   }, [state]);
 
-  // Announcement loop: rotate through slices while positioned on a looping item.
-  useEffect(() => {
-    const loop = state?.slide?.loopSeconds;
-    if (!loop || loop <= 0) {
-      setLoopIdx(0);
-      return;
-    }
-    const t = setInterval(() => setLoopIdx((i) => i + 1), loop * 1000);
-    return () => clearInterval(t);
-  }, [state?.slide?.loopSeconds, state?.slide?.index]);
-
   // Single-screen mode: this window IS the output (Electron), so the
   // OpenSong keymap drives the session directly — no helper needed.
   const planRef = useRef<OutputPlan | null>(null);
@@ -174,6 +175,31 @@ export function ReceiverPage(): ReactNode {
   const escArmedRef = useRef(false);
   const escTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => { stateRef.current = state; }, [state]);
+
+  // OpenSong timerAdvance (slide_group @seconds): one interval per slide —
+  // past the last slide of the group, @loop wraps to its first; else next.
+  // Only the output window that owns control advances (single/test/dual
+  // outputs and ?present windows); network receivers never do.
+  useEffect(() => {
+    const slide = state?.slide;
+    if (!drives || !slide || slide.seconds <= 0 || !sessionId || !stateRef.current) return;
+    const t = setTimeout(() => {
+      const s = stateRef.current;
+      const plan = planRef.current;
+      const cur = slide.index;
+      const inItem = (plan?.slides ?? []).filter(
+        (x) => x.itemId === plan?.slides.find((y) => y.index === cur)?.itemId && !x.blank,
+      );
+      const last = inItem[inItem.length - 1];
+      if (slide.loop && last && cur >= last.index && inItem[0]) {
+        void api.navigate(s!.sessionId, "jump", inItem[0].index).catch(() => {});
+      } else {
+        void api.navigate(s!.sessionId, "next").catch(() => {});
+      }
+    }, slide.seconds * 1000);
+    return () => clearTimeout(t);
+  }, [drives, state?.slide?.index, state?.slide?.seconds, sessionId]);
+
   useEffect(() => {
     if (!sessionId) return;
     const ps = (window as { ps?: { isOutput?: () => Promise<boolean>; toggleOutput?: () => Promise<string>; presentExit?: () => Promise<void> } }).ps;
@@ -203,13 +229,17 @@ export function ReceiverPage(): ReactNode {
         const target = after ?? plan?.slides.find(match);
         if (target) jump(target.index);
       };
-      const prevSection = () => {
+      // Left arrow lands ON the separator blank; Backspace on first content.
+      const prevSection = (includeBlank: boolean) => {
         if (!plan) return api.navigate(s.sessionId, "prev").catch(() => {});
         const curItem = plan.slides.find((x) => x.index === cur)?.itemId;
         const items = [...new Set(plan.slides.map((x) => x.itemId))];
         const i = items.indexOf(curItem ?? "");
-        const first = plan.slides.find((x) => x.itemId === curItem && !x.blank);
-        const prev = i > 0 ? plan.slides.find((x) => x.itemId === items[i - 1] && !x.blank) : undefined;
+        const match = (x: OutputPlanSlide) => x.itemId === curItem && (includeBlank || !x.blank);
+        const first = plan.slides.find(match);
+        const prev = i > 0
+          ? plan.slides.find((x) => x.itemId === items[i - 1] && (includeBlank || !x.blank))
+          : undefined;
         const target = first && first.index < cur ? first : prev ?? first;
         if (target) jump(target.index);
       };
@@ -221,7 +251,8 @@ export function ReceiverPage(): ReactNode {
       else if (key === "Home") { const f = plan?.slides[0]; if (f) jump(f.index); else handled = false; }
       else if (key === "End") { const l = plan?.slides[plan.slides.length - 1]; if (l) jump(l.index); else handled = false; }
       else if (key === "ArrowRight") jumpItem(1);
-      else if (key === "ArrowLeft" || key === "Backspace") prevSection();
+      else if (key === "ArrowLeft") prevSection(true);
+      else if (key === "Backspace") prevSection(false);
       else if (key === "Escape") {
         if (escArmedRef.current) {
           // End the session, then restore the control window (single mode).
@@ -243,6 +274,7 @@ export function ReceiverPage(): ReactNode {
           case "l": toggle("logo"); break;
           case "f": toggle("freeze"); break;
           case "m": void ps?.toggleOutput?.(); break;
+          case "v": jumpSection((x) => x.sectionLabel?.toLowerCase().startsWith("v") ?? false); break;
           case "`":
           case "c": jumpSection((x) => x.sectionLabel?.toLowerCase().startsWith("c") ?? false); break;
           case "p": jumpSection((x) => x.sectionLabel?.toLowerCase().startsWith("p") ?? false); break;
@@ -253,12 +285,14 @@ export function ReceiverPage(): ReactNode {
       }
       if (handled) e.preventDefault();
     };
-    void ps?.isOutput?.().then((yes) => {
-      if (!yes) return;
+    const install = () => {
+      if (installed) return;
       installed = true;
+      setDrives(true);
       void api.sessionPlan(sessionId).then((p) => { planRef.current = p as OutputPlan; }).catch(() => {});
       window.addEventListener("keydown", onKey);
-    });
+    };
+    if (presenting) install(); else void ps?.isOutput?.().then((yes) => { if (yes) install(); });
     return () => { if (installed) window.removeEventListener("keydown", onKey); };
   }, [sessionId]);
 
@@ -278,15 +312,12 @@ export function ReceiverPage(): ReactNode {
   }
   const shown = state?.mode === "freeze" ? frozen ?? state : state;
   const slide = shown?.slide ?? null;
-  const lines = slide?.lines ?? [];
-  // Looping announcements cycle their lines within the current slide.
-  const visible = slide?.loopSeconds ? [lines[loopIdx % Math.max(1, lines.length)] ?? ""] : lines;
 
   return (
     <div className="fixed inset-0 bg-black">
       <SlideCanvas
         title={slide?.title ?? ""}
-        lines={visible}
+        lines={slide?.lines ?? []}
         style={slide?.style}
         backgroundKey={slide?.backgroundKey}
         backgroundAsText={slide?.backgroundAsText}
@@ -294,10 +325,12 @@ export function ReceiverPage(): ReactNode {
         logoKey={slide?.logoKey}
         mode={state?.mode ?? "normal"}
         blanked={state?.blanked ?? false}
-        next={slide?.next}
         alert={state?.alert}
         index={slide?.index}
         total={slide?.total}
+        subtitle={slide?.subtitle}
+        emphasize={slide?.emphasize}
+        verseMap={slide?.verseMap}
       />
       {!connected && (
         <span className="fixed bottom-2 right-3 text-xs text-zinc-700">connecting…</span>

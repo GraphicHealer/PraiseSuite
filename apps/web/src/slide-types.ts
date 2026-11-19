@@ -17,6 +17,7 @@ export interface TextStyle {
   fillColor: string;
   enabled: boolean;
   autoScale: boolean;
+  includeVerse?: boolean;
 }
 
 export interface SlideStyle {
@@ -32,4 +33,8 @@ export interface SlideStyle {
   margin: number;
   transition: boolean;
   transitionMs: number;
+  songSubtitle: string[];
+  initialMode: string;
+  backgroundFit: "cover" | "contain" | "fill" | "center";
+  backgroundStripFooter: number;
 }

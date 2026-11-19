@@ -196,6 +196,25 @@ describe("buildPlan", () => {
     expect(p.slides[2]!.mediaKey).toBe("media/b.jpg");
   });
 
+  it("carries OpenSong per-group timing (@seconds/@loop/@transition) and @emphasize", () => {
+    const svc: Service = {
+      ...service,
+      items: [
+        { ...service.items[0]!, config: { seconds: 12, loop: true, transition: "2" } },
+      ],
+    };
+    const p = buildPlan(svc, new Map([["song1" as Song["id"], song("song1")]]));
+    const content = p.slides.filter((s) => !s.blank);
+    expect(content.every((s) => s.seconds === 12 && s.loop && s.transition === 2)).toBe(true);
+    // Chorus slides (section label C*) are emphasized; verses are not.
+    expect(content.filter((s) => s.emphasize).map((s) => s.title)).toEqual([
+      "Test Song — C",
+      "Test Song — C",
+    ]);
+    // Blank separator groups carry no timing in OpenSong — never auto-advance.
+    expect(p.slides.filter((s) => s.blank).every((s) => s.seconds === 0 && !s.loop)).toBe(true);
+  });
+
   it("navigates with clamping", () => {
     const sess = "sess" as never;
     const p0 = positionOfSlide(plan, 0, sess);

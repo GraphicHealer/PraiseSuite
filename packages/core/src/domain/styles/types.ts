@@ -21,6 +21,8 @@ export interface TextStyle {
   enabled: boolean;
   /** Auto-scale text down/up to fit the slide area (OpenSong auto_scale). */
   autoScale: boolean;
+  /** OpenSong title/@include_verse — append the verse map to the title. */
+  includeVerse?: boolean;
 }
 
 export interface SlideStyle {
@@ -41,6 +43,15 @@ export interface SlideStyle {
   margin: number;
   transition: boolean;
   transitionMs: number;
+  /** OpenSong <song_subtitle> — '|'-joined field keys composing song subtitles
+   *  (copyright|hymn_number|author|ccli_number|ccli_license). */
+  songSubtitle: string[];
+  /** OpenSong style/@initial_mode — the mode a presentation starts in. */
+  initialMode: string;
+  /** OpenSong background/@image_fit: cover(0)|contain(1)|fill(2)|center(3/99). */
+  backgroundFit: "cover" | "contain" | "fill" | "center";
+  /** OpenSong background/@strip_footer — px cropped off the image bottom. */
+  backgroundStripFooter: number;
 }
 
 /** Deep-partial override applied at service-item or slide level. */
@@ -92,5 +103,9 @@ export function defaultSlideStyle(): SlideStyle {
     margin: 24,
     transition: true,
     transitionMs: 100,
+    songSubtitle: ["author"],
+    initialMode: "N",
+    backgroundFit: "cover",
+    backgroundStripFooter: 0,
   };
 }

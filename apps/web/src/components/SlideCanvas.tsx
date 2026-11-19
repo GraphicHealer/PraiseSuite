@@ -68,10 +68,12 @@ export function SlideCanvas({
   logoKey,
   mode = "normal",
   blanked = false,
-  next,
   alert,
   index,
   total,
+  subtitle,
+  emphasize = false,
+  verseMap,
 }: {
   title: string;
   lines: string[];
@@ -82,10 +84,15 @@ export function SlideCanvas({
   logoKey?: string | null | undefined;
   mode?: PresentMode | undefined;
   blanked?: boolean | undefined;
-  next?: { title: string } | null | undefined;
   alert?: string | null | undefined;
   index?: number | undefined;
   total?: number | undefined;
+  /** OpenSong slide_group <subtitle> — multi-line, stacked at its valign. */
+  subtitle?: string | null | undefined;
+  /** OpenSong slide @emphasize — chorus inversion under body/@highlight_chorus. */
+  emphasize?: boolean | undefined;
+  /** OpenSong title/@include_verse — "name: 1, 2, **3**, 4". */
+  verseMap?: { prev: string[]; curr: string; rest: string[] } | null | undefined;
 }): ReactNode {
   const boxRef = useRef<HTMLDivElement | null>(null);
   const measureRef = useRef<HTMLDivElement | null>(null);
@@ -130,6 +137,10 @@ export function SlideCanvas({
   const hidden = mode === "hidden";
   const logo = mode === "logo";
   const bg = backgroundKey ? mediaUrl(backgroundKey) : null;
+  // OpenSong body/@highlight_chorus flips italic on emphasized (chorus) slides.
+  const bodyStyle: TextStyle | undefined = style
+    ? { ...style.body, italic: emphasize && style.highlightChorus ? !style.body.italic : style.body.italic }
+    : undefined;
 
   const justify =
     style?.body.valign === "top" ? "flex-start" : style?.body.valign === "bottom" ? "flex-end" : "center";
@@ -139,11 +150,25 @@ export function SlideCanvas({
   // OpenSong stacks by valign: title/subtitle default valign=bottom → they
   // sit at the bottom (title above subtitle); body centers in what remains.
   const titleEl = style?.title.enabled ? (
-    <div style={textCss(style.title)}>{title}</div>
+    <div style={textCss(style.title)}>
+      {verseMap ? (
+        <>
+          {title}: {verseMap.prev.join(", ")}{verseMap.prev.length > 0 ? ", " : ""}
+          <b>{verseMap.curr}</b>
+          {verseMap.rest.length > 0 ? ", " : ""}{verseMap.rest.join(", ")}
+        </>
+      ) : (
+        title
+      )}
+    </div>
   ) : null;
-  const subtitleEl = style?.subtitle.enabled ? (
+  // OpenSong stacks subtitle lines at its valign (bottom → below title, source order).
+  const subtitleLines = (subtitle ?? "").split("\n").filter((l) => l !== "");
+  const subtitleEl = style?.subtitle.enabled && subtitleLines.length > 0 ? (
     <div style={textCss(style.subtitle)}>
-      {style.descriptiveSubtitles ? next?.title ?? "" : title.split(" — ")[0]}
+      {subtitleLines.map((l, i) => (
+        <div key={i}>{l}</div>
+      ))}
     </div>
   ) : null;
 
@@ -157,7 +182,7 @@ export function SlideCanvas({
       >
         <div className="max-w-full" style={{ display: "flex", flexDirection: "column" }}>
           {lines.map((l, i) => (
-            <p key={i} style={{ ...textCss(style.body, bodyZoom), lineHeight: 1.2, margin: 0, marginBottom: lineLeading(style.body, bodyZoom) }}>
+            <p key={i} style={{ ...textCss(bodyStyle!, bodyZoom), lineHeight: 1.2, margin: 0, marginBottom: lineLeading(bodyStyle!, bodyZoom) }}>
               {l}
             </p>
           ))}
@@ -183,7 +208,7 @@ export function SlideCanvas({
             style={{ width: availW, display: "flex", flexDirection: "column" }}
           >
             {lines.map((l, i) => (
-              <p key={i} style={{ ...textCss(style.body), lineHeight: 1.2, margin: 0, marginBottom: lineLeading(style.body), whiteSpace: "pre-wrap" }}>
+              <p key={i} style={{ ...textCss(bodyStyle!), lineHeight: 1.2, margin: 0, marginBottom: lineLeading(bodyStyle!), whiteSpace: "pre-wrap" }}>
                 {l}
               </p>
             ))}
@@ -195,7 +220,15 @@ export function SlideCanvas({
             {bg && isVideo(backgroundKey ?? "") ? (
               <video key={bg} src={bg} autoPlay loop muted playsInline className="absolute inset-0 h-full w-full object-cover" />
             ) : bg ? (
-              <img src={bg} alt="" className="absolute inset-0 h-full w-full object-cover" />
+              // OpenSong background/@image_fit (cover|contain|fill|center).
+              <img
+                src={bg}
+                alt=""
+                className={`absolute inset-0 h-full w-full ${
+                  style?.backgroundFit === "contain" ? "object-contain" : style?.backgroundFit === "fill" ? "object-fill" : "object-cover"
+                }`}
+                style={style?.backgroundFit === "center" ? { width: "auto", height: "auto", top: "50%", left: "50%", transform: "translate(-50%,-50%)" } : undefined}
+              />
             ) : (
               <div className="absolute inset-0" style={{ backgroundColor: style?.backgroundColor ?? "#000" }} />
             )}
@@ -210,22 +243,46 @@ export function SlideCanvas({
           )
         )}
         {logo && logoKey && !black && !white && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black">
-            <img src={mediaUrl(logoKey)} alt="logo" style={{ maxHeight: "60%", maxWidth: "60%" }} />
+          // OpenSong mode "L": the style background shows, logo centered shrink-only.
+          <div className="absolute inset-0 flex items-center justify-center">
+            <img src={mediaUrl(logoKey)} alt="logo" style={{ maxHeight: "100%", maxWidth: "100%" }} />
           </div>
         )}
         {!black && !white && !hidden && !logo && !(backgroundAsText && bg) && body}
         {alert && (
-          <div
-            className="absolute bottom-16 left-1/2 -translate-x-1/2 rounded-xl text-black shadow-2xl"
-            style={{
-              padding: "32px 64px",
-              backgroundColor: style?.alert.fill ? style.alert.fillColor : "rgba(245,158,11,0.95)",
-              ...(style ? textCss(style.alert) : { fontSize: 40 * ZOOM }),
-            }}
-          >
-            {alert}
-          </div>
+          /* OpenSong DrawAlert: text inside a box inset Border*3 horizontally /
+           * Border*7 vertically, positioned by alert @align/@valign, font
+           * scaled size * width/500. The alert's fill draws a band behind the
+           * text only. Drawn over every mode, frozen included. */
+          (() => {
+            const a = style?.alert;
+            const border = (a?.borderThickness ?? 2) * ((a?.size ?? 40) * (DESIGN_W / 500)) / 40 || 10;
+            // Row flex: main axis = horizontal (alert @align), cross = vertical (@valign).
+            const justify = a?.align === "right" ? "flex-end" : a?.align === "center" ? "center" : "flex-start";
+            const align = a?.valign === "bottom" ? "flex-end" : a?.valign === "middle" ? "center" : "flex-start";
+            return (
+              <div
+                className="absolute flex"
+                style={{
+                  left: border * 3,
+                  right: border * 3,
+                  top: border,
+                  bottom: border * 7,
+                  justifyContent: justify,
+                  alignItems: align,
+                }}
+              >
+                <span
+                  style={{
+                    ...(a ? textCss(a, DESIGN_W / 500 / ZOOM) : { fontSize: 40 * (DESIGN_W / 500) }),
+                    backgroundColor: a?.fill ? a.fillColor : "rgba(245,158,11,0.95)",
+                  }}
+                >
+                  {alert}
+                </span>
+              </div>
+            );
+          })()
         )}
         {index !== undefined && total !== undefined && !black && !logo && (
           <div className="absolute right-6 bottom-4 text-2xl" style={{ color: "rgba(160,160,160,0.6)" }}>

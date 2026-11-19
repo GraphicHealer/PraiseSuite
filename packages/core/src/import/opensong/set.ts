@@ -73,6 +73,9 @@ export function parseOpenSongSet(xml: string, fallbackName: string): SetParseRes
     if (print) config["print"] = print;
     const transition = asString(group["@_transition"]);
     if (transition) config["transition"] = transition;
+    // OpenSong auto-advance + group loop are independent attrs.
+    config["seconds"] = seconds;
+    config["loop"] = loop;
 
     const base = {
       kind: "custom-slides" as ServiceItem["kind"],

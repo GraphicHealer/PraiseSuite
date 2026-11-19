@@ -14,6 +14,7 @@ import type {
   SlideStyle,
   SlideStyleOverride,
   OutputMode,
+  PresentationPlan,
 } from "@praisesuite/core";
 import type { SqliteStorage } from "@praisesuite/storage-sqlite";
 import { storeMedia } from "@praisesuite/storage-sqlite";
@@ -395,6 +396,11 @@ export function buildRoutes(deps: AppDeps): Route[] {
           itemNotes: item?.notes ?? null,
           /** OpenSong style/@blanks separator row — renders as an empty line in the helper list. */
           blank: s.blank,
+          /** OpenSong slide_group @seconds / @loop / @transition + slide @emphasize. */
+          seconds: s.seconds,
+          loop: s.loop,
+          transition: s.transition,
+          emphasize: s.emphasize,
         };
       });
       return { slides, current: indexOfPosition(plan, session.position) ?? 0, total: plan.slides.length };
@@ -909,7 +915,10 @@ export function buildRoutes(deps: AppDeps): Route[] {
 }
 
 /** Build the slide plan for a session's service (empty plan when unattached). */
-async function sessionPlan(repos: Repositories, session: PresentationSession) {
+async function sessionPlan(
+  repos: Repositories,
+  session: PresentationSession,
+): Promise<{ service: Service | null; plan: PresentationPlan }> {
   const service = session.serviceId ? await repos.services.get(session.serviceId) : null;
   if (!service) return { service: null, plan: { slides: [], itemStart: [] } };
   const songs = await Promise.all(
@@ -957,6 +966,56 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
       : await repos.media.findByFilename(ref);
   const next = plan.slides[idx + 1] ?? null;
   const nextItem = next ? service?.items.find((i) => i.id === next.serviceItemId) : null;
+
+  // OpenSong <song_subtitle>: the subtitle is composed from a '|'-joined
+  // field list on the style; @descriptive prefixes each with a caption.
+  const subtitleFor = (): string | null => {
+    if (item?.subtitle) return item.subtitle;
+    if (!song) return null;
+    const fields: Record<string, string | null> = {
+      copyright: song.copyright,
+      hymn_number: song.hymnNumber,
+      author: song.authors.length > 0 ? song.authors.join("; ") : null,
+      ccli_number: song.ccliNumber,
+      ccli_license: storage.getSetting("opensong.ccliLicense"),
+    };
+    const captions: Record<string, string> = {
+      copyright: "Copyright: ",
+      hymn_number: "Hymn #: ",
+      author: "Author: ",
+      ccli_number: "CCLI #: ",
+      ccli_license: "CCLI Lic: ",
+    };
+    const lines = (style.songSubtitle ?? ["author"])
+      .map((k) => fields[k])
+      .filter((v): v is string => typeof v === "string" && v !== "")
+      .map((v, i) => {
+        const key = (style.songSubtitle ?? ["author"]).filter((k) => fields[k]) [i]!;
+        return style.descriptiveSubtitles ? `${captions[key] ?? ""}${v}` : v;
+      });
+    return lines.length > 0 ? lines.join("\n") : null;
+  };
+
+  // OpenSong title/@include_verse: "name: 1, 2, **3**, 4" — verse ids of
+  // this item's slides, current in the middle (bolded client-side).
+  const verseMap = (): { prev: string[]; curr: string; rest: string[] } | null => {
+    if (style.title.includeVerse !== true || slide.blank) return null;
+    const secOf = (s: (typeof plan.slides)[number]) =>
+      s.sectionId !== null && song ? ((song.sections ?? []).find((x) => x.id === s.sectionId)?.label ?? null) : null;
+    const ids = plan.slides
+      .filter((s) => s.serviceItemId === slide.serviceItemId && !s.blank)
+      .map((s) => {
+        const l = secOf(s);
+        const i2 = plan.slides.indexOf(s);
+        return { i: i2, id: l === null ? null : (s.title.split(" — ")[1] ?? l) };
+      })
+      .filter((x): x is { i: number; id: string } => x.id !== null);
+    if (ids.length === 0) return null;
+    const at = ids.findIndex((x) => x.i === idx);
+    if (at === -1) return null;
+    return { prev: ids.slice(0, at).map((x) => x.id), curr: ids[at]!.id, rest: ids.slice(at + 1).map((x) => x.id) };
+  };
+
   return {
     index: idx,
     total: plan.slides.length,
@@ -976,6 +1035,14 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
     logoKey: style.logoKey,
     /** Announcement-loop timing in seconds (OpenSong item loop interval). */
     loopSeconds: typeof item?.config["loopSeconds"] === "number" ? (item.config["loopSeconds"] as number) : null,
+    subtitle: subtitleFor(),
+    /** OpenSong slide @emphasize — chorus italic inversion (highlight_chorus). */
+    emphasize: slide.emphasize,
+    /** OpenSong slide_group @seconds/@loop/@transition per-item overrides. */
+    seconds: slide.seconds,
+    loop: slide.loop,
+    transition: slide.transition,
+    verseMap: verseMap(),
     next: next ? { title: nextItem?.title ?? next.title, lines: next.lines } : null,
   };
 }
