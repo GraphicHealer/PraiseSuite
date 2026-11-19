@@ -12,7 +12,6 @@ import type {
   SongId,
   PresentationSession,
   SlideStyle,
-  SlideStyleOverride,
   OutputMode,
   PresentationPlan,
 } from "@praisesuite/core";

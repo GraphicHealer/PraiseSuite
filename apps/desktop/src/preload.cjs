@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- sandboxed Electron preloads must use require(). */
 const { contextBridge, ipcRenderer } = require("electron");
 
 // Print bridge: webContents.print / printToPDF via a hidden print window in
