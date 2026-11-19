@@ -18,6 +18,8 @@ const NAV: { id: Page; label: string }[] = [
 
 interface PsBridge {
   setDisplayMode?: (mode: string) => Promise<string>;
+  present?: (mode: string, serviceId: string | null, itemId: string | null) => Promise<string>;
+  presentExit?: () => Promise<void>;
 }
 
 function LoginGate({ onDone }: { onDone: () => void }) {
@@ -74,6 +76,13 @@ export function App(): ReactNode {
     const p = new URLSearchParams(window.location.search);
     return p.get("print") !== null ? p : null;
   });
+  /** Presenter-window mode: this window IS the presentation helper
+   *  (?present=1&service=<id>&item=<id>) — no nav chrome, exit restores
+   *  the control window via ps:present-exit. */
+  const [presentParams] = useState(() => {
+    const p = new URLSearchParams(window.location.search);
+    return p.get("present") === "1" ? { service: p.get("service"), item: p.get("item") } : null;
+  });
   const [presentReq, setPresentReq] = useState<{ service: Service | null; itemId: string | undefined } | null>(null);
   /** Pending present launch waiting on the mode-picker popup. */
   const [presentPicker, setPresentPicker] = useState<{ service: Service | null; itemId: string | undefined } | null>(null);
@@ -93,6 +102,15 @@ export function App(): ReactNode {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
   }, [dark]);
+
+  // Presenter window: resolve the ?service=<id> into a start request.
+  useEffect(() => {
+    if (presentParams?.service) {
+      api.service(presentParams.service)
+        .then((svc) => setPresentReq({ service: svc, itemId: presentParams.item ?? undefined }))
+        .catch(() => {});
+    }
+  }, [presentParams]);
 
   if (!authed) {
     return (
@@ -127,9 +145,38 @@ export function App(): ReactNode {
     if (choice.plugin) {
       await api.pluginCommand(choice.plugin.pluginId, choice.plugin.command, { mode: choice.mode }).catch(() => {});
     }
+    // Desktop: a new presenter window opens and this window closes
+    // (OpenSong minimizes MainWindow and opens the presentation windows).
+    if (ps()?.present) {
+      void ps()?.present?.(choice.mode, pending.service?.id ?? null, pending.itemId ?? null);
+      return;
+    }
     await ps()?.setDisplayMode?.(choice.mode).catch(() => {});
     launchPresent(pending.service, pending.itemId);
   };
+
+  /** End of a presentation inside the presenter window — restore control. */
+  const exitPresentation = () => {
+    if (ps()?.presentExit) void ps()?.presentExit?.();
+    else setPage("main");
+  };
+
+  // Presenter window: the presentation helper fills the whole window —
+  // no app chrome, exit restores the control window (OpenSong model).
+  if (presentParams !== null) {
+    return (
+      <div className="h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+        <DialogProvider>
+          <PresentPage
+            key={presentReq?.service ? `${presentReq.service.id}:${presentReq.itemId ?? ""}` : "pick"}
+            startService={presentReq?.service ?? null}
+            startItemId={presentReq?.itemId ?? null}
+            onExit={exitPresentation}
+          />
+        </DialogProvider>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen flex-col bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">

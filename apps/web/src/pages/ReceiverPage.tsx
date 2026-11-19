@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { PresentationSession } from "@praisesuite/core";
 import { SlideCanvas } from "../components/SlideCanvas.js";
 import { api, type PresentMode } from "../api.js";
 import type { SlideStyle } from "../slide-types";
@@ -38,6 +39,11 @@ interface SlideState {
  */
 export function ReceiverPage(): ReactNode {
   const params = new URLSearchParams(window.location.search);
+  const startServiceId = params.get("service");
+  const startItemId = params.get("item");
+  /** ?present=1: this window IS the presentation — Esc ends it and
+   *  restores the control window (single-screen OpenSong mode). */
+  const presenting = params.get("present") === "1";
   const [sessionId, setSessionId] = useState(params.get("session"));
   const [token, setToken] = useState(params.get("token") ?? localStorage.getItem("ps.token"));
   const [state, setState] = useState<SlideState | null>(null);
@@ -47,9 +53,49 @@ export function ReceiverPage(): ReactNode {
   const [loopIdx, setLoopIdx] = useState(0);
   const wsRef = useRef<WebSocket | null>(null);
 
+  // ?service=<id> (single-screen present): this window starts the session —
+  // OpenSong's single-monitor mode runs the output window alone.
+  const startRef = useRef(false);
+  useEffect(() => {
+    if (!startServiceId || sessionId || startRef.current) return;
+    startRef.current = true;
+    void (async () => {
+      const svc = await api.service(startServiceId);
+      const id = crypto.randomUUID() as PresentationSession["id"];
+      const session: PresentationSession = {
+        id,
+        serviceId: svc.id,
+        name: svc.name,
+        status: "live",
+        position: {
+          sessionId: id,
+          serviceItemId: null,
+          songId: null,
+          arrangementId: null,
+          sectionId: null,
+          sectionInstanceId: null,
+          positionWithinSection: 0,
+        },
+        blanked: false,
+        mode: "normal",
+        alert: null,
+        controlOwner: null,
+        createdAt: new Date().toISOString(),
+        lastActivityAt: new Date().toISOString(),
+      };
+      await api.saveSession(session);
+      if (startItemId) await api.navigate(id, "item", undefined, startItemId).catch(() => {});
+      else await api.navigate(id, "first").catch(() => {});
+      const { token: t } = await api.guestToken(id, ["view"]);
+      setToken(t);
+      setSessionId(id);
+    })().catch(() => {});
+  }, [startServiceId, sessionId, startItemId]);
+
   // No params: auto-join the most recent live session (display windows / QR joins).
   useEffect(() => {
     if (sessionId && token) return;
+    if (startServiceId && !sessionId) return; // session create is in flight
     const tryJoin = async () => {
       setWaiting(true);
       const res = await fetch("/api/v1/receiver/join");
@@ -96,6 +142,10 @@ export function ReceiverPage(): ReactNode {
     ws.onmessage = (e) => {
       const msg = JSON.parse(e.data as string) as { type: string };
       if (["position", "blank", "control", "mode", "alert", "session_ended"].includes(msg.type)) void refresh();
+      if (msg.type === "session_ended" && presenting) {
+        const p = (window as { ps?: { presentExit?: () => Promise<void> } }).ps;
+        void p?.presentExit?.();
+      }
     };
     return () => ws.close();
   }, [sessionId, token]);
@@ -126,7 +176,7 @@ export function ReceiverPage(): ReactNode {
   useEffect(() => { stateRef.current = state; }, [state]);
   useEffect(() => {
     if (!sessionId) return;
-    const ps = (window as { ps?: { isOutput?: () => Promise<boolean>; toggleOutput?: () => Promise<string> } }).ps;
+    const ps = (window as { ps?: { isOutput?: () => Promise<boolean>; toggleOutput?: () => Promise<string>; presentExit?: () => Promise<void> } }).ps;
     let installed = false;
     const armEsc = () => {
       escArmedRef.current = true;
@@ -173,8 +223,11 @@ export function ReceiverPage(): ReactNode {
       else if (key === "ArrowRight") jumpItem(1);
       else if (key === "ArrowLeft" || key === "Backspace") prevSection();
       else if (key === "Escape") {
-        if (escArmedRef.current) void api.endSession(s.sessionId).catch(() => {});
-        else armEsc();
+        if (escArmedRef.current) {
+          // End the session, then restore the control window (single mode).
+          void api.endSession(s.sessionId).catch(() => {});
+          if (presenting) void ps?.presentExit?.();
+        } else armEsc();
       } else if (/^F(\d|1[0-5])$/.test(key)) {
         const items = [...new Set((plan?.slides ?? []).map((x) => x.itemId))];
         const slide = plan?.slides.find((x) => x.itemId === items[parseInt(key.slice(1), 10) - 1]);

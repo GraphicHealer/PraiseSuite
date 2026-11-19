@@ -18,4 +18,8 @@ contextBridge.exposeInMainWorld("ps", {
   displayCount: () => ipcRenderer.invoke("ps:display-count"),
   /** Switch the presentation output mode at runtime (single/dual/preview/network/plugin:*). */
   setDisplayMode: (mode) => ipcRenderer.invoke("ps:set-display-mode", mode),
+  /** Start a presentation in a dedicated window (closes this window). */
+  present: (mode, serviceId, itemId) => ipcRenderer.invoke("ps:present", mode, serviceId, itemId),
+  /** End the presentation: close presentation windows, restore the control window. */
+  presentExit: () => ipcRenderer.invoke("ps:present-exit"),
 });

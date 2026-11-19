@@ -12,6 +12,7 @@ const BASE = `http://127.0.0.1:${PORT}`;
 let serverProc = null;
 let outputWindow = null;
 let controlWindow = null;
+let presenterWindow = null;
 
 /**
  * Child-process server (TAS 3.5): the same apps/server that serves REST+WS
@@ -151,7 +152,7 @@ async function loadDisplayMode() {
   }
 }
 
-function openOutputWindow() {
+function openOutputWindow(url) {
   if (outputWindow !== null) return;
   const displays = screen.getAllDisplays();
   const primary = screen.getPrimaryDisplay();
@@ -180,9 +181,9 @@ function openOutputWindow() {
     const half = Math.floor(wa.width / 2);
     const w = half;
     const h = Math.floor((w * 9) / 16);
-    if (controlWindow !== null && !controlWindow.isDestroyed()) {
-      controlWindow.unmaximize();
-      controlWindow.setBounds({ x: wa.x, y: wa.y, width: half, height: wa.height });
+    if (presenterWindow !== null && !presenterWindow.isDestroyed()) {
+      presenterWindow.unmaximize();
+      presenterWindow.setBounds({ x: wa.x, y: wa.y, width: half, height: wa.height });
     }
     outputWindow = new BrowserWindow({
       x: wa.x + half,
@@ -211,14 +212,20 @@ function openOutputWindow() {
       },
     });
   }
-  outputWindow.loadURL(`${BASE}/receiver`);
-  outputWindow.on("closed", () => (outputWindow = null));
+  outputWindow.loadURL(url ?? `${BASE}/receiver`);
+  outputWindow.on("closed", () => {
+    outputWindow = null;
+    // Single-screen mode: the output window IS the presentation (OpenSong
+    // opens no helper on one monitor). Closing it ends the presentation.
+    if (displayMode === "single" && presenterWindow === null) endPresentation();
+  });
 }
 
 // [M] Full Screen / Normal Screen on the operator console.
 ipcMain.handle("ps:toggle-output", () => {
   if (outputWindow === null) {
-    displayMode = "single";
+    // Only create an output while a presentation is running ([M] adds a screen).
+    if (presenterWindow === null) return "windowed";
     openOutputWindow();
     return "windowed";
   }
@@ -238,9 +245,50 @@ ipcMain.handle("ps:set-display-mode", (_e, mode) => {
     outputWindow.close();
     outputWindow = null;
   }
-  openOutputWindow();
+  // Output windows exist only while a presentation is running.
+  if (presenterWindow !== null) openOutputWindow();
   return displayMode;
 });
+
+/**
+ * Start a presentation (OpenSong: Status_Presentation + minimized main
+ * window). Opens a dedicated presenter window — or, in single mode, only
+ * the fullscreen output which drives the session itself — then closes the
+ * control window. Output windows exist only while a presentation runs.
+ */
+ipcMain.handle("ps:present", (_e, mode, serviceId, itemId) => {
+  displayMode = typeof mode === "string" && mode !== "" ? mode : displayMode;
+  const q =
+    `?present=1` +
+    (serviceId ? `&service=${encodeURIComponent(serviceId)}` : "") +
+    (itemId ? `&item=${encodeURIComponent(itemId)}` : "");
+  if (displayMode === "single") {
+    openOutputWindow(`${BASE}/receiver${q}`);
+  } else {
+    presenterWindow = new BrowserWindow({
+      width: 1280,
+      height: 800,
+      autoHideMenuBar: true,
+      webPreferences: { contextIsolation: true, preload: path.join(dir, "preload.mjs") },
+    });
+    presenterWindow.loadURL(`${BASE}/${q}`);
+    presenterWindow.on("closed", () => {
+      presenterWindow = null;
+      endPresentation();
+    });
+    openOutputWindow();
+  }
+  if (controlWindow !== null) controlWindow.close();
+  return displayMode;
+});
+
+/** End the presentation: close presentation windows, restore the control window. */
+function endPresentation() {
+  if (outputWindow !== null) outputWindow.close();
+  if (presenterWindow !== null) presenterWindow.close();
+  if (controlWindow === null) openControlWindow();
+}
+ipcMain.handle("ps:present-exit", () => endPresentation());
 
 // True when the calling webContents is the presentation output window —
 // lets /receiver drive the session with the OpenSong keymap locally.
@@ -258,10 +306,10 @@ app.whenReady().then(async () => {
   }
   openControlWindow();
   await loadDisplayMode();
-  openOutputWindow();
+  // No output window at startup — it opens with the presentation.
 
   screen.on("display-added", () => {
-    if (outputWindow === null) openOutputWindow();
+    if (outputWindow === null && presenterWindow !== null) openOutputWindow();
   });
 });
 
