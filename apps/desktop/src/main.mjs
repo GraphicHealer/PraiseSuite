@@ -180,6 +180,7 @@ function openOutputWindow() {
       width: Math.floor(wa.width / 2),
       height: wa.height,
       title: "Presentation Output (Test)",
+      autoHideMenuBar: true,
       backgroundColor: "#000000",
       webPreferences: {
         contextIsolation: true,

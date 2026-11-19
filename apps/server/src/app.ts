@@ -106,11 +106,22 @@ export function createApp(options: AppOptions): PraiseSuiteApp {
     // Static serving for the built web app (M4).
     let file = normalize(url.pathname).replace(/^([/\\])+/, "");
     if (file === "" || file.endsWith("/")) file = join(file, "index.html");
-    const full = resolve(webRoot, file);
-    if (!full.startsWith(webRoot) || !existsSync(full) || !statSync(full).isFile()) {
+    let full = resolve(webRoot, file);
+    if (!full.startsWith(webRoot)) {
       res.writeHead(404);
       res.end("not found");
       return;
+    }
+    if (!existsSync(full) || !statSync(full).isFile()) {
+      // SPA fallback: extension-less paths (/receiver, /stage, ...) are
+      // client-side routes — serve the app shell instead of a 404.
+      if (!file.includes(".")) {
+        full = join(webRoot, "index.html");
+      } else {
+        res.writeHead(404);
+        res.end("not found");
+        return;
+      }
     }
     const data = await readFile(full);
     res.writeHead(200, { "content-type": MIME[extname(full)] ?? "application/octet-stream" });
