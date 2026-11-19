@@ -173,7 +173,10 @@ export function buildPlan(
                 title: `${song.title} — ${section.label}${as.prefix ?? ""}`,
                 lines,
                 mediaKey: null,
-                backgroundKey: bg?.key ?? null,
+                /* bg.key is a storage key; bg.filename covers OpenSong refs
+                 * whose media lives outside the song file — the slide route
+                 * resolves filenames through the media registry. */
+                backgroundKey: (bg?.key ?? bg?.filename) || null,
                 backgroundAsText: bg !== null && (song.backgrounds?.asText ?? false),
                 blank: false,
               });

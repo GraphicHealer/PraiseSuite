@@ -18,6 +18,7 @@ import type {
 import type { SqliteStorage } from "@praisesuite/storage-sqlite";
 import { storeMedia } from "@praisesuite/storage-sqlite";
 import { ApiError, type Route, type RouteAccess } from "./http.js";
+import { scanPlugins, invokePluginCommand } from "./plugins.js";
 import type { AuthService } from "./auth.js";
 import {
   analyzeImport,
@@ -75,6 +76,10 @@ export interface AppDeps {
   singleSession?: boolean;
   /** Built web UI directory — used to inject bundled-font @font-face into print docs. */
   webRoot?: string | undefined;
+  /** Directory scanned for plugin manifests (`<id>/plugin.json`). */
+  pluginsDir?: string | undefined;
+  /** Base URL of this server, handed to plugins as context. */
+  serverBaseUrl?: string | undefined;
 }
 
 function lanAddresses(): string[] {
@@ -95,6 +100,23 @@ export function buildRoutes(deps: AppDeps): Route[] {
     summary: string,
     handler: Route["handler"],
   ): Route => ({ method, path, access, summary, handler });
+
+  /** Name of the ad-hoc service created by "Present" on a song (see MainPage). */
+  const SCRATCH_SERVICE_NAME = "(Presented Song)";
+
+  /**
+   * End a presentation: notify subscribers, remove the session record, and
+   * drop the auto-created scratch service so ad-hoc presents never clutter
+   * the Sets list. Real user sets are left untouched.
+   */
+  const finishSession = async (session: PresentationSession) => {
+    deps.broadcastToSession(session.id, { type: "session_ended", sessionId: session.id });
+    await deps.repos.sessions.delete(session.id);
+    const svc = session.serviceId === null ? null : await deps.repos.services.get(session.serviceId);
+    if (svc !== null && svc.name === SCRATCH_SERVICE_NAME) {
+      await deps.repos.services.delete(svc.id);
+    }
+  };
 
   return [
     r("GET", "/api/v1/health", "public", "Service health + API version", async () => ({
@@ -247,6 +269,26 @@ export function buildRoutes(deps: AppDeps): Route[] {
       return { ok: true };
     }),
 
+    r("GET", "/api/v1/plugins", "admin", "List discovered plugin manifests", async () =>
+      deps.pluginsDir ? scanPlugins(deps.pluginsDir) : [],
+    ),
+
+    r("POST", "/api/v1/plugins/:id/commands/:command", "admin", "Invoke a plugin command", async (ctx) => {
+      if (!deps.pluginsDir) throw new ApiError(501, "not_implemented", "Plugins are not configured");
+      return invokePluginCommand(
+        deps.pluginsDir,
+        ctx.params["id"]!,
+        ctx.params["command"]!,
+        await ctx.body().catch(() => null),
+        {
+          getSetting: (k) => deps.storage.getSetting(k),
+          setSetting: (k, v) => deps.storage.setSetting(k, v),
+          broadcastToSession: deps.broadcastToSession,
+          serverBaseUrl: deps.serverBaseUrl ?? "http://127.0.0.1",
+        },
+      );
+    }),
+
     r("GET", "/api/v1/sessions", "guest", "List active sessions", async () => deps.repos.sessions.listActive()),
 
     r("GET", "/api/v1/sessions/:id", "guest", "Get a session (guest tokens limited to their own session)", async (ctx) => {
@@ -266,8 +308,7 @@ export function buildRoutes(deps: AppDeps): Route[] {
       if (deps.singleSession && session.status === "live") {
         for (const other of await deps.repos.sessions.listActive()) {
           if (other.id === session.id || other.status === "ended") continue;
-          await deps.repos.sessions.save({ ...other, status: "ended", controlOwner: null });
-          deps.broadcastToSession(other.id, { type: "session_ended", sessionId: other.id });
+          await finishSession(other);
         }
       }
       return session;
@@ -276,10 +317,8 @@ export function buildRoutes(deps: AppDeps): Route[] {
     r("POST", "/api/v1/sessions/:id/end", "admin", "End a session; receivers are notified", async (ctx) => {
       const session = await deps.repos.sessions.get(ctx.params["id"]! as SessionId);
       if (!session) throw new ApiError(404, "not_found", "Session not found");
-      const updated: PresentationSession = { ...session, status: "ended", controlOwner: null };
-      await deps.repos.sessions.save(updated);
-      deps.broadcastToSession(session.id, { type: "session_ended", sessionId: session.id });
-      return updated;
+      await finishSession(session);
+      return { ok: true };
     }),
 
     r("POST", "/api/v1/sessions/:id/position", "admin", "Update musical position and broadcast to subscribers", async (ctx) => {
@@ -672,7 +711,13 @@ export function buildRoutes(deps: AppDeps): Route[] {
     }),
 
     r("GET", "/api/v1/media/:file", "guest", "Serve a stored media file (backgrounds/logos)", async (ctx) => {
-      const key = `media/${ctx.params["file"]}`;
+      // :file is normally the basename of a "media/<sha><ext>" storage key, but
+      // imported OpenSong songs may reference a plain filename — fall back to
+      // the media registry's filename lookup.
+      let key = `media/${ctx.params["file"]}`;
+      if (!(await deps.repos.files.has(key))) {
+        key = (await deps.repos.media.findByFilename(ctx.params["file"]!)) ?? key;
+      }
       if (!(await deps.repos.files.has(key))) throw new ApiError(404, "not_found", "Media not found");
       const data = await deps.repos.files.get(key);
       if (data === null) throw new ApiError(404, "not_found", "Media not found");
@@ -904,6 +949,12 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
     loadStyle(storage),
     item?.config["style"] as SlideStyleOverride | undefined,
   );
+  // Background refs may be storage keys ("media/<sha>") or OpenSong filenames
+  // ("Backgrounds/x.jpg") — resolve filenames through the media registry.
+  const resolveBg = async (ref: string | null): Promise<string | null> =>
+    ref === null || ref.startsWith("media/")
+      ? ref
+      : await repos.media.findByFilename(ref);
   const next = plan.slides[idx + 1] ?? null;
   return {
     index: idx,
@@ -914,7 +965,10 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
     mediaKey: slide.mediaKey,
     style,
     /** Per-verse background wins over song-level, which wins over style. */
-    backgroundKey: slide.backgroundKey ?? song?.background ?? style.backgroundKey,
+    backgroundKey:
+      (await resolveBg(slide.backgroundKey)) ??
+      (await resolveBg(song?.background ?? null)) ??
+      (await resolveBg(style.backgroundKey)),
     backgroundAsText: slide.backgroundAsText,
     logoKey: style.logoKey,
     /** Announcement-loop timing in seconds (OpenSong item loop interval). */

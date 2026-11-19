@@ -7,14 +7,18 @@ import { ImportPage } from "./pages/ImportPage.js";
 import { PresentPage } from "./pages/PresentPage.js";
 import { SettingsPage } from "./pages/SettingsPage.js";
 import { PrintWindow } from "./PrintPreview.js";
+import { PresentModeMenu, type ModeChoice } from "./components/PresentModeMenu.js";
 
 type Page = "main" | "import" | "present" | "settings";
 
 const NAV: { id: Page; label: string }[] = [
   { id: "import", label: "Import" },
-  { id: "present", label: "Present" },
   { id: "settings", label: "Settings" },
 ];
+
+interface PsBridge {
+  setDisplayMode?: (mode: string) => Promise<string>;
+}
 
 function LoginGate({ onDone }: { onDone: () => void }) {
   const [password, setPassword] = useState("");
@@ -70,7 +74,9 @@ export function App(): ReactNode {
     const p = new URLSearchParams(window.location.search);
     return p.get("print") !== null ? p : null;
   });
-  const [presentReq, setPresentReq] = useState<{ service: Service; itemId: string | undefined } | null>(null);
+  const [presentReq, setPresentReq] = useState<{ service: Service | null; itemId: string | undefined } | null>(null);
+  /** Pending present launch waiting on the mode-picker popup. */
+  const [presentPicker, setPresentPicker] = useState<{ service: Service | null; itemId: string | undefined } | null>(null);
   const [dark, setDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
 
   // Local mode (LAN off) needs no login — the server trusts localhost.
@@ -100,9 +106,29 @@ export function App(): ReactNode {
     return <PrintWindow params={printParams} />;
   }
 
-  const present = (service: Service, itemId?: string) => {
+  const ps = () => (window as unknown as { ps?: PsBridge }).ps;
+
+  const launchPresent = (service: Service | null, itemId?: string) => {
     setPresentReq({ service, itemId });
     setPage("present");
+  };
+
+  /** Every Present action asks which output mode first (desktop only —
+   *  browsers have no output windows, so they go straight to the helper). */
+  const present = (service: Service | null, itemId?: string) => {
+    if (ps()?.setDisplayMode) setPresentPicker({ service, itemId });
+    else launchPresent(service, itemId);
+  };
+
+  const pickMode = async (choice: ModeChoice) => {
+    const pending = presentPicker;
+    setPresentPicker(null);
+    if (!pending) return;
+    if (choice.plugin) {
+      await api.pluginCommand(choice.plugin.pluginId, choice.plugin.command, { mode: choice.mode }).catch(() => {});
+    }
+    await ps()?.setDisplayMode?.(choice.mode).catch(() => {});
+    launchPresent(pending.service, pending.itemId);
   };
 
   return (
@@ -113,6 +139,16 @@ export function App(): ReactNode {
           className={`font-semibold tracking-tight ${page === "main" ? "text-indigo-700 dark:text-indigo-300" : ""}`}
         >
           PraiseSuite
+        </button>
+        <button
+          onClick={() => present(null)}
+          className={`rounded px-3 py-1 text-sm font-medium ${
+            page === "present"
+              ? "bg-indigo-600 text-white"
+              : "bg-indigo-100 text-indigo-800 hover:bg-indigo-200 dark:bg-indigo-950 dark:text-indigo-200 dark:hover:bg-indigo-900"
+          }`}
+        >
+          Present
         </button>
         <nav className="flex gap-1">
           {NAV.map((n) => (
@@ -159,13 +195,16 @@ export function App(): ReactNode {
           {page === "import" && <ImportPage />}
           {page === "present" && (
             <PresentPage
-              key={presentReq ? `${presentReq.service.id}:${presentReq.itemId ?? ""}` : "pick"}
+              key={presentReq?.service ? `${presentReq.service.id}:${presentReq.itemId ?? ""}` : "pick"}
               startService={presentReq?.service ?? null}
               startItemId={presentReq?.itemId ?? null}
               onExit={() => setPage("main")}
             />
           )}
           {page === "settings" && <SettingsPage />}
+          {presentPicker !== null && (
+            <PresentModeMenu onPick={(c) => void pickMode(c)} onCancel={() => setPresentPicker(null)} />
+          )}
         </DialogProvider>
       </main>
     </div>

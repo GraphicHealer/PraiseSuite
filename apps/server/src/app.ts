@@ -1,7 +1,7 @@
 import { createServer, type Server } from "node:http";
 import { existsSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { extname, join, normalize, resolve } from "node:path";
+import { dirname, extname, join, normalize, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
   createRegistry,
@@ -46,6 +46,8 @@ export interface AppOptions {
   webRoot?: string;
   /** Single-user mode (desktop): only one live session at a time. */
   singleSession?: boolean;
+  /** Plugin directory — defaults to `<databasePath>/../plugins`. */
+  pluginsDir?: string;
 }
 
 /** Bind host per the LAN toggle (TAS 15.3): localhost-only unless enabled. */
@@ -84,6 +86,7 @@ export function createApp(options: AppOptions): PraiseSuiteApp {
     getLanEnabled: () => lanEnabled,
     ...(options.singleSession !== undefined ? { singleSession: options.singleSession } : {}),
     ...(webRoot !== null ? { webRoot } : {}),
+    pluginsDir: options.pluginsDir ?? join(dirname(options.databasePath), "plugins"),
   });
   // LAN off = localhost-only = trusted local user, no token needed.
   const isOpenLocal = () => !lanEnabled;

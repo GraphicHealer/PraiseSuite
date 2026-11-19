@@ -66,6 +66,8 @@ export interface MediaRepository {
     size: number;
     checksum: string;
   }): Promise<void>;
+  /** Resolve a filename (OpenSong background/logo path) to a storage key. */
+  findByFilename(filename: string): Promise<string | null>;
 }
 
 /** All storage repositories, bundled for injection into the application layer. */

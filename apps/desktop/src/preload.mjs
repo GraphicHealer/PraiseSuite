@@ -16,4 +16,6 @@ contextBridge.exposeInMainWorld("ps", {
   isOutput: () => ipcRenderer.invoke("ps:is-output"),
   /** Number of connected displays. */
   displayCount: () => ipcRenderer.invoke("ps:display-count"),
+  /** Switch the presentation output mode at runtime (single/dual/preview/network/plugin:*). */
+  setDisplayMode: (mode) => ipcRenderer.invoke("ps:set-display-mode", mode),
 });

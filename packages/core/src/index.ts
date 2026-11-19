@@ -30,3 +30,4 @@ export * from "./export/print/layout.js";
 export * from "./export/print/chord-sheet.js";
 export * from "./export/print/setlist.js";
 export * from "./export/print/songbook.js";
+export * from "./plugins/types.js";

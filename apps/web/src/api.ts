@@ -1,4 +1,4 @@
-import type { PresentationSession, Service, Song, SongSummary } from "@praisesuite/core";
+import type { PluginManifest, PresentationSession, Service, Song, SongSummary } from "@praisesuite/core";
 import type { SlideStyle } from "./slide-types.js";
 
 /** Output modes matching OpenSong's PresentHelperWindow: [N/K/W/H/L/F]. */
@@ -207,6 +207,14 @@ class Api {
       method: "POST",
       body: { message },
     });
+
+  // plugins
+  plugins = () => this.req<PluginManifest[]>("/api/v1/plugins");
+  pluginCommand = (pluginId: string, command: string, payload?: unknown) =>
+    this.req<unknown>(
+      `/api/v1/plugins/${encodeURIComponent(pluginId)}/commands/${encodeURIComponent(command)}`,
+      { method: "POST", body: payload ?? {} },
+    );
 
   // settings (generic key/value)
   setting = <T = unknown>(key: string) =>

@@ -158,8 +158,14 @@ function openOutputWindow() {
   const target = displays.find((d) => d.id !== primary.id);
   const mode = displayMode === "auto" ? (target ? "dual" : "preview") : displayMode;
 
-  if (mode === "preview" || mode === "network" || (mode === "dual" && !target)) {
+  // Only single/dual create a local output window; preview, network, and
+  // plugin-provided modes (e.g. a future "plugin:obs:*" output) do not.
+  if (mode !== "single" && mode !== "dual") {
     console.log(`${mode} mode — no local output window`);
+    return;
+  }
+  if (mode === "dual" && !target) {
+    console.log("dual mode requested but no second display — no output window");
     return;
   }
 
@@ -190,6 +196,21 @@ ipcMain.handle("ps:toggle-output", () => {
   const fs = outputWindow.isFullScreen();
   outputWindow.setFullScreen(!fs);
   return fs ? "windowed" : "fullscreen";
+});
+
+/**
+ * Switch the presentation output mode at runtime (Present-menu modes and
+ * plugin-provided output modes). Unknown/plugin modes => no local window;
+ * the plugin supplies its own output (OBS input, NDI, cast, ...).
+ */
+ipcMain.handle("ps:set-display-mode", (_e, mode) => {
+  displayMode = typeof mode === "string" && mode !== "" ? mode : "auto";
+  if (outputWindow !== null) {
+    outputWindow.close();
+    outputWindow = null;
+  }
+  openOutputWindow();
+  return displayMode;
 });
 
 // True when the calling webContents is the presentation output window —

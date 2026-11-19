@@ -271,4 +271,15 @@ export class SqliteMediaRepository implements MediaRepository {
       .onConflictDoNothing({ target: schema.mediaAssets.storageKey })
       .run();
   }
+
+  async findByFilename(filename: string): Promise<string | null> {
+    // OpenSong refs are filenames or "Backgrounds/x" paths — match the basename.
+    const base = filename.split(/[\\/]/).pop() ?? filename;
+    const rows = this.db
+      .select({ storageKey: schema.mediaAssets.storageKey, originalFilename: schema.mediaAssets.originalFilename })
+      .from(schema.mediaAssets)
+      .all() as { storageKey: string; originalFilename: string | null }[];
+    const hit = rows.find((r) => r.originalFilename === filename) ?? rows.find((r) => r.originalFilename === base);
+    return hit?.storageKey ?? null;
+  }
 }
