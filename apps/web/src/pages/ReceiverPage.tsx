@@ -141,6 +141,12 @@ export function ReceiverPage(): ReactNode {
         if (s.mode === "freeze") return prev ?? s;
         return s;
       });
+    } else if (res.status === 404 || res.status === 403) {
+      // Session is gone (ended/deleted) — drop the dead subscription and
+      // fall back to auto-join instead of showing a frozen slide forever.
+      setState(null);
+      setSessionId(null);
+      setToken(null);
     }
   };
 

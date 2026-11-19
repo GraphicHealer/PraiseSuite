@@ -31,7 +31,16 @@ export interface SlideResponse {
     imageResize: string | null;
     imageKeepAspect: boolean;
     mouseCursor?: string;
-    next: { title: string; lines: string[] } | null;
+    next: {
+      title: string;
+      lines: string[];
+      kind: string;
+      blank: boolean;
+      mediaKey: string | null;
+      backgroundKey: string | null;
+      style: SlideStyle;
+      subtitle: string | null;
+    } | null;
   } | null;
 }
 

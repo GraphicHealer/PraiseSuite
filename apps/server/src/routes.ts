@@ -14,6 +14,7 @@ import type {
   SlideStyle,
   OutputMode,
   PresentationPlan,
+  ServiceItem,
 } from "@praisesuite/core";
 import type { SqliteStorage } from "@praisesuite/storage-sqlite";
 import { storeMedia } from "@praisesuite/storage-sqlite";
@@ -984,17 +985,26 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
       : await repos.media.findByFilename(ref);
   const next = plan.slides[idx + 1] ?? null;
   const nextItem = next ? service?.items.find((i) => i.id === next.serviceItemId) : null;
+  const nextSong = next?.songId ? await repos.songs.get(next.songId) : null;
+  const nextStyle = next
+    ? resolveSlideStyle(
+        next.kind === "scripture" && !next.setStyleActive
+          ? (loadScriptureStyle(storage) ?? loadStyle(storage))
+          : loadStyle(storage),
+        next.styleOverride ?? undefined,
+      )
+    : null;
 
-  // OpenSong <song_subtitle>: the subtitle is composed from a '|'-joined
-  // field list on the style; @descriptive prefixes each with a caption.
-  const subtitleFor = (): string | null => {
-    if (item?.subtitle) return item.subtitle;
-    if (!song) return null;
+  /** OpenSong <song_subtitle>: the subtitle is composed from a '|'-joined
+   *  field list on the style; @descriptive prefixes each with a caption. */
+  const subtitleFor = (it: ServiceItem | null | undefined, sng: Song | null, st: SlideStyle): string | null => {
+    if (it?.subtitle) return it.subtitle;
+    if (!sng) return null;
     const fields: Record<string, string | null> = {
-      copyright: song.copyright,
-      hymn_number: song.hymnNumber,
-      author: song.authors.length > 0 ? song.authors.join("; ") : null,
-      ccli_number: song.ccliNumber,
+      copyright: sng.copyright,
+      hymn_number: sng.hymnNumber,
+      author: sng.authors.length > 0 ? sng.authors.join("; ") : null,
+      ccli_number: sng.ccliNumber,
       ccli_license: storage.getSetting("opensong.ccliLicense"),
     };
     const captions: Record<string, string> = {
@@ -1004,15 +1014,30 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
       ccli_number: "CCLI #: ",
       ccli_license: "CCLI Lic: ",
     };
-    const lines = (style.songSubtitle ?? ["author"])
+    const keys = (st.songSubtitle ?? ["author"]).filter((k) => fields[k]);
+    const lines = keys
       .map((k) => fields[k])
       .filter((v): v is string => typeof v === "string" && v !== "")
-      .map((v, i) => {
-        const key = (style.songSubtitle ?? ["author"]).filter((k) => fields[k]) [i]!;
-        return style.descriptiveSubtitles ? `${captions[key] ?? ""}${v}` : v;
-      });
+      .map((v, i) => (st.descriptiveSubtitles ? `${captions[keys[i]!] ?? ""}${v}` : v));
     return lines.length > 0 ? lines.join("\n") : null;
   };
+
+  /** Per-verse background wins over song-level (verse="" = the song
+   *  default), which wins over the style background. Blank separators have
+   *  no verse, so the song default backs them too. */
+  const backgroundFor = async (
+    s: { backgroundKey: string | null },
+    sng: Song | null,
+    st: SlideStyle,
+  ): Promise<string | null> =>
+    (await resolveBg(s.backgroundKey)) ??
+    (await resolveBg(
+      (() => {
+        const d = sng?.backgrounds?.items.find((b) => b.verse === "");
+        return (d?.key ?? d?.filename) || sng?.background || null;
+      })(),
+    )) ??
+    (await resolveBg(st.backgroundKey));
 
   // OpenSong title/@include_verse: "name: 1, 2, **3**, 4" — verse ids of
   // this item's slides, current in the middle (bolded client-side).
@@ -1045,18 +1070,7 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
     kind: slide.kind,
     mediaKey: slide.mediaKey,
     style,
-    /** Per-verse background wins over song-level, which wins over style.
-     *  An OpenSong @verse="" entry is the song's default background — it
-     *  also backs blank separator slides (which have no verse). */
-    backgroundKey:
-      (await resolveBg(slide.backgroundKey)) ??
-      (await resolveBg(
-        (() => {
-          const d = song?.backgrounds?.items.find((b) => b.verse === "");
-          return (d?.key ?? d?.filename) || song?.background || null;
-        })(),
-      )) ??
-      (await resolveBg(style.backgroundKey)),
+    backgroundKey: await backgroundFor(slide, song, style),
     backgroundAsText: slide.backgroundAsText,
     logoKey: style.logoKey,
     /** Announcement-loop timing in seconds (OpenSong item loop interval). */
@@ -1066,7 +1080,7 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
     imageKeepAspect: slide.kind === "media" ? item?.config["keepAspect"] !== "false" : true,
     subtitle: (() => {
       if (slide.blank) return null; // OpenSong blank groups draw no title/subtitle
-      const base = subtitleFor();
+      const base = subtitleFor(item, song, style);
       // @descriptions_in_subtitle appends the image's description line.
       if (slide.kind !== "media" || item?.config["descriptionsInSubtitle"] !== "true") return base;
       const imgs = Array.isArray(item.config["images"]) ? (item.config["images"] as { description?: string }[]) : [];
@@ -1089,7 +1103,21 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
         return "hidden";
       }
     })(),
-    next: next ? { title: nextItem?.title ?? next.title, lines: next.lines } : null,
+    // The helper's next-slide preview renders the upcoming slide like the
+    // current one — with its own item's style and resolved background.
+    next:
+      next !== null && nextStyle !== null
+        ? {
+            title: next.blank ? "" : (nextItem?.title ?? next.title),
+            lines: next.lines,
+            kind: next.kind,
+            blank: next.blank,
+            mediaKey: next.mediaKey,
+            backgroundKey: await backgroundFor(next, nextSong, nextStyle),
+            style: nextStyle,
+            subtitle: next.blank ? null : subtitleFor(nextItem, nextSong, nextStyle),
+          }
+        : null,
   };
 }
 

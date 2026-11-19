@@ -286,7 +286,25 @@ ipcMain.handle("ps:present", (_e, mode, serviceId, itemId) => {
 function endPresentation() {
   if (outputWindow !== null) outputWindow.close();
   if (presenterWindow !== null) presenterWindow.close();
+  void endLiveSessions();
   if (controlWindow === null) openControlWindow();
+}
+
+/**
+ * Ending the presentation terminates its session — otherwise a "live"
+ * session outlives its windows and /receiver/join can serve a stale one
+ * (output window frozen on an old slide).
+ */
+async function endLiveSessions() {
+  try {
+    const res = await fetch(`${BASE}/api/v1/sessions`);
+    if (!res.ok) return;
+    for (const s of await res.json()) {
+      await fetch(`${BASE}/api/v1/sessions/${s.id}/end`, { method: "POST" });
+    }
+  } catch {
+    /* server not up yet */
+  }
 }
 ipcMain.handle("ps:present-exit", () => endPresentation());
 

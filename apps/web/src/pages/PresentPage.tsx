@@ -553,7 +553,10 @@ export function PresentPage({
                   <SlideCanvas
                     title={slide.slide.next.title}
                     lines={slide.slide.next.lines}
-                    style={slide.slide.style}
+                    style={slide.slide.next.style}
+                    backgroundKey={slide.slide.next.backgroundKey}
+                    mediaKey={slide.slide.next.mediaKey}
+                    subtitle={slide.slide.next.subtitle}
                   />
                 </div>
               ) : (
@@ -629,7 +632,7 @@ export function PresentPage({
           </fieldset>
 
           <pre className="rounded border border-zinc-300 p-1.5 text-[10px] leading-snug whitespace-pre-wrap text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
-{"- Keys -\nSpace/Down/PgDn: Next\nUp/PgUp: Previous\nRight: Next Section\nLeft/Backspace: Prev Section\nHome/End: First/Last Slide\nF1-F15: Song\n1-9: Verse\nC/`: Chorus\nP: Pre-chorus\nB: Bridge\nT: Tag\nK/W/H/L/F: Black/White/Hide/Logo/Freeze\nN: Normal\nA: Alert\nQ: Add Song\nS: Scripture\nM: Full Screen\nEsc: End"}
+{"- Keys -\nDown: Next Slide\nUp: Previous Slide\nRight: Next Section\nLeft: Previous Section\nF1-F15: Song\n1-9: Verse\nC: Chorus\nP: Pre-chorus\nB: Bridge\nT: Tag"}
           </pre>
         </div>
       </div>
