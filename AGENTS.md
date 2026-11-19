@@ -1,5 +1,23 @@
 # AGENTS.md — PraiseSuite contributor/agent notes
 
+## Product direction
+
+**Phase 1 is an OpenSong clone, not a redesign.** The goal is for PraiseSuite to
+work and run almost identically to OpenSong — same window model, slide list,
+editor layout, keyboard shortcuts, presentation behavior, print output — so
+existing OpenSong users are immediately at home. The modernization is
+underneath: the isomorphic core, Node server, web UI, offline-first storage,
+and plugin framework are the future-forward backend that the eventual UI
+redesign will build on. Implications:
+
+- When behavior is ambiguous, **read the OpenSong source** (`../opensong_3.4.8`,
+  Xojo) and match it — don't invent a "better" behavior.
+- Fidelity to OpenSong beats polish: match its layouts, labels, key captions,
+  and quirks (e.g. Esc is labeled "End", blank separator slides, the title
+  style's `include_verse` gate) even when ours could be nicer.
+- New capabilities (plugin system, network receivers, web UI) belong in the
+  architecture/extension seams, not as deviations in OpenSong-facing behavior.
+
 ## Commands
 
 - `pnpm install` — install workspace deps
