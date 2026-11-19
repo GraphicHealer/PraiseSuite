@@ -480,7 +480,7 @@ export function PresentPage({
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           {/* lst_all_slides — Title | ID | Text (27% / 8% / 65%) */}
           <div className="min-h-0 flex-1 overflow-auto rounded border border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-950">
-            <table className="w-full border-collapse text-sm">
+            <table className="w-full table-fixed border-collapse text-sm">
               <thead className="sticky top-0 bg-zinc-100 text-left dark:bg-zinc-900">
                 <tr>
                   <th className="w-[27%] px-2 py-1 font-semibold">Title</th>
@@ -501,10 +501,10 @@ export function PresentPage({
                         r.newGroup && i > 0 ? "[&>td]:border-t-4 [&>td]:border-zinc-300 dark:[&>td]:border-zinc-600" : ""
                       } ${cur ? "bg-indigo-100 dark:bg-indigo-950" : "hover:bg-zinc-50 dark:hover:bg-zinc-900"}`}
                     >
-                      <td className="px-2 py-1 font-medium">
+                      <td className="truncate px-2 py-1 font-medium">
                         {r.blank ? " " : r.loop ? `(Loop) ${r.itemTitle}` : r.itemTitle}
                       </td>
-                      <td className={`px-1 py-1 text-center ${r.emphasized ? "font-bold" : ""}`}>{r.slideId}</td>
+                      <td className={`truncate px-1 py-1 text-center ${r.emphasized ? "font-bold" : ""}`}>{r.slideId}</td>
                       <td className="truncate px-2 py-1">{r.firstLine}</td>
                     </tr>
                   );
