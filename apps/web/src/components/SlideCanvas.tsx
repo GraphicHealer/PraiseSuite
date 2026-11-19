@@ -118,7 +118,6 @@ export function SlideCanvas({
   const measureRef = useRef<HTMLDivElement | null>(null);
   injectFadeCss();
   const [box, setBox] = useState({ w: DESIGN_W, h: DESIGN_H });
-  const [bodyZoom, setBodyZoom] = useState(1);
 
   useEffect(() => {
     const el = boxRef.current;
@@ -137,20 +136,26 @@ export function SlideCanvas({
   const footerH = style?.subtitle.enabled ? style.subtitle.size * ZOOM * 1.3 + lineLeading(style.subtitle) : 0;
   const availH = DESIGN_H - inset * 2 - headerH - footerH;
 
-  // BodyScale: measure the text at zoom 1 and shrink until it fits.
+  // BodyScale: measure the text at zoom 1 and shrink until it fits. The
+  // measured zoom is keyed to the content it was measured for — until the
+  // layout effect runs for new lines, the body renders hidden rather than
+  // at the unscaled (huge) size for a frame.
+  const linesKey = `${lines.join("")}|${availW.toFixed(0)}x${availH.toFixed(0)}`;
+  const [zoomState, setZoomState] = useState({ key: "", z: 1 });
   useLayoutEffect(() => {
     const el = measureRef.current;
-    if (!el || !style || !style.body.autoScale) {
-      setBodyZoom(1);
-      return;
-    }
-    const z = Math.min(
-      1,
-      availH / Math.max(1, el.scrollHeight),
-      availW / Math.max(1, el.scrollWidth),
-    );
-    setBodyZoom(z);
-  }, [lines, style, availW, availH]);
+    const z =
+      !el || !style || !style.body.autoScale
+        ? 1
+        : Math.min(
+            1,
+            availH / Math.max(1, el.scrollHeight),
+            availW / Math.max(1, el.scrollWidth),
+          );
+    setZoomState((s) => (s.key === linesKey && s.z === z ? s : { key: linesKey, z }));
+  }, [lines, style, availW, availH, linesKey]);
+  const bodyZoom = zoomState.key === linesKey ? zoomState.z : 1;
+  const bodyMeasured = !style?.body.autoScale || zoomState.key === linesKey;
 
   const scale = box.w / DESIGN_W;
   const black = blanked || mode === "blank" || !style;
@@ -202,7 +207,7 @@ export function SlideCanvas({
       {style.subtitle.valign === "top" && subtitleEl}
       <div
         className="flex min-h-0 flex-1 flex-col"
-        style={{ justifyContent: justify, alignItems: align, padding: margins(style.body) }}
+        style={{ justifyContent: justify, alignItems: align, padding: margins(style.body), visibility: bodyMeasured ? "visible" : "hidden" }}
       >
         <div className="max-w-full" style={{ display: "flex", flexDirection: "column" }}>
           {lines.map((l, i) => (
@@ -274,16 +279,23 @@ export function SlideCanvas({
   const prevFrameRef = useRef<ReactNode>(null);
   const prevIndexRef = useRef(index);
   const [fadingFrame, setFadingFrame] = useState<ReactNode>(null);
+  // The fade snapshot is taken post-commit so it always holds the last
+  // *settled* frame — assigning in render could freeze an intermediate
+  // (pre-BodyScale) frame into the overlay.
   useEffect(() => {
-    if (index === prevIndexRef.current) return;
+    if (index === prevIndexRef.current) {
+      prevFrameRef.current = frame;
+      return;
+    }
     prevIndexRef.current = index;
     if (transitionMs > 0 && prevFrameRef.current !== null) {
       setFadingFrame(prevFrameRef.current);
       const t = setTimeout(() => setFadingFrame(null), transitionMs);
+      prevFrameRef.current = frame;
       return () => clearTimeout(t);
     }
-  }, [index, transitionMs]);
-  prevFrameRef.current = frame;
+    prevFrameRef.current = frame;
+  });
 
   return (
     <div ref={boxRef} className="relative h-full w-full overflow-hidden bg-black">
