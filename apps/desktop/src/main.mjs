@@ -174,20 +174,30 @@ function openOutputWindow(url) {
   // preview (dual-screen test) → a windowed "screen" on the primary's right
   // half, framed so it can be moved/resized like a real second monitor.
   if (mode === "preview") {
-    // Dual-screen test: dock the helper on the left half and a 16:9 output
-    // window vertically centered on the right half — two side-by-side
-    // "screens" on one monitor.
+    // OpenSong MODE_PREVIEW (PresentWindow.xojo_window): the 16:9 output
+    // sits in the upper-left; the helper keeps its natural 800x600 size at
+    // the bottom-right — they don't split the screen.
     const wa = primary.workArea;
-    const half = Math.floor(wa.width / 2);
-    const w = half;
-    const h = Math.floor((w * 9) / 16);
+    const aspect = primary.size.width / primary.size.height;
+    const helperW = 800, helperH = 600;
+    let w = wa.width - helperW - 30;
+    let h = Math.floor(w / aspect);
+    if (h > wa.height) {
+      h = wa.height;
+      w = Math.floor(h * aspect);
+    }
     if (presenterWindow !== null && !presenterWindow.isDestroyed()) {
       presenterWindow.unmaximize();
-      presenterWindow.setBounds({ x: wa.x, y: wa.y, width: half, height: wa.height });
+      presenterWindow.setBounds({
+        x: wa.x + wa.width - helperW - 10,
+        y: wa.y + primary.size.height - helperH - 40,
+        width: helperW,
+        height: helperH,
+      });
     }
     outputWindow = new BrowserWindow({
-      x: wa.x + half,
-      y: wa.y + Math.floor((wa.height - h) / 2),
+      x: wa.x + 10,
+      y: wa.y + 10,
       width: w,
       height: h,
       title: "Presentation Output (Test)",
