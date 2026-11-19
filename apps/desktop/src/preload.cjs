@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+const { contextBridge, ipcRenderer } = require("electron");
 
 // Print bridge: webContents.print / printToPDF via a hidden print window in
 // the main process. `window.ps` is undefined in plain browsers — the web app

@@ -69,7 +69,7 @@ function openControlWindow() {
     width: 1280,
     height: 800,
     autoHideMenuBar: true,
-    webPreferences: { contextIsolation: true, preload: path.join(dir, "preload.mjs") },
+    webPreferences: { contextIsolation: true, preload: path.join(dir, "preload.cjs") },
   });
   controlWindow.loadURL(`${BASE}/`);
   controlWindow.on("closed", () => (controlWindow = null));
@@ -78,7 +78,7 @@ function openControlWindow() {
 /**
  * Native printing: render a print URL offscreen, then either show the OS
  * print dialog (webContents.print) or emit a PDF directly (printToPDF).
- * The renderer reaches these through window.ps (see preload.mjs).
+ * The renderer reaches these through window.ps (see preload.cjs).
  */
 async function hiddenPrintWindow(url) {
   const win = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true } });
@@ -110,7 +110,7 @@ ipcMain.handle("ps:open-print", async (_e, query) => {
     width: 1180,
     height: 840,
     title: "Print preview — PraiseSuite",
-    webPreferences: { contextIsolation: true, preload: path.join(dir, "preload.mjs") },
+    webPreferences: { contextIsolation: true, preload: path.join(dir, "preload.cjs") },
   });
   win.setMenu(null); // popup = document window, not an app window — no File/Edit/View bar
   await win.loadURL(`${BASE}/?${query}`);
@@ -195,7 +195,7 @@ function openOutputWindow(url) {
       backgroundColor: "#000000",
       webPreferences: {
         contextIsolation: true,
-        preload: path.join(dir, "preload.mjs"),
+        preload: path.join(dir, "preload.cjs"),
       },
     });
   } else {
@@ -208,7 +208,7 @@ function openOutputWindow(url) {
       backgroundColor: "#000000",
       webPreferences: {
         contextIsolation: true,
-        preload: path.join(dir, "preload.mjs"),
+        preload: path.join(dir, "preload.cjs"),
       },
     });
   }
@@ -269,7 +269,7 @@ ipcMain.handle("ps:present", (_e, mode, serviceId, itemId) => {
       width: 1280,
       height: 800,
       autoHideMenuBar: true,
-      webPreferences: { contextIsolation: true, preload: path.join(dir, "preload.mjs") },
+      webPreferences: { contextIsolation: true, preload: path.join(dir, "preload.cjs") },
     });
     presenterWindow.loadURL(`${BASE}/${q}`);
     presenterWindow.on("closed", () => {
