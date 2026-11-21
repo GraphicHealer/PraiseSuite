@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { Service, ServiceItem, ServiceItemId, SongSummary } from "@praisesuite/core";
+import type { Service, ServiceItem, ServiceItemId, SlideStyle, SlideStyleOverride, SongSummary } from "@praisesuite/core";
 import { api } from "../api.js";
 import { AddItemDialog, type AddItemTab } from "../components/AddItemDialog.js";
 import { useDialog } from "../components/Dialog.js";
+import { StyleEditor } from "../components/StyleEditor.js";
 import { openPrintPreview } from "../PrintPreview.js";
 import { SongEditorPage } from "./SongEditorPage.js";
 
@@ -253,6 +254,19 @@ function makeItem(patch: Partial<ServiceItem>): ServiceItem {
   };
 }
 
+/** Merge an item's stored <style> override over the global style — the
+ *  resolved style OpenSong's can_slide_style would display. */
+function resolvedItemStyle(global: SlideStyle, ov: SlideStyleOverride | undefined): SlideStyle {
+  const o = ov ?? {};
+  return {
+    ...global,
+    ...o,
+    title: { ...global.title, ...(o.title ?? {}) },
+    body: { ...global.body, ...(o.body ?? {}) },
+    subtitle: { ...global.subtitle, ...(o.subtitle ?? {}) },
+  };
+}
+
 function makeService(name: string, items: ServiceItem[]): Service {
   return {
     id: crypto.randomUUID() as Service["id"],
@@ -292,6 +306,12 @@ function SetsMode({
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState("");
   const [addTab, setAddTab] = useState<AddItemTab | null>(null);
+  /** Per-item <style> editing (OpenSong can_slide_style → StyleWindow). */
+  const [editingItemStyle, setEditingItemStyle] = useState(false);
+  const [globalStyle, setGlobalStyle] = useState<SlideStyle | null>(null);
+  useEffect(() => {
+    void api.style().then((s) => setGlobalStyle(s as unknown as SlideStyle)).catch(() => {});
+  }, []);
 
   const reload = () => api.services().then(setServices).catch((e) => setError((e as Error).message));
   useEffect(() => {
@@ -443,6 +463,7 @@ function SetsMode({
                 <button onClick={() => setAddTab("scripture")} className={btn}>Scripture…</button>
                 <button onClick={() => setAddTab("custom")} className={btn}>Slides…</button>
                 <button onClick={() => setAddTab("image")} className={btn}>Image…</button>
+                <button onClick={() => setAddTab("style")} className={btn}>Style…</button>
               </div>
             </div>
           </div>
@@ -472,9 +493,39 @@ function SetsMode({
               <button disabled={sel === null} onClick={copyItem} className={btn}>Copy</button>
               <button disabled={clipboard === null} onClick={pasteItem} className={btn}>Paste</button>
               <button disabled={sel === null} onClick={storeItem} className={btn}>Store</button>
+              <button disabled={sel === null} onClick={() => setEditingItemStyle(true)} className={btn} title="Edit this item's slide style (OpenSong can_slide_style)">Style…</button>
+              {item !== null && item !== undefined && item.config["style"] !== undefined && (
+                <button
+                  onClick={() => {
+                    if (sel === null) return;
+                    const it = { ...item, config: { ...item.config } };
+                    delete it.config["style"];
+                    patchItems(current.items.map((x, i) => (i === sel ? it : x)));
+                  }}
+                  className={`${btn} text-red-600`}
+                  title="Remove this item's style override"
+                >
+                  Clear Style
+                </button>
+              )}
               <button disabled={sel === null} onClick={() => sel !== null && patchItems(current.items.filter((_, j) => j !== sel))} className={`${btn} text-red-600`}>Remove</button>
             </div>
           </aside>
+
+          {/* OpenSong can_slide_style → StyleWindow on the item's <style>. */}
+          {editingItemStyle && item !== null && item !== undefined && globalStyle !== null && (
+            <StyleEditor
+              style={resolvedItemStyle(globalStyle, item.config["style"] as SlideStyleOverride | undefined)}
+              heading={`Style Editor — ${item.title || "Item"}`}
+              onClose={() => setEditingItemStyle(false)}
+              onSave={(s) => {
+                if (sel === null) return;
+                const it = { ...item, config: { ...item.config, style: s } };
+                patchItems(current.items.map((x, i) => (i === sel ? it : x)));
+                setEditingItemStyle(false);
+              }}
+            />
+          )}
         </>
       )}
     </div>

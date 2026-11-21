@@ -282,4 +282,16 @@ export class SqliteMediaRepository implements MediaRepository {
     const hit = rows.find((r) => r.originalFilename === filename) ?? rows.find((r) => r.originalFilename === base);
     return hit?.storageKey ?? null;
   }
+
+  async list(): Promise<{ storageKey: string; mediaType: string; originalFilename: string | null; size: number }[]> {
+    return this.db
+      .select({
+        storageKey: schema.mediaAssets.storageKey,
+        mediaType: schema.mediaAssets.mediaType,
+        originalFilename: schema.mediaAssets.originalFilename,
+        size: schema.mediaAssets.size,
+      })
+      .from(schema.mediaAssets)
+      .all() as { storageKey: string; mediaType: string; originalFilename: string | null; size: number }[];
+  }
 }

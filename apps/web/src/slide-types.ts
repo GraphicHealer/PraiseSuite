@@ -48,6 +48,8 @@ export interface SlideStyle {
   margin: number;
   transition: boolean;
   transitionMs: number;
+  /** OpenSong style/@thickness — global border/shadow radius factor. */
+  thickness?: number;
   songSubtitle: string[];
   initialMode: string;
   backgroundFit: "cover" | "contain" | "fill" | "center";

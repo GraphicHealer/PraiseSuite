@@ -254,6 +254,12 @@ class Api {
   style = () => this.req<SlideStyle & { userFieldLabels?: string[] }>("/api/v1/style");
   saveStyle = (style: SlideStyle) =>
     this.req<SlideStyle>("/api/v1/style", { method: "PUT", body: style as unknown as Record<string, unknown> });
+  scriptureStyle = () => this.req<SlideStyle>("/api/v1/style/scripture");
+  saveScriptureStyle = (style: SlideStyle) =>
+    this.req<SlideStyle>("/api/v1/style/scripture", { method: "PUT", body: style as unknown as Record<string, unknown> });
+  /** Seed OpenSong's bundled defaults; styles=false adds background images only. */
+  openSongDefaults = (styles: boolean) =>
+    this.req<{ media: string[] }>("/api/v1/defaults/opensong", { method: "POST", body: { styles } });
 
   /** Record a song activity (printed/copied) — fired by print/export actions. */
   logSongActivity = (id: string, action: number) =>
@@ -274,6 +280,10 @@ class Api {
   passage = (id: string, ref: string) =>
     this.req<{ title: string; slides: { body: string }[]; copyright: string | null }>(
       `/api/v1/bibles/${encodeURIComponent(id)}/passage?ref=${encodeURIComponent(ref)}`,
+    );
+  mediaList = () =>
+    this.req<{ storageKey: string; mediaType: string; originalFilename: string | null; size: number }[]>(
+      "/api/v1/media",
     );
   uploadMedia = (name: string, mediaType: string, dataBase64: string) =>
     this.req<{ storageKey: string }>("/api/v1/media", {

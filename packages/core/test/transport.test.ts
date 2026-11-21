@@ -72,7 +72,7 @@ function inMemoryRepos(): Repositories {
     listKeys: async (prefix) =>
       [...files.keys()].filter((k) => !prefix || k.startsWith(prefix)),
   };
-  const mediaRepo: MediaRepository = { register: async () => {}, findByFilename: async () => null };
+  const mediaRepo: MediaRepository = { register: async () => {}, findByFilename: async () => null, list: async () => [] };
 
   return {
     songs: songRepo,

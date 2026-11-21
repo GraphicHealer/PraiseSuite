@@ -3,6 +3,7 @@ import CodeMirror from "@uiw/react-codemirror";
 import type { EditorView } from "@codemirror/view";
 import {
   parseOpenSongLyrics,
+  parseSlideStyleXml,
   serializeOpenSongLyrics,
   serializeStyleXml,
   transposeSourceText,
@@ -15,6 +16,7 @@ import {
 } from "@praisesuite/core";
 import { api } from "../api.js";
 import { useDialog } from "../components/Dialog.js";
+import { StyleEditor } from "../components/StyleEditor.js";
 import { opensongLanguage } from "../opensong-language.js";
 import { useDark } from "../use-dark.js";
 import { openPrintPreview } from "../PrintPreview.js";
@@ -98,6 +100,8 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
     });
 
   const [globalStyle, setGlobalStyle] = useState<SlideStyle | null>(null);
+  /** Song's own <style> being edited (OpenSong can_song_style → StyleWindow). */
+  const [editingSongStyle, setEditingSongStyle] = useState(false);
 
   useEffect(() => {
     void reload();
@@ -547,7 +551,12 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
             Override Style
           </label>
           {song.styleXml !== null && song.styleXml !== undefined && (
-            <span className="text-xs text-zinc-500">this song presents with its own slide style</span>
+            <>
+              <button onClick={() => setEditingSongStyle(true)} className="rounded border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800">
+                Edit Style…
+              </button>
+              <span className="text-xs text-zinc-500">this song presents with its own slide style</span>
+            </>
           )}
         </div>
       )}
@@ -629,6 +638,27 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
           </div>
         </fieldset>
       </div>
+
+      {/* OpenSong can_song_style → StyleWindow on the song's <style>. */}
+      {editingSongStyle &&
+        song.styleXml !== null &&
+        song.styleXml !== undefined &&
+        (() => {
+          let st: SlideStyle | null = null;
+          try {
+            st = parseSlideStyleXml(song.styleXml);
+          } catch {
+            st = globalStyle;
+          }
+          return st === null ? null : (
+            <StyleEditor
+              style={st}
+              heading="Style Editor — Song"
+              onClose={() => setEditingSongStyle(false)}
+              onSave={(s) => { update({ styleXml: serializeStyleXml(s as SlideStyle) }); setEditingSongStyle(false); }}
+            />
+          );
+        })()}
     </div>
   );
 }

@@ -18,6 +18,7 @@ import type {
 } from "@praisesuite/core";
 import type { SqliteStorage } from "@praisesuite/storage-sqlite";
 import { storeMedia } from "@praisesuite/storage-sqlite";
+import { applyOpenSongDefaults, seedDefaultMedia } from "./defaults.js";
 import { ApiError, type Route, type RouteAccess } from "./http.js";
 import { scanPlugins, invokePluginCommand } from "./plugins.js";
 import type { AuthService } from "./auth.js";
@@ -564,6 +565,25 @@ export function buildRoutes(deps: AppDeps): Route[] {
       return style;
     }),
 
+    // OpenSong <scripture_style> — same full SlideStyle shape as the default.
+    r("GET", "/api/v1/style/scripture", "guest", "Scripture slide style", async () =>
+      loadScriptureStyle(deps.storage) ?? defaultSlideStyle()),
+    r("PUT", "/api/v1/style/scripture", "admin", "Save scripture slide style", async (ctx) => {
+      const body = z.record(z.string(), z.unknown()).parse(await ctx.body());
+      const style = { ...defaultSlideStyle(), ...(body as Partial<SlideStyle>) };
+      deps.storage.setSetting("style.scripture", JSON.stringify(style));
+      return style;
+    }),
+
+    // Apply the bundled "OpenSong Defaults" — {styles:false} seeds the 6
+    // background images only; styles:true also resets default/scripture
+    // styles to OpenSong's shipped defaults.
+    r("POST", "/api/v1/defaults/opensong", "admin", "Seed/apply bundled OpenSong defaults", async (ctx) => {
+      const body = z.object({ styles: z.boolean().optional() }).parse((await ctx.body()) ?? {});
+      if (body.styles === false) return { media: await seedDefaultMedia(deps.storage, deps.ids) };
+      return applyOpenSongDefaults(deps.storage, deps.ids);
+    }),
+
     // Generic key/value settings (present.displayMode, alert style, …).
     r("GET", "/api/v1/settings/:key", "guest", "Read a stored setting", async (ctx) => {
       const raw = deps.storage.getSetting(ctx.params["key"]!);
@@ -632,8 +652,19 @@ export function buildRoutes(deps: AppDeps): Route[] {
         // active set style-change. OpenSong defaults this to true.
         deps.storage.setSetting("style.songStylePreferred", String(parsed.songStylePreferred));
         // OpenSong <scripture_style> — applied to scripture-type groups.
-        if (parsed.scriptureStyle)
-          deps.storage.setSetting("style.scripture", JSON.stringify(parsed.scriptureStyle));
+        if (parsed.scriptureStyle) {
+          const sc = { ...parsed.scriptureStyle };
+          if (parsed.scriptureBackgroundData) {
+            const m = await storeMedia(deps.storage, deps.ids, {
+              data: Buffer.from(parsed.scriptureBackgroundData, "base64"),
+              mediaType: "image/jpeg",
+              originalFilename: "Scripture.jpg",
+            });
+            sc.backgroundKey = m.storageKey;
+            out.media.push(m.storageKey);
+          }
+          deps.storage.setSetting("style.scripture", JSON.stringify(sc));
+        }
         out.style = style;
         out.warnings.push(...parsed.warnings);
       }
@@ -710,6 +741,9 @@ export function buildRoutes(deps: AppDeps): Route[] {
       deps.storage.setSetting("bibles.index", JSON.stringify(index));
       return { ok: true };
     }),
+
+    r("GET", "/api/v1/media", "guest", "List registered media assets", async () =>
+      deps.repos.media.list()),
 
     r("POST", "/api/v1/media", "admin", "Upload a media asset (base64 JSON)", async (ctx) => {
       const body = z

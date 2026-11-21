@@ -68,6 +68,8 @@ export interface MediaRepository {
   }): Promise<void>;
   /** Resolve a filename (OpenSong background/logo path) to a storage key. */
   findByFilename(filename: string): Promise<string | null>;
+  /** All registered assets — for media pickers/background browsers. */
+  list(): Promise<{ storageKey: string; mediaType: string; originalFilename: string | null; size: number }[]>;
 }
 
 /** All storage repositories, bundled for injection into the application layer. */

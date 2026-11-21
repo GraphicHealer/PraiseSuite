@@ -13,6 +13,8 @@ export interface PresentSettingsResult {
   scriptureStyle: SlideStyle | null;
   /** Base64-decodable image data captured from the settings file. */
   backgroundData: string | null;
+  /** scripture_style's embedded <background> image (OpenSong ships Scripture.jpg). */
+  scriptureBackgroundData: string | null;
   logoData: string | null;
   logoMaskData: string | null;
   songStylePreferred: boolean;
@@ -103,6 +105,38 @@ function parseBackgroundAttrs(
   if (bg["@_image_pos_top"] !== undefined) style.backgroundPosY = num(bg["@_image_pos_top"], style.backgroundPosY);
 }
 
+/** <default_style>, <scripture_style>, and song <style> share the full
+ * SlideStyle XML shape — parse one into a complete SlideStyle. */
+function parseStyleEl(el: unknown): SlideStyle {
+  const e = asRecord(el);
+  const style = defaultSlideStyle();
+  style.title = textStyle(e["title"], style.title);
+  style.body = textStyle(e["body"], style.body);
+  style.subtitle = textStyle(e["subtitle"], style.subtitle);
+  style.descriptiveSubtitles = bool(asRecord(e["subtitle"])["@_descriptive"]);
+  style.highlightChorus = bool(asRecord(e["body"])["@_highlight_chorus"]);
+  const bg = asRecord(e["background"]);
+  style.backgroundColor = asString(bg["@_color"]) || style.backgroundColor;
+  style.backgroundKey = asString(bg["@_filename"]) || null;
+  parseBackgroundAttrs(bg, style);
+  style.bodyTabs = parseTabs(e["body"]);
+  // <song_subtitle> text = '|'-joined field keys (author|copyright|…).
+  const songSub = asString(asRecord(e["song_subtitle"])["#text"] ?? e["song_subtitle"]);
+  if (songSub !== "") style.songSubtitle = songSub.split("|").filter((s) => s !== "");
+  return style;
+}
+
+/**
+ * Parse a standalone `<style>` document (a song's own style, a set item's
+ * style) into a complete SlideStyle for editing. Inverse of
+ * serializeStyleXml. An embedded <background> is not image data here —
+ * callers resolve filename/data separately.
+ */
+export function parseSlideStyleXml(xml: string): SlideStyle {
+  const doc = parseXml(xml);
+  return parseStyleEl(asRecord(doc)["style"]);
+}
+
 /**
  * Parse an OpenSong PresentSettings file. Fonts pass through resolveFont —
  * legacy names (Helvetica, Arial…) map to bundled families.
@@ -116,32 +150,18 @@ export function parsePresentSettings(xml: string): PresentSettingsResult {
   }
   const styleEl = asRecord(root["style"]);
 
-  // <default_style> and <scripture_style> share the full SlideStyle XML shape.
-  const parseStyleEl = (el: unknown): SlideStyle => {
-    const e = asRecord(el);
-    const style = defaultSlideStyle();
-    style.title = textStyle(e["title"], style.title);
-    style.body = textStyle(e["body"], style.body);
-    style.subtitle = textStyle(e["subtitle"], style.subtitle);
-    style.descriptiveSubtitles = bool(asRecord(e["subtitle"])["@_descriptive"]);
-    style.highlightChorus = bool(asRecord(e["body"])["@_highlight_chorus"]);
-    const bg = asRecord(e["background"]);
-    style.backgroundColor = asString(bg["@_color"]) || style.backgroundColor;
-    style.backgroundKey = asString(bg["@_filename"]) || null;
-    parseBackgroundAttrs(bg, style);
-    style.bodyTabs = parseTabs(e["body"]);
-    // <song_subtitle> text = '|'-joined field keys (author|copyright|…).
-    const songSub = asString(asRecord(e["song_subtitle"])["#text"] ?? e["song_subtitle"]);
-    if (songSub !== "") style.songSubtitle = songSub.split("|").filter((s) => s !== "");
-    return style;
-  };
-
   const defaults = asRecord(root["default_style"]);
   const style = parseStyleEl(defaults);
   // <background> image data (base64 text) — registered as media by the caller.
   const bgData = asString(asRecord(defaults["background"])["#text"] ?? "") || null;
   style.backgroundKey = null; // media registered by the caller
-  const scriptureStyle = root["scripture_style"] !== undefined ? parseStyleEl(root["scripture_style"]) : null;
+  const scriptureEl = root["scripture_style"];
+  const scriptureStyle = scriptureEl !== undefined ? parseStyleEl(scriptureEl) : null;
+  const scriptureBgData =
+    scriptureEl !== undefined
+      ? asString(asRecord(asRecord(scriptureEl)["background"])["#text"] ?? "") || null
+      : null;
+  if (scriptureStyle !== null) scriptureStyle.backgroundKey = null;
 
   const logoData = asString(asRecord(root["logo"])["#text"] ?? root["logo"] ?? "");
   const maskData = asString(asRecord(root["logo_mask"])["#text"] ?? root["logo_mask"] ?? "");
@@ -169,6 +189,7 @@ export function parsePresentSettings(xml: string): PresentSettingsResult {
     style,
     scriptureStyle,
     backgroundData: bgData,
+    scriptureBackgroundData: scriptureBgData,
     logoData: logoData || null,
     logoMaskData: maskData || null,
     // OpenSong GetValueB(…, True) — song_style_preferred defaults true.

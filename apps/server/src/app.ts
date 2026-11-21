@@ -12,6 +12,7 @@ import {
 } from "@praisesuite/core";
 import { openStorage, type SqliteStorage } from "@praisesuite/storage-sqlite";
 import { AuthService } from "./auth.js";
+import { seedOpenSongDefaults } from "./defaults.js";
 import { dispatch } from "./http.js";
 import { buildRoutes } from "./routes.js";
 import { SessionChannel } from "./ws.js";
@@ -59,6 +60,10 @@ export function createApp(options: AppOptions): PraiseSuiteApp {
   const storage = openStorage(options);
   const auth = new AuthService(storage);
   let lanEnabled = storage.getSetting("server.lanEnabled") === "true";
+
+  // OpenSong installs its "OpenSong Defaults" (backgrounds + styles) into the
+  // data folder on first run — we do the same into media storage + settings.
+  void seedOpenSongDefaults(storage, ids);
 
   // Boot cleanup: sessions pointing at a deleted service are dead — drop
   // them so receivers don't auto-join a session with an empty plan, and

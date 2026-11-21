@@ -2,15 +2,19 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { ServiceItem, ServiceItemId, SongSummary } from "@praisesuite/core";
 import { serializeOpenSongLyrics } from "@praisesuite/core";
 import { api } from "../api.js";
+import { SlideCanvas } from "./SlideCanvas.js";
+import { StyleEditor } from "./StyleEditor.js";
+import type { SlideStyle } from "../slide-types.js";
 
 export type AddItemTab = "song" | "scripture" | "custom" | "image" | "style" | "external";
 
-// Style/External stay in AddItemTab but are hidden until implemented (D15).
+// External stays in AddItemTab but is hidden until implemented (D15).
 const TABS: [AddItemTab, string][] = [
   ["song", "Songs"],
   ["scripture", "Scripture"],
   ["custom", "Custom"],
   ["image", "Image"],
+  ["style", "Style"],
 ];
 
 function makeItem(patch: Partial<ServiceItem>): ServiceItem {
@@ -75,13 +79,18 @@ export function AddItemDialog({
   const [customTitle, setCustomTitle] = useState("");
   const [customBody, setCustomBody] = useState("");
   const [externalUrl, setExternalUrl] = useState("");
+  // Style-change item editor (OpenSong: rad_style_change / rad_style_revert + can_style_style).
+  const [styleAction, setStyleAction] = useState<"new" | "revert">("new");
+  const [changeStyle, setChangeStyle] = useState<SlideStyle | null>(null);
+  const [editingStyle, setEditingStyle] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (tab === "song" && allSongs.length === 0) void api.songs().then(setAllSongs).catch(() => {});
     if (tab === "scripture" && bibles.length === 0)
       void api.bibles().then((b) => { setBibles(b); setBibleId((x) => x || b[0]?.id || ""); }).catch(() => {});
-  }, [tab, allSongs.length, bibles.length]);
+    if (tab === "style" && changeStyle === null) void api.style().then((s) => setChangeStyle(s)).catch(() => {});
+  }, [tab, allSongs.length, bibles.length, changeStyle]);
 
   const orderOf = (song: Awaited<ReturnType<typeof api.song>>) =>
     (song.arrangements[0]?.sequence ?? [])
@@ -496,12 +505,51 @@ export function AddItemDialog({
         )}
 
         {tab === "style" && (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
+            {/* OpenSong rad_style_change / rad_style_revert + can_style_style. */}
+            <label className="flex items-center gap-2 text-sm">
+              <input type="radio" name="styleaction" checked={styleAction === "new"} onChange={() => setStyleAction("new")} />
+              Change Style to the Following:
+            </label>
+            {styleAction === "new" && changeStyle !== null && (
+              <button
+                type="button"
+                onClick={() => setEditingStyle(true)}
+                className="mx-auto w-64"
+                title="Click to edit the style"
+              >
+                <span className="block aspect-video overflow-hidden rounded border border-zinc-400 hover:border-indigo-400 dark:border-zinc-600">
+                  <SlideCanvas
+                    title="Sample Title"
+                    subtitle="Sample Subtitle"
+                    lines={["Sample body line one", "Sample body line two"]}
+                    style={changeStyle}
+                    backgroundKey={changeStyle.backgroundKey}
+                  />
+                </span>
+              </button>
+            )}
+            <label className="flex items-center gap-2 text-sm">
+              <input type="radio" name="styleaction" checked={styleAction === "revert"} onChange={() => setStyleAction("revert")} />
+              Revert to Previous Style
+            </label>
             <p className="text-xs text-zinc-500">
-              Inserts a style-change marker — items after it use the overridden slide style.
+              Inserts a style-change marker — items after it use this style until the next change or revert.
             </p>
             <button
-              onClick={() => { void onAdd([makeItem({ kind: "note", title: "Style change", config: { style: {} } })]); onClose(); }}
+              onClick={() => {
+                void onAdd([
+                  makeItem({
+                    kind: "style",
+                    title: styleAction === "revert" ? "Style: revert" : "Style: change",
+                    config:
+                      styleAction === "revert"
+                        ? { action: "revert" }
+                        : { action: "new", style: changeStyle ?? {} },
+                  }),
+                ]);
+                onClose();
+              }}
               className="self-start rounded bg-indigo-600 px-6 py-1.5 text-sm text-white hover:bg-indigo-500"
             >
               Insert
@@ -539,6 +587,14 @@ export function AddItemDialog({
           </div>
         )}
       </div>
+      {editingStyle && changeStyle !== null && (
+        <StyleEditor
+          style={changeStyle}
+          heading="Style Editor — Style Change"
+          onClose={() => setEditingStyle(false)}
+          onSave={(s) => { setChangeStyle(s); setEditingStyle(false); }}
+        />
+      )}
     </div>
   );
 }
