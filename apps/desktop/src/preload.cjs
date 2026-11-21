@@ -23,4 +23,6 @@ contextBridge.exposeInMainWorld("ps", {
   present: (mode, serviceId, itemId) => ipcRenderer.invoke("ps:present", mode, serviceId, itemId),
   /** End the presentation: close presentation windows, restore the control window. */
   presentExit: () => ipcRenderer.invoke("ps:present-exit"),
+  /** Signal that a live session exists — the output window opens on this. */
+  sessionLive: () => ipcRenderer.send("ps:session-live"),
 });

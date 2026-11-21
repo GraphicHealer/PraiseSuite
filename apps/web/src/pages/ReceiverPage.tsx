@@ -118,14 +118,14 @@ export function ReceiverPage(): ReactNode {
     if (sessionId && token) return;
     if (startServiceId && !sessionId) return; // session create is in flight
     const tryJoin = async () => {
-      setWaiting(true);
       const res = await fetch("/api/v1/receiver/join");
       if (res.ok) {
         const j = (await res.json()) as { sessionId: string; token: string };
         setSessionId(j.sessionId);
         setToken(j.token);
       } else {
-        setTimeout(() => void tryJoin(), 3000);
+        setWaiting(true);
+        setTimeout(() => void tryJoin(), 1500);
       }
     };
     void tryJoin();
@@ -314,7 +314,7 @@ export function ReceiverPage(): ReactNode {
   if (!sessionId || !token) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-black text-zinc-600">
-        {waiting ? "Waiting for a live session…" : "Joining…"}
+        {waiting ? "Waiting for a live session…" : "Loading…"}
       </div>
     );
   }

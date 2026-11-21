@@ -310,7 +310,12 @@ ipcMain.handle("ps:present", (_e, mode, serviceId, itemId) => {
       presenterWindow = null;
       endPresentation();
     });
-    openOutputWindow();
+    // Open the output only once the presenter reports a live session —
+    // otherwise /receiver sits on "waiting for a live session…" for the
+    // few seconds it takes the helper window to boot and create one.
+    // Fallback still opens it if the signal never arrives.
+    ipcMain.once("ps:session-live", () => openOutputWindow());
+    setTimeout(() => openOutputWindow(), 8_000);
   }
   if (controlWindow !== null) controlWindow.close();
   return displayMode;

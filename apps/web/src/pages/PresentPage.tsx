@@ -82,6 +82,8 @@ export function PresentPage({
     (s: PresentationSession) => {
       setSession(s);
       setControlling(false);
+      // Live session exists — let the desktop shell open the output window.
+      (window as { ps?: { sessionLive?: () => void } }).ps?.sessionLive?.();
       void refreshSlide(s.id);
       void refreshPlan(s.id);
       wsRef.current?.close();
