@@ -136,7 +136,7 @@ export function defaultSlideStyle(): SlideStyle {
     alert: defaultTextStyle({ size: 40, bold: true, border: false, shadow: false, fill: true, fillColor: "#FF0000", align: "left", valign: "top" }),
     descriptiveSubtitles: false,
     highlightChorus: true,
-    backgroundColor: "#408080",
+    backgroundColor: "#000000",
     backgroundKey: null,
     logoKey: null,
     margin: 24,

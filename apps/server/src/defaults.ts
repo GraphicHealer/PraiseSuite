@@ -54,7 +54,7 @@ export async function applyOpenSongDefaults(
   const dir = join(defaultsDir(), "Settings");
   const parsed = parsePresentSettings(await readFile(join(dir, "PresentSettings"), "utf8"));
 
-  const style = { ...defaultSlideStyle(), ...parsed.style };
+  const style = { ...defaultSlideStyle(), ...parsed.style, backgroundColor: "#000000" };
   if (parsed.backgroundData) {
     const m = await storeMedia(storage, ids, {
       data: Buffer.from(parsed.backgroundData, "base64"),
