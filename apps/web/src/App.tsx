@@ -181,11 +181,16 @@ export function App(): ReactNode {
   return (
     <div className="flex h-screen flex-col bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <header className="flex items-center gap-4 border-b border-zinc-200 bg-white px-4 py-2 dark:border-zinc-800 dark:bg-zinc-900">
+        <span className="font-semibold tracking-tight">PraiseSuite</span>
         <button
           onClick={() => setPage("main")}
-          className={`font-semibold tracking-tight ${page === "main" ? "text-indigo-700 dark:text-indigo-300" : ""}`}
+          className={`rounded px-3 py-1 text-sm font-medium ${
+            page === "main"
+              ? "bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200"
+              : "hover:bg-zinc-100 dark:hover:bg-zinc-800"
+          }`}
         >
-          PraiseSuite
+          Editor
         </button>
         <button
           onClick={() => present(null)}
