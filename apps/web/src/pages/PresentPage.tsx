@@ -530,6 +530,7 @@ export function PresentPage({
                   <SlideCanvas
                     title={shownSlide.slide.title}
                     lines={shownSlide.slide.lines}
+                    langs={shownSlide.slide.langs}
                     style={shownSlide.slide.style}
                     backgroundKey={shownSlide.slide.backgroundKey}
                     backgroundAsText={shownSlide.slide.backgroundAsText}
@@ -553,6 +554,7 @@ export function PresentPage({
                   <SlideCanvas
                     title={slide.slide.next.title}
                     lines={slide.slide.next.lines}
+                    langs={slide.slide.next.langs}
                     style={slide.slide.next.style}
                     backgroundKey={slide.slide.next.backgroundKey}
                     mediaKey={slide.slide.next.mediaKey}

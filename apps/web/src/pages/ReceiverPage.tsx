@@ -12,6 +12,8 @@ interface SlidePayload {
   total: number;
   title: string;
   lines: string[];
+  /** Bilingual (L) sections: per-line language for multilanguage styling. */
+  langs?: (1 | 2)[];
   kind: string;
   mediaKey: string | null;
   style: SlideStyle;
@@ -338,6 +340,7 @@ export function ReceiverPage(): ReactNode {
       <SlideCanvas
         title={slide?.title ?? ""}
         lines={slide?.lines ?? []}
+        langs={slide?.langs}
         style={slide?.style}
         backgroundKey={slide?.backgroundKey}
         backgroundAsText={slide?.backgroundAsText}

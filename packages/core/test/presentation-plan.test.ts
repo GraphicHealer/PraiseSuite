@@ -50,6 +50,8 @@ function song(id: string): Song {
     hymnNumber: null,
     presentationRaw: null,
     linkedSongs: [],
+    styleXml: null,
+    styleBackgroundKey: null,
     extras: [],
   };
 }
@@ -248,6 +250,73 @@ describe("buildPlan", () => {
     const p2 = buildPlan(svc2, new Map());
     const b2 = p2.slides.find((s) => !s.blank && s.title === "b")!;
     expect(b2.styleOverride?.backgroundColor).toBe("#FF0000");
+  });
+
+  it("applies a song-level <style> per OpenSong's song_style rules", () => {
+    const styled = song("styled");
+    styled.styleXml = `<style>
+      <title enabled="true" valign="bottom" align="center" font="Arial" size="26" bold="true" italic="true" underline="false" color="#FFFFFF00" border="true" border_color="#00000000" shadow="true" shadow_color="#00000000" fill="false" fill_color="#00000000"/>
+      <body enabled="true" auto_scale="true" valign="middle" align="center" font="Arial" size="44" bold="true" italic="false" underline="false" color="#FFAA0000" border="true" border_color="#00000000" shadow="true" shadow_color="#00000000" fill="false" fill_color="#00000000"/>
+      <background color="#123456"/>
+    </style>`;
+    const songs = new Map<Song["id"], Song>([["song1" as Song["id"], styled]]);
+    const svc = { ...service, items: [service.items[0]!] };
+
+    // No item style + no set style-change → the song's style wins outright.
+    const p = buildPlan(svc, songs);
+    expect(p.slides[1]!.styleOverride?.body?.size).toBe(44);
+    expect(p.slides[1]!.styleOverride?.body?.color).toBe("#FFAA0000");
+    expect(p.slides[1]!.styleOverride?.backgroundColor).toBe("#123456");
+    // The item's leading blank separator carries the song style too.
+    expect(p.slides[0]!.styleOverride?.body?.size).toBe(44);
+
+    // The item's own <style> always beats song_style.
+    const withItem = { ...svc, items: [{ ...svc.items[0]!, config: { style: { body: { size: 22 } } } }] };
+    expect(buildPlan(withItem, songs).slides[1]!.styleOverride?.body?.size).toBe(22);
+
+    // A set style-change suppresses song_style only when preferred is off.
+    const dark = { backgroundColor: "#000020" };
+    const withChange = {
+      ...svc,
+      items: [
+        { id: "st" as Service["items"][0]["id"], kind: "style" as const, songId: null,
+          arrangementId: null, mediaAssetId: null, title: "style", subtitle: null, notes: null,
+          slides: [], loopSeconds: 0, config: { action: "new", style: dark } },
+        svc.items[0]!,
+      ],
+    };
+    expect(buildPlan(withChange, songs).slides[1]!.styleOverride?.body?.size).toBe(44); // preferred default
+    const off = buildPlan(withChange, songs, { songStylePreferred: false });
+    expect(off.slides[1]!.styleOverride?.backgroundColor).toBe("#000020"); // stack wins
+    expect(off.slides[1]!.styleOverride?.body?.size).toBeUndefined();
+
+    // A song without <style> is unaffected.
+    const plain = buildPlan(svc, new Map([["song1" as Song["id"], song("song1")]]));
+    expect(plain.slides[1]!.styleOverride).toBeNull();
+  });
+
+  it("carries bilingual (L) line languages onto slides", () => {
+    const bi = song("bi");
+    bi.sections = [
+      {
+        id: "sb" as Song["sections"][0]["id"], type: "verse", label: "V1", options: { L: null },
+        lines: [
+          { text: "English one", chords: [], breakBefore: "none", prefix: null, kind: "lyric", lang: 1 },
+          { text: "Deutsch eins", chords: [], breakBefore: "none", prefix: null, kind: "lyric", lang: 2 },
+          { text: "English two", chords: [], breakBefore: "none", prefix: null, kind: "lyric", lang: 1 },
+          { text: "Deutsch zwei", chords: [], breakBefore: "none", prefix: null, kind: "lyric", lang: 2 },
+        ],
+      },
+    ];
+    bi.arrangements[0]!.sequence = [
+      { id: "pb" as Song["arrangements"][0]["sequence"][0]["id"], sectionId: "sb" as Song["sections"][0]["id"], repeats: 1, prefix: null },
+    ];
+    const svc = { ...service, items: [service.items[0]!] };
+    const p = buildPlan(svc, new Map([["song1" as Song["id"], bi]]));
+    expect(p.slides[1]!.langs).toEqual([1, 2, 1, 2]);
+    // Non-bilingual slides carry lang 1 for every line.
+    const mono = buildPlan(svc, new Map([["song1" as Song["id"], song("song1")]]));
+    expect(mono.slides[1]!.langs).toEqual([1]);
   });
 
   it("navigates with clamping", () => {

@@ -184,13 +184,24 @@ export function serializeOpenSongSong(song: Song): string {
     el("user3", song.userFields?.user3 ?? "") +
     "\n" +
     (song.hymnNumber === null || song.hymnNumber === undefined ? "" : el("hymn_number", song.hymnNumber) + "\n") +
-    ((song.linkedSongs ?? []).length === 0 ? "" : el("linked_songs", song.linkedSongs.join("\n")) + "\n") +
+    // OpenSong writes <linked_songs><linked_song>name</linked_song>…</linked_songs>
+    // (self-closing when empty), never a newline-joined text node.
+    ((song.linkedSongs ?? []).length === 0
+      ? "  <linked_songs/>\n"
+      : `  <linked_songs>\n${song.linkedSongs
+          .map((s) => `    <linked_song>${escapeXml(s)}</linked_song>`)
+          .join("\n")}\n  </linked_songs>\n`) +
     (song.notes === null || song.notes === undefined ? "" : el("notes", song.notes) + "\n") +
     (song.background === null ? "" : el("background", song.background) + "\n") +
     serializeBackgrounds(song) +
     `  <lyrics>${escapeXml(lyrics)}</lyrics>\n` +
-    // Unmodeled source elements round-trip verbatim (<style>, <pitch>, …).
+    // Unmodeled source elements round-trip verbatim (<pitch>, …).
     (song.extras ?? []).map((x) => `  ${x}\n`).join("") +
+    // Song-level <style> (OpenSong "Override Style") — emitted verbatim, last
+    // child like OpenSong writes it.
+    (song.styleXml === null || song.styleXml === undefined
+      ? ""
+      : `  ${song.styleXml}\n`) +
     `</song>\n`
   );
 }
@@ -317,25 +328,106 @@ export function serializeOpenSongSet(
   );
 }
 
+/** Font attrs shared by full styles and overrides (OpenSong SmartML.SetValueF order). */
+function fontAttrs(t: import("../../domain/styles/types.js").TextStyleOverride, extra: [string, unknown][] = []): string {
+  const a: string[] = [];
+  const push = (k: string, v: unknown) => { if (v !== undefined) a.push(`${k}="${escapeXml(String(v))}"`); };
+  for (const [k, v] of extra) push(k, v);
+  push("font", t.font); push("size", t.size); push("bold", t.bold); push("italic", t.italic);
+  push("underline", t.underline); push("color", t.color); push("border", t.border);
+  push("border_color", t.borderColor); push("shadow", t.shadow); push("shadow_color", t.shadowColor);
+  push("fill", t.fill); push("fill_color", t.fillColor); push("align", t.align); push("valign", t.valign);
+  push("enabled", t.enabled); push("auto_scale", t.autoScale);
+  push("multilanguage_size", t.multilanguageSize); push("multilanguage_color", t.multilanguageColor);
+  return a.join(" ");
+}
+
+/** OpenSong <background> attrs for a style element. */
+function backgroundAttrs(s: {
+  backgroundColor?: string | undefined;
+  backgroundKey?: string | null | undefined;
+  backgroundFit?: import("../../domain/styles/types.js").SlideStyle["backgroundFit"] | undefined;
+  backgroundStripFooter?: number | undefined;
+  backgroundPosX?: number | undefined;
+  backgroundPosY?: number | undefined;
+}): string {
+  const fitNum = (f: string | undefined) => (f === "contain" ? 1 : f === "fill" ? 2 : f === "center" ? 3 : 0);
+  const a: string[] = [];
+  const push = (k: string, v: unknown) => { if (v !== undefined) a.push(`${k}="${escapeXml(String(v))}"`); };
+  push("strip_footer", s.backgroundStripFooter);
+  push("color", s.backgroundColor);
+  push("image_fit", s.backgroundFit === undefined ? undefined : fitNum(s.backgroundFit));
+  push("image_pos_left", s.backgroundPosX);
+  push("image_pos_top", s.backgroundPosY);
+  if (s.backgroundKey != null && !String(s.backgroundKey).startsWith("media/"))
+    push("filename", s.backgroundKey);
+  return a.join(" ");
+}
+
 /** Serialize a <style> override node back to OpenSong XML (style-change items). */
 function styleOverrideXml(
   o: import("../../domain/styles/types.js").SlideStyleOverride | undefined,
 ): string {
   if (o === undefined) return "";
-  const font = (t: import("../../domain/styles/types.js").TextStyleOverride | undefined, name: string) => {
+  const font = (t: import("../../domain/styles/types.js").TextStyleOverride | undefined, name: string, extra: [string, unknown][] = []) => {
     if (t === undefined) return "";
-    const a: string[] = [];
-    const push = (k: string, v: unknown) => { if (v !== undefined) a.push(`${k}="${escapeXml(String(v))}"`); };
-    push("font", t.font); push("size", t.size); push("bold", t.bold); push("italic", t.italic);
-    push("underline", t.underline); push("color", t.color); push("border", t.border);
-    push("border_color", t.borderColor); push("shadow", t.shadow); push("shadow_color", t.shadowColor);
-    push("fill", t.fill); push("fill_color", t.fillColor); push("align", t.align); push("valign", t.valign);
-    push("enabled", t.enabled); push("auto_scale", t.autoScale);
-    return `\n      <${name} ${a.join(" ")}/>`;
+    return `\n      <${name} ${fontAttrs(t, extra)}/>`;
   };
-  const bg =
-    o.backgroundColor === undefined && o.backgroundKey === undefined
+  const tabs =
+    o.bodyTabs === undefined || o.bodyTabs.length === 0
       ? ""
-      : `\n      <background${o.backgroundColor !== undefined ? ` color="${escapeXml(o.backgroundColor)}"` : ""}${o.backgroundKey != null && !String(o.backgroundKey).startsWith("media/") ? ` filename="${escapeXml(String(o.backgroundKey))}"` : ""}/>`;
-  return `<style>${font(o.title, "title")}${font(o.body, "body")}${font(o.subtitle, "subtitle")}${bg}\n      </style>`;
+      : `\n        <tabs>${o.bodyTabs
+          .map((t) => `\n          <tab position="${t.position}" align="${t.align}"${t.char !== undefined ? ` char="${escapeXml(t.char)}"` : ""}/>`)
+          .join("")}\n        </tabs>`;
+  const body =
+    o.body === undefined && tabs === ""
+      ? ""
+      : `\n      <body ${fontAttrs(o.body ?? {}, [["highlight_chorus", o.highlightChorus]])}>${tabs}\n      </body>`;
+  const songSub = o.songSubtitle === undefined ? "" : `\n      <song_subtitle>${escapeXml(o.songSubtitle.join("|"))}</song_subtitle>`;
+  const hasBg =
+    o.backgroundColor !== undefined ||
+    o.backgroundKey !== undefined ||
+    o.backgroundFit !== undefined ||
+    o.backgroundStripFooter !== undefined ||
+    o.backgroundPosX !== undefined;
+  const bg = hasBg ? `\n      <background ${backgroundAttrs(o)}/>` : "";
+  return `<style>${font(o.title, "title")}${font(o.subtitle, "subtitle", [["descriptive", o.descriptiveSubtitles]])}${songSub}${body}${bg}\n      </style>`;
+}
+
+/**
+ * Serialize a full SlideStyle to an OpenSong <style> element — the same shape
+ * SlideStyle.ToXML writes (used when a song enables "Override Style": OpenSong
+ * clones the current default style into the song).
+ */
+export function serializeStyleXml(
+  s: import("../../domain/styles/types.js").SlideStyle,
+): string {
+  const font = (t: import("../../domain/styles/types.js").TextStyle, name: string, extra: [string, unknown][] = []) =>
+    `  <${name} ${fontAttrs(t, [
+      ["enabled", t.enabled],
+      ["valign", t.valign],
+      ["align", t.align],
+      ...extra,
+      ["margin-left", t.marginLeft ?? 0],
+      ["margin-right", t.marginRight ?? 0],
+      ["margin-top", t.marginTop ?? 0],
+      ["margin-bottom", t.marginBottom ?? 0],
+    ])}`;
+  const tabs =
+    s.bodyTabs.length === 0
+      ? "<tabs/>"
+      : `<tabs>${s.bodyTabs
+          .map((t) => `\n    <tab position="${t.position}" align="${t.align}"${t.char !== undefined ? ` char="${escapeXml(t.char)}"` : ""}/>`)
+          .join("")}\n  </tabs>`;
+  return (
+    `<style>\n` +
+    `${font(s.title, "title", [["include_verse", s.title.includeVerse ?? false]])}/>\n` +
+    `${font(s.subtitle, "subtitle", [["descriptive", s.descriptiveSubtitles]])}/>\n` +
+    `  <song_subtitle>${escapeXml(s.songSubtitle.join("|"))}</song_subtitle>\n` +
+    `${font(s.body, "body", [["highlight_chorus", s.highlightChorus], ["auto_scale", s.body.autoScale]])}>\n` +
+    `  ${tabs}\n` +
+    `  </body>\n` +
+    `  <background ${backgroundAttrs(s)}/>\n` +
+    `</style>`
+  );
 }

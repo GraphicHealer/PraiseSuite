@@ -359,7 +359,7 @@ export function buildRoutes(deps: AppDeps): Route[] {
       }
       const session = await deps.repos.sessions.get(ctx.params["id"]! as SessionId);
       if (!session) throw new ApiError(404, "not_found", "Session not found");
-      const { service, plan } = await sessionPlan(deps.repos, session);
+      const { service, plan } = await sessionPlan(deps.repos, session, deps.storage);
       // Section label/prefix lookup for the list's Text column and verse keys.
       const songIds = [...new Set(plan.slides.map((s) => s.songId).filter((x): x is SongId => x !== null))];
       const songList = await Promise.all(songIds.map((id) => deps.repos.songs.get(id)));
@@ -442,7 +442,7 @@ export function buildRoutes(deps: AppDeps): Route[] {
           itemId: z.string().optional(),
         })
         .parse(await ctx.body());
-      const { plan } = await sessionPlan(deps.repos, session);
+      const { plan } = await sessionPlan(deps.repos, session, deps.storage);
       if (plan.slides.length === 0) return { position: session.position, slide: null, total: 0 };
       let position: PresentationSession["position"];
       if (body.action === "jump") {
@@ -628,6 +628,9 @@ export function buildRoutes(deps: AppDeps): Route[] {
         }
         deps.storage.setSetting("style.present", JSON.stringify(style));
         deps.storage.setSetting("style.options", JSON.stringify(parsed.options));
+        // OpenSong <song_style_preferred> — a song's own <style> may beat an
+        // active set style-change. OpenSong defaults this to true.
+        deps.storage.setSetting("style.songStylePreferred", String(parsed.songStylePreferred));
         // OpenSong <scripture_style> — applied to scripture-type groups.
         if (parsed.scriptureStyle)
           deps.storage.setSetting("style.scripture", JSON.stringify(parsed.scriptureStyle));
@@ -921,6 +924,7 @@ export function buildRoutes(deps: AppDeps): Route[] {
 async function sessionPlan(
   repos: Repositories,
   session: PresentationSession,
+  storage?: SqliteStorage,
 ): Promise<{ service: Service | null; plan: PresentationPlan }> {
   const service = session.serviceId ? await repos.services.get(session.serviceId) : null;
   if (!service) return { service: null, plan: { slides: [], itemStart: [] } };
@@ -930,6 +934,7 @@ async function sessionPlan(
   const plan = buildPlan(
     service,
     new Map(songs.filter((s): s is Song => s !== null).map((s) => [s.id, s])),
+    { songStylePreferred: storage?.getSetting("style.songStylePreferred") !== "false" },
   );
   return { service, plan };
 }
@@ -962,7 +967,7 @@ function loadScriptureStyle(storage: SqliteStorage): SlideStyle | null {
  * announcement-loop timing, and the next slide for confidence view.
  */
 async function currentSlide(repos: Repositories, storage: SqliteStorage, session: PresentationSession) {
-  const { service, plan } = await sessionPlan(repos, session);
+  const { service, plan } = await sessionPlan(repos, session, storage);
   const idx = indexOfPosition(plan, session.position) ?? 0;
   const slide = plan.slides[idx] ?? null;
   if (!slide) return null;
@@ -1067,6 +1072,8 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
      * Blank separator slides have no <title> — they draw background only. */
     title: slide.blank ? "" : (item?.title ?? slide.title),
     lines: slide.lines,
+    /** Bilingual (L) sections: per-line language 1|2 for multilanguage styling. */
+    langs: slide.langs,
     kind: slide.kind,
     mediaKey: slide.mediaKey,
     style,
@@ -1110,6 +1117,7 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
         ? {
             title: next.blank ? "" : (nextItem?.title ?? next.title),
             lines: next.lines,
+            langs: next.langs,
             kind: next.kind,
             blank: next.blank,
             mediaKey: next.mediaKey,

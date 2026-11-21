@@ -12,6 +12,7 @@ import {
   parseOpenSongLyrics,
   parseOpenSongSet,
   parseOpenSongSong,
+  parseStyleOverride,
   serializeOpenSongSong,
   transposeSourceText,
   type IdGenerator,
@@ -19,6 +20,7 @@ import {
   type Song,
   type SongSummary,
 } from "../src/index.js";
+import { asRecord, parseXml } from "../src/import/opensong/xml.js";
 import { strToU8, zipSync } from "fflate";
 
 const FIXTURES = resolve(
@@ -186,6 +188,48 @@ describe("song parser", () => {
       { verse: "C", filename: "clouds.jpg", imageData: null },
     ]);
   });
+
+  it("parses <linked_songs> child elements (and legacy newline text)", () => {
+    const childForm = `<?xml version="1.0"?><song><title>T</title><lyrics>[V1]\n x</lyrics>
+      <linked_songs><linked_song>Song A</linked_song><linked_song> Song B </linked_song></linked_songs></song>`;
+    expect(parseOpenSongSong(childForm).song.linkedSongs).toEqual(["Song A", "Song B"]);
+    const legacyText = `<?xml version="1.0"?><song><title>T</title><lyrics>[V1]\n x</lyrics>
+      <linked_songs>Song A\nSong B</linked_songs></song>`;
+    expect(parseOpenSongSong(legacyText).song.linkedSongs).toEqual(["Song A", "Song B"]);
+    const empty = `<?xml version="1.0"?><song><title>T</title><lyrics>[V1]\n x</lyrics><linked_songs/></song>`;
+    expect(parseOpenSongSong(empty).song.linkedSongs).toEqual([]);
+  });
+
+  it("captures a song-level <style> verbatim (and its embedded background)", () => {
+    const xml = `<?xml version="1.0"?><song><title>T</title><lyrics>[V1]\n x</lyrics>
+      <style>
+        <title enabled="true" valign="bottom" align="center" font="Arial" size="26"/>
+        <body enabled="true" auto_scale="true" font="Arial" size="34" multilanguage_size="65" multilanguage_color="#AABBCC">
+          <tabs><tab position="120" align="left"/><tab position="300" align="right"/></tabs>
+        </body>
+        <background strip_footer="10" color="#40808000" image_fit="1" image_pos_left="0.25" image_pos_top="0.75">QUJD</background>
+      </style></song>`;
+    const { song } = parseOpenSongSong(xml);
+    expect(song.styleXml).not.toBeNull();
+    expect(song.styleXml).toContain("<style>");
+    expect(song.styleXml).toContain("multilanguage_size");
+    // <style> is modeled now — it must NOT also land in extras.
+    expect(song.extras.every((x) => !x.includes("<style"))).toBe(true);
+    expect(song.styleBackgroundData).toBe("QUJD");
+
+    // The style parses into a full override through the plan's path.
+    const ov = parseStyleOverride(asRecord(parseXml(song.styleXml!))["style"]);
+    expect(ov.body?.multilanguageSize).toBe(65);
+    expect(ov.body?.multilanguageColor).toBe("#AABBCC");
+    expect(ov.bodyTabs).toEqual([
+      { position: 120, align: "left" },
+      { position: 300, align: "right" },
+    ]);
+    expect(ov.backgroundFit).toBe("contain");
+    expect(ov.backgroundStripFooter).toBe(10);
+    expect(ov.backgroundPosX).toBe(0.25);
+    expect(ov.backgroundPosY).toBe(0.75);
+  });
 });
 
 describe("transposeSourceText", () => {
@@ -255,6 +299,29 @@ describe("round-trip export", () => {
     expect(again.backgrounds?.keepAspect).toBe(true);
     expect(again.backgrounds?.link).toBe(true);
     expect(again.backgrounds?.items[0]).toMatchObject({ verse: "V1", filename: "sky.jpg" });
+  });
+
+  it("round-trips a song-level <style> verbatim", () => {
+    const xml = `<?xml version="1.0"?><song><title>T</title><lyrics>[V1]\n x</lyrics>
+      <style><title font="Arial" size="26"/><body font="Arial" size="34"/><background color="#40808000">QUJD</background></style></song>`;
+    const parsed = parseOpenSongSong(xml).song;
+    const song = materializeSong(parsed, ids);
+    const out = serializeOpenSongSong(song);
+    expect(out).toContain('<style><title font="Arial"');
+    expect(out).toContain("QUJD");
+    const again = parseOpenSongSong(out).song;
+    expect(again.styleXml).toContain('size="26"');
+  });
+
+  it("serializes linked songs as <linked_song> children and re-parses them", () => {
+    const parsed = parseOpenSongSong(fixtureSong("Amazing Grace")).song;
+    parsed.linkedSongs = ["And Can It Be", "Are You Washed"];
+    const song = materializeSong(parsed, ids);
+    const xml = serializeOpenSongSong(song);
+    expect(xml).toContain("<linked_songs>\n    <linked_song>And Can It Be</linked_song>");
+    expect(xml).not.toContain("linked_songs>And Can It Be\n");
+    const again = parseOpenSongSong(xml).song;
+    expect(again.linkedSongs).toEqual(["And Can It Be", "Are You Washed"]);
   });
 
   it("serializes Amazing Grace and re-parses equivalently", () => {

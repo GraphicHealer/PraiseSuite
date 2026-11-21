@@ -199,7 +199,20 @@ export async function applyImport(
         }
       }
     }
+    // Same for an image embedded in the song's <style><background> — the raw
+    // XML keeps its data for export; the key makes it render.
+    let styleBackgroundKey: string | null = null;
+    if (analyzed.song.styleBackgroundData && options.storeMedia !== undefined) {
+      try {
+        styleBackgroundKey = (
+          await options.storeMedia("opensong-style-background.jpg", "image/jpeg", analyzed.song.styleBackgroundData)
+        ).storageKey;
+      } catch {
+        report.warnings.push(`${analyzed.path}: style background image could not be stored`);
+      }
+    }
     const song = materializeSong(analyzed.song, ids);
+    song.styleBackgroundKey = styleBackgroundKey;
     // OpenSong Songs/ subfolders -> library folder (from the import path).
     // A leading "Songs/" is the OpenSong library root itself — strip it (D6).
     let dir = analyzed.path.replaceAll("\\", "/");

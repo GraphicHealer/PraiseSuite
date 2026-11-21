@@ -32,6 +32,14 @@ export function resolveSlideStyle(
       ...(o.backgroundColor !== undefined ? { backgroundColor: o.backgroundColor } : {}),
       ...(o.backgroundKey !== undefined ? { backgroundKey: o.backgroundKey } : {}),
       ...(o.margin !== undefined ? { margin: o.margin } : {}),
+      ...(o.descriptiveSubtitles !== undefined ? { descriptiveSubtitles: o.descriptiveSubtitles } : {}),
+      ...(o.highlightChorus !== undefined ? { highlightChorus: o.highlightChorus } : {}),
+      ...(o.songSubtitle !== undefined ? { songSubtitle: o.songSubtitle } : {}),
+      ...(o.backgroundFit !== undefined ? { backgroundFit: o.backgroundFit } : {}),
+      ...(o.backgroundStripFooter !== undefined ? { backgroundStripFooter: o.backgroundStripFooter } : {}),
+      ...(o.backgroundPosX !== undefined ? { backgroundPosX: o.backgroundPosX } : {}),
+      ...(o.backgroundPosY !== undefined ? { backgroundPosY: o.backgroundPosY } : {}),
+      ...(o.bodyTabs !== undefined ? { bodyTabs: o.bodyTabs } : {}),
     };
   }
   return out;

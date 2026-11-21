@@ -28,6 +28,22 @@ export interface TextStyle {
   marginRight?: number;
   marginTop?: number;
   marginBottom?: number;
+  /**
+   * OpenSong body/@multilanguage_size — second-language (bilingual "L"
+   * sections) lines render at this percent of the body font (default 70).
+   */
+  multilanguageSize?: number;
+  /** OpenSong body/@multilanguage_color — second-language line color (default #DCDCDC). */
+  multilanguageColor?: string;
+}
+
+/** OpenSong style/body/<tabs><tab> — a tab stop for lines containing \t. */
+export interface StyleTab {
+  /** Stop position in 640-unit design px from the text area's left edge. */
+  position: number;
+  align: "left" | "center" | "right" | "char";
+  /** Alignment character for align === "char". */
+  char?: string;
 }
 
 export interface SlideStyle {
@@ -60,6 +76,11 @@ export interface SlideStyle {
   backgroundFit: "cover" | "contain" | "fill" | "center";
   /** OpenSong background/@strip_footer — px cropped off the image bottom. */
   backgroundStripFooter: number;
+  /** OpenSong background/@image_pos_left|@image_pos_top — 0..1 anchor within the slide. */
+  backgroundPosX: number;
+  backgroundPosY: number;
+  /** OpenSong style/body/<tabs> — tab stops for lines containing \t. */
+  bodyTabs: StyleTab[];
 }
 
 /** Deep-partial override applied at service-item or slide level. */
@@ -71,6 +92,15 @@ export interface SlideStyleOverride {
   backgroundColor?: string;
   backgroundKey?: string | null;
   margin?: number;
+  descriptiveSubtitles?: boolean;
+  highlightChorus?: boolean;
+  /** OpenSong <song_subtitle> — '|'-joined field keys for song subtitles. */
+  songSubtitle?: string[];
+  backgroundFit?: SlideStyle["backgroundFit"];
+  backgroundStripFooter?: number;
+  backgroundPosX?: number;
+  backgroundPosY?: number;
+  bodyTabs?: StyleTab[];
 }
 
 export function defaultTextStyle(over: Partial<TextStyle> = {}): TextStyle {
@@ -99,7 +129,8 @@ export function defaultTextStyle(over: Partial<TextStyle> = {}): TextStyle {
 export function defaultSlideStyle(): SlideStyle {
   return {
     title: defaultTextStyle({ size: 26, italic: true, valign: "bottom", autoScale: false }),
-    body: defaultTextStyle({ size: 34 }),
+    // OpenSong body defaults: multilanguage_size=70, multilanguage_color=&cdcdcdc.
+    body: defaultTextStyle({ size: 34, multilanguageSize: 70, multilanguageColor: "#DCDCDC" }),
     subtitle: defaultTextStyle({ size: 18, italic: true, valign: "bottom", autoScale: false }),
     // OpenSong default alert: 40pt bold, red fill, left/top.
     alert: defaultTextStyle({ size: 40, bold: true, border: false, shadow: false, fill: true, fillColor: "#FF0000", align: "left", valign: "top" }),
@@ -116,5 +147,8 @@ export function defaultSlideStyle(): SlideStyle {
     initialMode: "N",
     backgroundFit: "cover",
     backgroundStripFooter: 0,
+    backgroundPosX: 0.5,
+    backgroundPosY: 0.5,
+    bodyTabs: [],
   };
 }

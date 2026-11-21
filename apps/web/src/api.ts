@@ -15,6 +15,8 @@ export interface SlideResponse {
     total: number;
     title: string;
     lines: string[];
+    /** Bilingual (L) sections: per-line language 1|2. */
+    langs?: (1 | 2)[];
     kind: string;
     style: SlideStyle;
     mediaKey: string | null;
@@ -34,6 +36,7 @@ export interface SlideResponse {
     next: {
       title: string;
       lines: string[];
+      langs?: (1 | 2)[];
       kind: string;
       blank: boolean;
       mediaKey: string | null;

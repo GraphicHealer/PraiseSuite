@@ -13,7 +13,7 @@ function injectFadeCss() {
 }
 import { fontStack } from "../fonts";
 import type { PresentMode } from "../api.js";
-import type { SlideStyle, TextStyle } from "../slide-types";
+import type { SlideStyle, StyleTab, TextStyle } from "../slide-types";
 
 /** Canonical output size — everything draws in these pixels, then scales. */
 const DESIGN_W = 1920;
@@ -102,6 +102,73 @@ function lineLeading(s: TextStyle, zoom = 1): number {
   return 2 * borderRadiusPx(s, zoom) + shadowOffsetPx(s, zoom);
 }
 
+/** Second-language font (OpenSong SlideStyle.SecondLanguageFont): the body
+ *  font at multilanguage_size percent in multilanguage_color. */
+function lang2Style(body: TextStyle): TextStyle {
+  return {
+    ...body,
+    size: body.size * ((body.multilanguageSize ?? 70) / 100),
+    color: body.multilanguageColor ?? "#DCDCDC",
+  };
+}
+
+let measureCtx: CanvasRenderingContext2D | null = null;
+function measureTextW(text: string, fontSpec: string): number {
+  if (typeof document === "undefined") return text.length * 20;
+  measureCtx ??= document.createElement("canvas").getContext("2d");
+  if (!measureCtx) return text.length * 20;
+  measureCtx.font = fontSpec;
+  return measureCtx.measureText(text).width;
+}
+
+/**
+ * OpenSong tab-stop layout (GraphicsX.DrawFontString): each \t-separated
+ * segment lands at the first stop right of the running x; stops it already
+ * passed are skipped. Positions are 640-units -> design px.
+ */
+function layoutTabs(
+  line: string,
+  stops: StyleTab[],
+  s: TextStyle,
+  zoom: number,
+): { segs: { text: string; left: number }[]; width: number } {
+  const px = (u: number) => u * ZOOM * zoom;
+  const sizePx = s.size * ZOOM * zoom;
+  const fontSpec = `${s.italic ? "italic " : ""}${s.bold ? "700" : "400"} ${sizePx}px ${fontStack(s.font)}`;
+  const w = (t: string) => measureTextW(t, fontSpec);
+  const parts = line.split("\t");
+  const segs: { text: string; left: number }[] = [];
+  let x = 0;
+  let idx = -1;
+  for (const [i, part] of parts.entries()) {
+    const pw = w(part);
+    if (i === 0) {
+      segs.push({ text: part, left: 0 });
+      x = pw;
+      continue;
+    }
+    let stop: StyleTab | undefined;
+    for (let k = idx + 1; k < stops.length; k++) {
+      if (px(stops[k]!.position) > x) {
+        stop = stops[k]!;
+        idx = k;
+        break;
+      }
+    }
+    const edge =
+      stop === undefined
+        ? x
+        : stop.align === "right"
+          ? px(stop.position) - pw
+          : stop.align === "center"
+            ? px(stop.position) - pw / 2
+            : px(stop.position);
+    segs.push({ text: part, left: edge });
+    x = edge + pw;
+  }
+  return { segs, width: x };
+}
+
 /**
  * One slide rendered exactly as the receiver draws it — 1920×1080 design
  * space transform-scaled to whatever container it sits in, so the helper
@@ -112,6 +179,7 @@ function lineLeading(s: TextStyle, zoom = 1): number {
 export function SlideCanvas({
   title,
   lines,
+  langs,
   style,
   backgroundKey,
   backgroundAsText,
@@ -131,6 +199,8 @@ export function SlideCanvas({
 }: {
   title: string;
   lines: string[];
+  /** Bilingual (L) sections: per-line language 1|2 (OpenSong multilanguage). */
+  langs?: (1 | 2)[] | undefined;
   style: SlideStyle | undefined;
   backgroundKey?: string | null | undefined;
   backgroundAsText?: boolean | undefined;
@@ -249,11 +319,35 @@ export function SlideCanvas({
         style={{ justifyContent: justify, alignItems: align, padding: margins(style.body), visibility: bodyMeasured ? "visible" : "hidden" }}
       >
         <div className="max-w-full" style={{ display: "flex", flexDirection: "column" }}>
-          {lines.map((l, i) => (
-            <p key={i} style={{ ...textCss(bodyStyle!, bodyZoom), lineHeight: 1.2, margin: 0, marginBottom: lineLeading(bodyStyle!, bodyZoom) }}>
-              {l}
-            </p>
-          ))}
+          {lines.map((l, i) => {
+            // Bilingual "L" sections: lang-2 lines draw in the
+            // multilanguage font (OpenSong SecondLanguageFont).
+            const ls = langs?.[i] === 2 && bodyStyle ? lang2Style(bodyStyle) : bodyStyle!;
+            const css = { ...textCss(ls, bodyZoom), lineHeight: 1.2, margin: 0, marginBottom: lineLeading(ls, bodyZoom) };
+            // OpenSong body <tabs>: \t-separated segments land on tab stops
+            // (only under left alignment, like DrawFontString).
+            if (l.includes("\t") && style.body.align === "left" && (style.bodyTabs?.length ?? 0) > 0) {
+              const t = layoutTabs(l, style.bodyTabs!, ls, bodyZoom);
+              return (
+                <p key={i} style={{ ...css, position: "relative", width: t.width, whiteSpace: "pre" }}>
+                  {t.segs.map((seg, j) =>
+                    j === 0 ? (
+                      seg.text
+                    ) : (
+                      <span key={j} style={{ position: "absolute", left: seg.left, top: 0 }}>
+                        {seg.text}
+                      </span>
+                    ),
+                  )}
+                </p>
+              );
+            }
+            return (
+              <p key={i} style={css}>
+                {l}
+              </p>
+            );
+          })}
         </div>
       </div>
       {style.title.valign !== "top" && titleEl}
@@ -273,14 +367,23 @@ export function SlideCanvas({
           {bg && isVideo(backgroundKey ?? "") ? (
             <video key={bg} src={bg} autoPlay loop muted playsInline className="absolute inset-0 h-full w-full object-cover" />
           ) : bg ? (
-            // OpenSong background/@image_fit (cover|contain|fill|center).
+            // OpenSong background/@image_fit (cover|contain|fill|center) and
+            // @image_pos_left|@image_pos_top anchor (0..1 -> object-position).
             <img
               src={bg}
               alt=""
               className={`absolute inset-0 h-full w-full ${
                 style?.backgroundFit === "contain" ? "object-contain" : style?.backgroundFit === "fill" ? "object-fill" : "object-cover"
               }`}
-              style={style?.backgroundFit === "center" ? { width: "auto", height: "auto", top: "50%", left: "50%", transform: "translate(-50%,-50%)" } : undefined}
+              style={
+                style?.backgroundFit === "center"
+                  ? {
+                      width: "auto", height: "auto",
+                      left: `${(style?.backgroundPosX ?? 0.5) * 100}%`, top: `${(style?.backgroundPosY ?? 0.5) * 100}%`,
+                      transform: `translate(-${(style?.backgroundPosX ?? 0.5) * 100}%,-${(style?.backgroundPosY ?? 0.5) * 100}%)`,
+                    }
+                  : { objectPosition: `${(style?.backgroundPosX ?? 0.5) * 100}% ${(style?.backgroundPosY ?? 0.5) * 100}%` }
+              }
             />
           ) : (
             <div className="absolute inset-0" style={{ backgroundColor: style?.backgroundColor ?? "#000" }} />
@@ -350,11 +453,31 @@ export function SlideCanvas({
             className="invisible absolute top-0 left-0"
             style={{ width: availW, display: "flex", flexDirection: "column" }}
           >
-            {lines.map((l, i) => (
-              <p key={i} style={{ ...textCss(bodyStyle!), lineHeight: 1.2, margin: 0, marginBottom: lineLeading(bodyStyle!), whiteSpace: "pre-wrap" }}>
-                {l}
-              </p>
-            ))}
+            {lines.map((l, i) => {
+              const ls = langs?.[i] === 2 && bodyStyle ? lang2Style(bodyStyle) : bodyStyle!;
+              const css = { ...textCss(ls), lineHeight: 1.2, margin: 0, marginBottom: lineLeading(ls), whiteSpace: "pre-wrap" as const };
+              if (l.includes("\t") && style.body.align === "left" && (style.bodyTabs?.length ?? 0) > 0) {
+                const t = layoutTabs(l, style.bodyTabs!, ls, 1);
+                return (
+                  <p key={i} style={{ ...css, position: "relative", width: t.width, whiteSpace: "pre" }}>
+                    {t.segs.map((seg, j) =>
+                      j === 0 ? (
+                        seg.text
+                      ) : (
+                        <span key={j} style={{ position: "absolute", left: seg.left, top: 0 }}>
+                          {seg.text}
+                        </span>
+                      ),
+                    )}
+                  </p>
+                );
+              }
+              return (
+                <p key={i} style={css}>
+                  {l}
+                </p>
+              );
+            })}
           </div>
         )}
 

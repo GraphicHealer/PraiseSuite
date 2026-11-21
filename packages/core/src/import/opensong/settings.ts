@@ -65,7 +65,42 @@ function textStyle(el: unknown, base: TextStyle): TextStyle {
     ...(e["@_margin-right"] !== undefined ? { marginRight: num(e["@_margin-right"], 0) } : {}),
     ...(e["@_margin-top"] !== undefined ? { marginTop: num(e["@_margin-top"], 0) } : {}),
     ...(e["@_margin-bottom"] !== undefined ? { marginBottom: num(e["@_margin-bottom"], 0) } : {}),
+    // OpenSong body/@multilanguage_* — second-language lines' size %/color.
+    ...(e["@_multilanguage_size"] !== undefined ? { multilanguageSize: num(e["@_multilanguage_size"], 70) } : {}),
+    ...(e["@_multilanguage_color"] !== undefined ? { multilanguageColor: asString(e["@_multilanguage_color"]) } : {}),
   };
+}
+
+/** OpenSong style/body/<tabs><tab position align char> — tab stops. */
+function parseTabs(bodyEl: unknown): import("../../domain/styles/types.js").StyleTab[] {
+  const tabs = asRecord(asRecord(bodyEl)["tabs"])["tab"];
+  const list = tabs === undefined ? [] : Array.isArray(tabs) ? tabs : [tabs];
+  return list
+    .map((t) => {
+      const e = asRecord(t);
+      const a = asString(e["@_align"]) || "left";
+      return {
+        position: num(e["@_position"], 0),
+        align: (a === "center" || a === "right" || a === "char" ? a : "left") as "left" | "center" | "right" | "char",
+        ...(asString(e["@_char"]) !== "" ? { char: asString(e["@_char"]) } : {}),
+      };
+    })
+    .filter((t) => t.position > 0);
+}
+
+/** Shared: background element attrs -> style fields. */
+function parseBackgroundAttrs(
+  bg: Record<string, unknown>,
+  style: Pick<SlideStyle, "backgroundFit" | "backgroundStripFooter" | "backgroundPosX" | "backgroundPosY">,
+): void {
+  // OpenSong ObjectFit enum: cover=0 contain=1 fill=2 none/center=3|99.
+  const fit = num(bg["@_image_fit"], -1);
+  if (fit === 0 || fit === 1 || fit === 2) style.backgroundFit = fit === 1 ? "contain" : fit === 2 ? "fill" : "cover";
+  else if (fit === 3 || fit === 99) style.backgroundFit = "center";
+  style.backgroundStripFooter = num(bg["@_strip_footer"], style.backgroundStripFooter);
+  // image_pos_* are 0..1 anchor fractions (StyleImage.ImagePositionW/H).
+  if (bg["@_image_pos_left"] !== undefined) style.backgroundPosX = num(bg["@_image_pos_left"], style.backgroundPosX);
+  if (bg["@_image_pos_top"] !== undefined) style.backgroundPosY = num(bg["@_image_pos_top"], style.backgroundPosY);
 }
 
 /**
@@ -93,11 +128,8 @@ export function parsePresentSettings(xml: string): PresentSettingsResult {
     const bg = asRecord(e["background"]);
     style.backgroundColor = asString(bg["@_color"]) || style.backgroundColor;
     style.backgroundKey = asString(bg["@_filename"]) || null;
-    // OpenSong ObjectFit enum: cover=0 contain=1 fill=2 none/center=3|99.
-    const fit = num(bg["@_image_fit"], -1);
-    if (fit === 0 || fit === 1 || fit === 2 || fit === 3 || fit === 99)
-      style.backgroundFit = fit === 1 ? "contain" : fit === 2 ? "fill" : "cover";
-    style.backgroundStripFooter = num(bg["@_strip_footer"], 0);
+    parseBackgroundAttrs(bg, style);
+    style.bodyTabs = parseTabs(e["body"]);
     // <song_subtitle> text = '|'-joined field keys (author|copyright|…).
     const songSub = asString(asRecord(e["song_subtitle"])["#text"] ?? e["song_subtitle"]);
     if (songSub !== "") style.songSubtitle = songSub.split("|").filter((s) => s !== "");
@@ -139,7 +171,11 @@ export function parsePresentSettings(xml: string): PresentSettingsResult {
     backgroundData: bgData,
     logoData: logoData || null,
     logoMaskData: maskData || null,
-    songStylePreferred: bool(asString(root["song_style_preferred"])),
+    // OpenSong GetValueB(…, True) — song_style_preferred defaults true.
+    songStylePreferred:
+      root["song_style_preferred"] === undefined
+        ? true
+        : bool(asString(root["song_style_preferred"])),
     options,
     warnings,
   };
@@ -156,11 +192,28 @@ export function parseStyleOverride(el: unknown): SlideStyleOverride {
   if (e["title"] !== undefined) out.title = textStyle(e["title"], base.title);
   if (e["body"] !== undefined) out.body = textStyle(e["body"], base.body);
   if (e["subtitle"] !== undefined) out.subtitle = textStyle(e["subtitle"], base.subtitle);
+  if (e["subtitle"] !== undefined && asRecord(e["subtitle"])["@_descriptive"] !== undefined)
+    out.descriptiveSubtitles = bool(asRecord(e["subtitle"])["@_descriptive"]);
+  if (e["body"] !== undefined && asRecord(e["body"])["@_highlight_chorus"] !== undefined)
+    out.highlightChorus = bool(asRecord(e["body"])["@_highlight_chorus"]);
+  const songSub = asString(asRecord(e["song_subtitle"])["#text"] ?? e["song_subtitle"]);
+  if (songSub !== "") out.songSubtitle = songSub.split("|").filter((s) => s !== "");
+  const tabs = parseTabs(e["body"]);
+  if (tabs.length > 0) out.bodyTabs = tabs;
   const bg = asRecord(e["background"]);
   if (bg["@_color"] !== undefined) out.backgroundColor = asString(bg["@_color"]);
   const bgFile = asString(bg["@_filename"]);
   if (bgFile !== "") out.backgroundKey = bgFile;
   else if (asString(bg["#text"] ?? "") !== "") out.backgroundKey = asString(bg["#text"]);
+  const holder = { backgroundFit: base.backgroundFit, backgroundStripFooter: 0, backgroundPosX: base.backgroundPosX, backgroundPosY: base.backgroundPosY };
+  const hadPos = bg["@_image_pos_left"] !== undefined || bg["@_image_pos_top"] !== undefined;
+  parseBackgroundAttrs(bg, holder);
+  if (bg["@_image_fit"] !== undefined) out.backgroundFit = holder.backgroundFit;
+  if (bg["@_strip_footer"] !== undefined) out.backgroundStripFooter = holder.backgroundStripFooter;
+  if (hadPos) {
+    out.backgroundPosX = holder.backgroundPosX;
+    out.backgroundPosY = holder.backgroundPosY;
+  }
   return out;
 }
 

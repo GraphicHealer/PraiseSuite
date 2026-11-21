@@ -22,6 +22,17 @@ export interface TextStyle {
   marginRight?: number;
   marginTop?: number;
   marginBottom?: number;
+  /** OpenSong body/@multilanguage_size — lang-2 lines at this % of body size. */
+  multilanguageSize?: number;
+  /** OpenSong body/@multilanguage_color — lang-2 line color. */
+  multilanguageColor?: string;
+}
+
+/** OpenSong style/body/<tabs><tab> — a tab stop for lines containing \t. */
+export interface StyleTab {
+  position: number;
+  align: "left" | "center" | "right" | "char";
+  char?: string;
 }
 
 export interface SlideStyle {
@@ -41,4 +52,9 @@ export interface SlideStyle {
   initialMode: string;
   backgroundFit: "cover" | "contain" | "fill" | "center";
   backgroundStripFooter: number;
+  /** OpenSong background/@image_pos_left|top — 0..1 anchor within the slide. */
+  backgroundPosX?: number;
+  backgroundPosY?: number;
+  /** OpenSong style/body/<tabs> — tab stops for \t-containing lines. */
+  bodyTabs?: StyleTab[];
 }

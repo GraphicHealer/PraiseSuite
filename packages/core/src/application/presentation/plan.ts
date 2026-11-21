@@ -1,5 +1,7 @@
 import type { Service, ServiceItem } from "../../domain/services/types.js";
 import type { ArrangementSection, Song, SongArrangement, SongSection } from "../../domain/songs/types.js";
+import { asRecord, parseXml } from "../../import/opensong/xml.js";
+import { parseStyleOverride } from "../../import/opensong/settings.js";
 import type { MusicalPosition } from "../../domain/sessions/types.js";
 import type {
   ArrangementId,
@@ -49,11 +51,17 @@ export interface PlanSlide {
   transition: number;
   /**
    * Resolved style override for this slide: the active mid-set style-change
-   * stack merged under the item's own <style> (item wins). Null = default.
+   * stack merged under the item's own <style> (item wins), or the song's own
+   * <style> when OpenSong's song_style rules select it. Null = default.
    */
   styleOverride: import("../../domain/styles/types.js").SlideStyleOverride | null;
   /** True while a style-change item is in effect (scripture_style suppressed). */
   setStyleActive: boolean;
+  /**
+   * Per-line language for bilingual (L) sections: 1 = primary, 2 = second
+   * language (multilanguage_* style attrs). Empty when monolingual.
+   */
+  langs: (1 | 2)[];
 }
 
 const itemTiming = (item: ServiceItem) => ({
@@ -70,21 +78,23 @@ export interface PresentationPlan {
 
 /** Lines -> slide slices: only "slide"/"bar" start a new slice; "|" (inline)
  * is a line break within the same slide (SongML DeflateString). */
-function slicesOfSection(section: SongSection): string[][] {
-  const slices: string[][] = [[]];
+function slicesOfSection(section: SongSection): { lines: string[]; langs: (1 | 2)[] }[] {
+  const slices: { lines: string[]; langs: (1 | 2)[] }[] = [{ lines: [], langs: [] }];
   for (const line of section.lines) {
     if (line.kind !== "lyric") continue;
     if (
       (line.breakBefore === "slide" || line.breakBefore === "bar") &&
-      slices[slices.length - 1]!.length > 0
+      slices[slices.length - 1]!.lines.length > 0
     )
-      slices.push([]);
+      slices.push({ lines: [], langs: [] });
     // OpenSong slide text: "_" deleted outright (chord-sheet padding),
     // multi-spaces squeezed, left-trimmed ("choo___sing" -> "choosing").
-    slices[slices.length - 1]!.push(line.text.replace(/_/g, "").replace(/ {2,}/g, " ").replace(/^ +/, ""));
+    const cur = slices[slices.length - 1]!;
+    cur.lines.push(line.text.replace(/_/g, "").replace(/ {2,}/g, " ").replace(/^ +/, ""));
+    cur.langs.push(line.lang ?? 1);
   }
-  while (slices.length > 1 && slices[slices.length - 1]!.length === 0) slices.pop();
-  return slices.length === 0 ? [[]] : slices;
+  while (slices.length > 1 && slices[slices.length - 1]!.lines.length === 0) slices.pop();
+  return slices.length === 0 ? [{ lines: [], langs: [] }] : slices;
 }
 
 /**
@@ -128,7 +138,11 @@ function resolveArrangement(song: Song, arrangementId: ArrangementId | null): So
 export function buildPlan(
   service: Service,
   songsById: ReadonlyMap<SongId, Song>,
+  /** OpenSong song_style_preferred (default true): a song's own <style> may
+   *  override an active set style-change for that song's slides. */
+  opts: { songStylePreferred?: boolean } = {},
 ): PresentationPlan {
+  const songStylePreferred = opts.songStylePreferred ?? true;
   const slides: PlanSlide[] = [];
   const itemStart: number[] = [];
   // OpenSong InsertBlanksIntoSet (style/@blanks): an empty slide before each
@@ -157,8 +171,9 @@ export function buildPlan(
       seconds: 0,
       loop: false,
       transition: 0,
-      styleOverride: effectiveStyle(item),
+      styleOverride: styleForItem(item),
       setStyleActive: styleStack.length > 0,
+      langs: [],
     });
   let prevName: string | null = null;
   // OpenSong ProcessStyles: type="style" groups push (@action=new) or pop
@@ -176,8 +191,52 @@ export function buildPlan(
     }
     return out;
   };
-  const effectiveStyle = (item: ServiceItem) =>
-    mergeOverride(styleStack[styleStack.length - 1], item.config["style"] as StyleOverride | undefined);
+
+  // A song's own <style> (song_style in the expanded set doc): its existence
+  // is the editor's "Override Style" flag. Parsed once per song; legacy
+  // records may carry it inside extras instead of styleXml.
+  const songStyles = new Map<SongId, StyleOverride | null>();
+  const songStyleOf = (song: Song): StyleOverride | null => {
+    const cached = songStyles.get(song.id);
+    if (cached !== undefined) return cached;
+    let out: StyleOverride | null = null;
+    const xml =
+      song.styleXml ?? (song.extras ?? []).find((x) => /^<style[\s/>]/.test(x.trim())) ?? null;
+    if (xml !== null) {
+      try {
+        out = parseStyleOverride(asRecord(parseXml(xml))["style"]);
+      } catch {
+        out = null;
+      }
+      if (out !== null) {
+        // An embedded <background> (base64 text) resolves through the media
+        // key captured at import; without one it can't render — drop it so
+        // the global/song background survives instead of a bad lookup.
+        if (song.styleBackgroundKey !== null && song.styleBackgroundKey !== undefined) {
+          out.backgroundKey = song.styleBackgroundKey;
+        } else if (typeof out.backgroundKey === "string" && out.backgroundKey.length > 200 && !out.backgroundKey.includes("/")) {
+          delete out.backgroundKey;
+        }
+      }
+    }
+    songStyles.set(song.id, out);
+    return out;
+  };
+
+  /**
+   * OpenSong ProcessStyles per-group style pick: the item's own <style>
+   * always wins; else a song's <style> applies when no set style-change is
+   * active or song_style_preferred is set; else the active set style.
+   */
+  const styleForItem = (item: ServiceItem): StyleOverride | null => {
+    const stackTop = styleStack[styleStack.length - 1];
+    const itemStyle = item.config["style"] as StyleOverride | undefined;
+    const song = item.kind === "song" && item.songId !== null ? (songsById.get(item.songId) ?? null) : null;
+    const songStyle = song !== null ? songStyleOf(song) : null;
+    if (itemStyle === undefined && songStyle !== null && (styleStack.length === 0 || songStylePreferred))
+      return mergeOverride(stackTop, songStyle);
+    return mergeOverride(stackTop, itemStyle);
+  };
 
   for (const item of service.items) {
     if (item.kind === "style") {
@@ -215,7 +274,7 @@ export function buildPlan(
           const backs = verseBacks.length > 0 ? verseBacks : allBacks.filter((b) => b.verse === "");
           const repeats = Math.max(1, as.repeats);
           for (let rep = 0; rep < repeats; rep++) {
-            slicesOfSection(section).forEach((lines, sliceIndex) => {
+            slicesOfSection(section).forEach(({ lines, langs }, sliceIndex) => {
               const bg = backs.length > 0 ? backs[Math.min(sliceIndex, backs.length - 1)]! : null;
               slides.push({
                 serviceItemId: item.id,
@@ -236,8 +295,9 @@ export function buildPlan(
                 blank: false,
                 emphasize: /^c/i.test(raw.label),
                 ...timing,
-                styleOverride: effectiveStyle(item),
+                styleOverride: styleForItem(item),
                 setStyleActive: styleStack.length > 0,
+                langs,
               });
             });
           }
@@ -277,8 +337,9 @@ export function buildPlan(
           blank: false,
           emphasize: false,
           ...timing,
-          styleOverride: effectiveStyle(item),
+          styleOverride: styleForItem(item),
           setStyleActive: styleStack.length > 0,
+          langs: [],
         });
       }
       continue;
@@ -302,8 +363,9 @@ export function buildPlan(
         blank: false,
         emphasize: false,
         ...timing,
-        styleOverride: effectiveStyle(item),
+        styleOverride: styleForItem(item),
         setStyleActive: styleStack.length > 0,
+        langs: [],
       });
     }
     if (item.slides.length === 0) {
@@ -323,8 +385,9 @@ export function buildPlan(
         blank: false,
         emphasize: false,
         ...timing,
-        styleOverride: effectiveStyle(item),
+        styleOverride: styleForItem(item),
         setStyleActive: styleStack.length > 0,
+        langs: [],
       });
     }
   }

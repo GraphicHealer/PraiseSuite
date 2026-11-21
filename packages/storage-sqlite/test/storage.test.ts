@@ -58,6 +58,8 @@ function makeSong(over: Partial<Song> = {}): Song {
     hymnNumber: null,
     presentationRaw: null,
     linkedSongs: [],
+    styleXml: null,
+    styleBackgroundKey: null,
     extras: [],
     ...over,
   };

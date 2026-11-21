@@ -128,8 +128,21 @@ export interface Song extends Revisioned {
   /** OpenSong linked_songs — related songs offered when adding to a set. */
   linkedSongs: string[];
   /**
+   * Raw `<style>…</style>` element for a song-level style override
+   * (OpenSong's "Override Style" checkbox — the element's existence IS the
+   * flag). Kept verbatim for lossless round-trips; parsed via
+   * parseStyleOverride when the presentation plan applies it.
+   */
+  styleXml: string | null;
+  /**
+   * Media storage key for an image embedded in the song `<style><background>`
+   * (base64 text). Registered at import so the styled background renders;
+   * the raw XML keeps its embedded data for export fidelity.
+   */
+  styleBackgroundKey: string | null;
+  /**
    * Raw XML fragments of top-level song elements PraiseSuite does not model
-   * (e.g. <style>, <pitch>, <restrictions>) — preserved verbatim so a
+   * (e.g. <pitch>, <restrictions>) — preserved verbatim so a
    * PS→OpenSong round trip never loses data.
    */
   extras: string[];

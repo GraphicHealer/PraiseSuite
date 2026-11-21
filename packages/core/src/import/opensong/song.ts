@@ -26,6 +26,8 @@ export type ParsedSong = Omit<Song, "id" | "revision" | "sections" | "arrangemen
   sections: Omit<SongSection, "id">[];
   arrangements: ParsedArrangement[];
   backgrounds: ParsedSongBackgrounds | null;
+  /** Base64 image embedded in <style><background> — applyImport stores it as media. */
+  styleBackgroundData?: string | null;
 };
 
 export interface SongParseResult {
@@ -60,23 +62,46 @@ function str(v: unknown): string | null {
   return s === "" ? null : s;
 }
 
+/**
+ * <linked_songs><linked_song>name</linked_song>…</linked_songs>. OpenSong
+ * always writes child elements; a plain-text node is accepted too for
+ * hand-edited files and earlier PraiseSuite exports.
+ */
+function parseLinkedSongs(el: unknown): string[] {
+  const kids = asRecord(el)["linked_song"];
+  if (kids !== undefined) {
+    const list = Array.isArray(kids) ? kids : [kids];
+    return list.map((k) => textOf(k).trim()).filter((s) => s !== "");
+  }
+  return textOf(el)
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter((s) => s !== "");
+}
+
 /** Top-level <song> elements PraiseSuite models — anything else is kept raw in extras. */
 const KNOWN_SONG_TAGS = new Set([
   "title", "author", "copyright", "presentation", "capo", "tempo", "timesig",
   "time_sig", "ccli", "theme", "alttheme", "aka", "key", "key_line",
   "user1", "user2", "user3", "background", "backgrounds", "lyrics",
-  "hymn_number", "linked_songs", "notes",
+  "hymn_number", "linked_songs", "notes", "style",
 ]);
 
-/** Raw `<tag>…</tag>` fragments of unmodeled top-level elements (<style>, <pitch>, …). */
+/** Raw `<tag>…</tag>` fragment for a top-level element, or null. */
+function rawFragment(xml: string, tag: string): string | null {
+  const m = new RegExp(`<${tag}(\\s[^>]*)?\\s*/>|<${tag}(\\s[^>]*)?>[\\s\\S]*?</${tag}>`).exec(xml);
+  return m ? m[0] : null;
+}
+
+/** Raw `<tag>…</tag>` fragments of unmodeled top-level elements (<pitch>, …). */
 function extractExtras(xml: string, root: Record<string, unknown>): string[] {
   const extras: string[] = [];
   for (const key of Object.keys(root)) {
     if (key.startsWith("@_") || key.startsWith("#") || KNOWN_SONG_TAGS.has(key)) continue;
     const tag = key.replace(/[^\w-]/g, "");
     if (tag === "") continue;
-    const m = new RegExp(`<${tag}(\\s[^>]*)?\\s*/>|<${tag}(\\s[^>]*)?>[\\s\\S]*?</${tag}>`).exec(xml);
-    if (m) extras.push(m[0]);
+    const m = rawFragment(xml, tag);
+    if (m) extras.push(m);
   }
   return extras;
 }
@@ -197,10 +222,14 @@ export function parseOpenSongSong(
       notes: str(root["notes"]),
       hymnNumber: str(root["hymn_number"]),
       presentationRaw: presentation === "" ? null : presentation,
-      linkedSongs: asString(root["linked_songs"])
-        .split(/\r?\n/)
-        .map((s) => s.trim())
-        .filter((s) => s !== ""),
+      linkedSongs: parseLinkedSongs(root["linked_songs"]),
+      // Song-level <style>: the element's existence is OpenSong's "Override
+      // Style" flag. Kept verbatim (round-trip); the plan parses it for render.
+      styleXml: root["style"] === undefined ? null : rawFragment(xml, "style"),
+      styleBackgroundKey: null,
+      // Embedded <style><background> data — applyImport registers it as media.
+      styleBackgroundData:
+        asString(asRecord(asRecord(root["style"])["background"])["#text"] ?? "") || null,
       extras: extractExtras(xml, root),
       sections,
       arrangements,
@@ -212,8 +241,10 @@ export function parseOpenSongSong(
 /** Assign canonical ids to a parsed song and its nested objects. */
 export function materializeSong(parsed: ParsedSong, ids: IdGenerator): Song {
   const sectionIds = parsed.sections.map(() => ids.next() as SongSection["id"]);
+  const rest = { ...parsed };
+  delete rest.styleBackgroundData; // ParsedSong-only field — stored via styleBackgroundKey
   return {
-    ...parsed,
+    ...rest,
     id: ids.next() as Song["id"],
     sections: parsed.sections.map((s, i) => ({ ...s, id: sectionIds[i]! })),
     backgrounds: parsed.backgrounds === null ? null : {

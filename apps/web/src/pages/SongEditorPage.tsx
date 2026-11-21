@@ -4,7 +4,9 @@ import type { EditorView } from "@codemirror/view";
 import {
   parseOpenSongLyrics,
   serializeOpenSongLyrics,
+  serializeStyleXml,
   transposeSourceText,
+  type SlideStyle,
   type Song,
   type SongArrangement,
   type SongBackgrounds,
@@ -95,9 +97,14 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
       setStatus("");
     });
 
+  const [globalStyle, setGlobalStyle] = useState<SlideStyle | null>(null);
+
   useEffect(() => {
     void reload();
-    api.style().then((s) => setUserLabels(s.userFieldLabels ?? []));
+    api.style().then((s) => {
+      setUserLabels(s.userFieldLabels ?? []);
+      setGlobalStyle(s as unknown as SlideStyle);
+    });
   }, [id]);
 
   const update = (patch: Partial<Song>) => {
@@ -520,6 +527,30 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
           }}
         />
       </div>
+      {/* OpenSong chk_song_style + can_song_style under the lyrics editor:
+          the <style> element's existence IS the override flag. Enabling
+          clones the global style; disabling removes it. */}
+      {tab === "general" && (
+        <div className="flex shrink-0 items-center gap-2 pt-1.5">
+          <label className="flex items-center gap-1.5 text-sm">
+            <input
+              type="checkbox"
+              checked={song.styleXml !== null && song.styleXml !== undefined}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  update({ styleXml: globalStyle !== null ? serializeStyleXml(globalStyle) : "<style/>" });
+                } else {
+                  update({ styleXml: null });
+                }
+              }}
+            />
+            Override Style
+          </label>
+          {song.styleXml !== null && song.styleXml !== undefined && (
+            <span className="text-xs text-zinc-500">this song presents with its own slide style</span>
+          )}
+        </div>
+      )}
       </div>
 
       {/* Right action column (OpenSong's vertical button stack) — scrolls on short screens */}
