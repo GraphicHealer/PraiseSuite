@@ -52,8 +52,8 @@ export function keyDistance(from: string, to: string): number | null {
  * The chord a player fingers when using a capo: sounding pitch shifted
  * down by the capo fret (capo 2 in D = C shapes).
  */
-export function capoFingering(chord: Chord, capo: number): Chord {
-  return transposeChord(chord, -capo, { preferFlats: false });
+export function capoFingering(chord: Chord, capo: number, useSharp = true): Chord {
+  return transposeChord(chord, -capo, { preferFlats: !useSharp });
 }
 
 export function transposeAnnotations(

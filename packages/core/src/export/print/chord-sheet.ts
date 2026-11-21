@@ -154,6 +154,7 @@ function blockHtml(
   tr: number,
   capo: number,
   capoPrint: boolean,
+  capoSharp: boolean,
   bilingual: boolean,
   chorus: boolean,
 ): string {
@@ -166,7 +167,7 @@ function blockHtml(
     : [];
   const chordAt = new Map(first.chords.map((c) => [c.offset, c.display]));
   const mapTr = (d: string) => (tr !== 0 ? transposeChord(parseChord(d), tr, {}).display : d);
-  const mapCapo = (d: string) => capoFingering(parseChord(mapTr(d)), capo).display;
+  const mapCapo = (d: string) => capoFingering(parseChord(mapTr(d)), capo, capoSharp).display;
 
   const hasChords = hasChordLine && vis?.hideChords !== true;
   const showCapo = hasChords && capo > 0 && capoPrint && vis?.hideCapo !== true;
@@ -249,6 +250,9 @@ export function chordSheetHtml(song: Song, opts: SheetOptions = {}): string {
   // <capo print>: an explicit opts.capo forces the row on; otherwise the
   // song's flag decides (absent on non-OpenSong songs -> show).
   const capoPrint = opts.capo !== undefined ? opts.capo > 0 : arr?.capoPrint !== false;
+  // capo/@sharp spells capo chords with sharps; absent falls back to sharps
+  // (OpenSong's default ListIndex 0) — an explicit opts.capo always uses sharps.
+  const capoSharp = opts.capo !== undefined ? true : arr?.capoSharp !== false;
   const secSpace = cfg.spacing["sections"] ?? { before: 0, after: 0 };
 
   const parts: string[] = [];
@@ -350,7 +354,7 @@ export function chordSheetHtml(song: Song, opts: SheetOptions = {}): string {
             j++;
           }
         }
-        parts.push(`<div style="break-inside:avoid">${blockHtml(block, cfg, tr, capo, capoPrint, bilingual, chorus)}</div>`);
+        parts.push(`<div style="break-inside:avoid">${blockHtml(block, cfg, tr, capo, capoPrint, capoSharp, bilingual, chorus)}</div>`);
         i = j - 1;
       } else if (item.type === "blank") {
         parts.push(`<div style="height:${Math.round(lyricSize * 1.2)}pt"></div>`);

@@ -79,6 +79,9 @@ export interface SongArrangement {
   capo: number | null;
   /** OpenSong <capo print="..."> — whether print output shows the capo chord row. */
   capoPrint?: boolean | null | undefined;
+  /** OpenSong capo/@sharp — capo chords spelled with sharps (true) or flats
+   *  (false); null/absent falls back to the global accidental preference. */
+  capoSharp?: boolean | null | undefined;
   notes: string | null;
   sequence: ArrangementSection[];
 }

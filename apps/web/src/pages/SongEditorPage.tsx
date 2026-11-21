@@ -22,16 +22,22 @@ const input =
 const btn =
   "rounded border border-zinc-300 px-2 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800";
 
-function Field({ label, value, onChange, className }: {
+function Field({ label, value, onChange, className, rows }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   className?: string;
+  /** OpenSong's user fields are multiline edit boxes. */
+  rows?: number;
 }): ReactNode {
   return (
     <label className={`flex flex-col gap-0.5 ${className ?? ""}`}>
       <span className="text-xs text-zinc-500">{label}</span>
-      <input className={input} value={value} onChange={(e) => onChange(e.target.value)} />
+      {rows ? (
+        <textarea className={`${input} resize-none`} rows={rows} value={value} onChange={(e) => onChange(e.target.value)} />
+      ) : (
+        <input className={input} value={value} onChange={(e) => onChange(e.target.value)} />
+      )}
     </label>
   );
 }
@@ -332,7 +338,7 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
           >
             Backgrounds
           </button>
-          <span className="ml-auto text-xs text-zinc-500">Chord/Lyrics</span>
+          {tab === "general" && <span className="ml-auto text-xs text-zinc-500">Chord/Lyrics</span>}
         </div>
         {status && <p className="text-xs text-zinc-500">{status}</p>}
 
@@ -386,37 +392,60 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
         </div>
       )}
       {tab === "advanced" && (
-        <div className="grid shrink overflow-y-auto grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-4">
-          <Field label="Theme" value={song.theme ?? ""} onChange={(v) => update({ theme: v || null })} />
-          <Field label="Alternate Theme" value={song.secondaryTheme ?? ""} onChange={(v) => update({ secondaryTheme: v || null })} />
-          <Field label="AKA" value={song.aka ?? ""} onChange={(v) => update({ aka: v || null })} />
-          <Field label="Key" value={song.defaultKey ?? ""} onChange={(v) => update({ defaultKey: v || null })} />
-          <Field label="Key Line" value={song.keyLine ?? ""} onChange={(v) => update({ keyLine: v || null })} />
-          <Field label="Tempo" value={song.tempo ?? ""} onChange={(v) => update({ tempo: v || null })} />
-          <Field label="Time Signature" value={song.timeSignature ?? ""} onChange={(v) => update({ timeSignature: v || null })} />
-          <div className="flex items-end gap-2">
-            <label className="flex flex-1 flex-col gap-0.5">
-              <span className="text-xs text-zinc-500">Capo</span>
-              <select className={input} value={capo} onChange={(e) => { setCapo(e.target.value); setDirty(true); }}>
-                <option value="">(none)</option>
-                {[1, 2, 3, 4, 5, 6, 7].map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
-            </label>
-            <label className="flex items-center gap-1 pb-1 text-sm" title="OpenSong capo print flag">
-              <input
-                type="checkbox"
-                checked={song.arrangements[0]?.capoPrint === true}
-                onChange={(e) => updateArr0({ capoPrint: e.target.checked })}
-              />
-              Print
-            </label>
+        <div className="flex shrink-0 gap-3 overflow-y-auto">
+          {/* OpenSong's advanced page: themes box on the left, the music
+              fields stacked on the right (narrow popups on top, wide
+              multiline user fields at the bottom). */}
+          <div className="flex w-[45%] min-w-0 flex-col gap-0.5">
+            <span className="text-xs text-zinc-500">Themes:</span>
+            <div className="flex min-h-28 flex-col gap-1.5 rounded border border-zinc-300 p-1.5 dark:border-zinc-700">
+              <Field label="Theme" value={song.theme ?? ""} onChange={(v) => update({ theme: v || null })} />
+              <Field label="Alternate Theme" value={song.secondaryTheme ?? ""} onChange={(v) => update({ secondaryTheme: v || null })} />
+            </div>
           </div>
-          <Field label={userLabels[0] ?? "User Defined 1"} value={song.userFields.user1} onChange={(v) => update({ userFields: { ...song.userFields, user1: v } })} />
-          <Field label={userLabels[1] ?? "User Defined 2"} value={song.userFields.user2} onChange={(v) => update({ userFields: { ...song.userFields, user2: v } })} />
-          <Field label={userLabels[2] ?? "User Defined 3"} value={song.userFields.user3} onChange={(v) => update({ userFields: { ...song.userFields, user3: v } })} />
-          <Field label="Folder" value={song.folder ?? ""} onChange={(v) => update({ folder: v || null })} />
-          <Field label="Background" value={song.background ?? ""} onChange={(v) => update({ background: v || null })} />
-          <Field label="Notes" value={song.notes ?? ""} onChange={(v) => update({ notes: v || null })} className="col-span-2" />
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <div className="flex items-end gap-2">
+              <label className="flex w-16 flex-col gap-0.5">
+                <span className="text-xs text-zinc-500">Capo:</span>
+                <select className={input} value={capo} onChange={(e) => { setCapo(e.target.value); setDirty(true); }}>
+                  <option value="">0</option>
+                  {[1, 2, 3, 4, 5, 6, 7].map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+              <label className="flex items-center gap-1 pb-1 text-sm" title="OpenSong capo print flag">
+                <input
+                  type="checkbox"
+                  checked={song.arrangements[0]?.capoPrint === true}
+                  onChange={(e) => updateArr0({ capoPrint: e.target.checked })}
+                />
+                Print
+              </label>
+              <select
+                className={`${input} mb-0.5 w-24`}
+                title="Accidentals for capo chords (OpenSong capo/@sharp)"
+                value={song.arrangements[0]?.capoSharp === false ? "flats" : "sharps"}
+                onChange={(e) => updateArr0({ capoSharp: e.target.value === "sharps" })}
+              >
+                <option value="sharps">Sharps</option>
+                <option value="flats">Flats</option>
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+              <Field label="Key" value={song.defaultKey ?? ""} onChange={(v) => update({ defaultKey: v || null })} />
+              <Field label="Time Signature" value={song.timeSignature ?? ""} onChange={(v) => update({ timeSignature: v || null })} />
+              <Field label="Tempo" value={song.tempo ?? ""} onChange={(v) => update({ tempo: v || null })} />
+              <Field label="AKA" value={song.aka ?? ""} onChange={(v) => update({ aka: v || null })} />
+            </div>
+            <Field label="Key Line" value={song.keyLine ?? ""} onChange={(v) => update({ keyLine: v || null })} />
+            <Field label={userLabels[0] ?? "User Defined 1"} value={song.userFields.user1} onChange={(v) => update({ userFields: { ...song.userFields, user1: v } })} rows={2} />
+            <Field label={userLabels[1] ?? "User Defined 2"} value={song.userFields.user2} onChange={(v) => update({ userFields: { ...song.userFields, user2: v } })} rows={2} />
+            <Field label={userLabels[2] ?? "User Defined 3"} value={song.userFields.user3} onChange={(v) => update({ userFields: { ...song.userFields, user3: v } })} rows={2} />
+            <div className="grid grid-cols-2 gap-x-2">
+              <Field label="Folder" value={song.folder ?? ""} onChange={(v) => update({ folder: v || null })} />
+              <Field label="Background" value={song.background ?? ""} onChange={(v) => update({ background: v || null })} />
+            </div>
+            <Field label="Notes" value={song.notes ?? ""} onChange={(v) => update({ notes: v || null })} rows={2} />
+          </div>
         </div>
       )}
       {tab === "backgrounds" && (
@@ -474,7 +503,10 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-hidden rounded border border-zinc-300 dark:border-zinc-700">
+      {/* The Chord/Lyrics editor only lives on the General page (OpenSong's
+          advanced/backgrounds pages have no textbox); kept mounted-but-hidden
+          so undo history and selection survive page switches. */}
+      <div className={`min-h-0 flex-1 overflow-hidden rounded border border-zinc-300 dark:border-zinc-700 ${tab !== "general" ? "hidden" : ""}`}>
         <CodeMirror
           value={source}
           height="100%"

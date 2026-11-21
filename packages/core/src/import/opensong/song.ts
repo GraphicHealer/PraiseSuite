@@ -114,6 +114,9 @@ export function parseOpenSongSong(
   // <capo print="true|false">: gates the capo chord row + "Capo N" header in
   // OpenSong's print; GetValueB treats a missing/empty attr as false.
   const capoPrint = capo === null ? null : attrOf(root["capo"], "print") === "true";
+  // capo/@sharp: absent means "use the global transpose accidental pref".
+  const sharpAttr = attrOf(root["capo"], "sharp");
+  const capoSharp = sharpAttr === "" ? null : sharpAttr === "true";
 
   // <presentation> "V1 C V2 C" -> default arrangement sequence. A token can be
   // a section label ("C") or label+verse prefix ("V1" -> section V, prefix 1).
@@ -162,6 +165,7 @@ export function parseOpenSongSong(
       timeSignature: str(root["timesig"]) ?? str(root["time_sig"]),
       capo,
       capoPrint,
+      capoSharp,
       notes: null,
       sequence,
     },
