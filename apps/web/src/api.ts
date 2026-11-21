@@ -138,9 +138,9 @@ class Api {
   }
 
   // server network / sync
-  network = () => this.req<{ lanEnabled: boolean; addresses: string[] }>("/api/v1/server/network");
+  network = () => this.req<{ lanEnabled: boolean; addresses: string[]; port: number | null }>("/api/v1/server/network");
   setNetwork = (lanEnabled: boolean) =>
-    this.req<{ lanEnabled: boolean; addresses: string[] }>("/api/v1/server/network", {
+    this.req<{ lanEnabled: boolean; addresses: string[]; port: number | null }>("/api/v1/server/network", {
       method: "POST",
       body: { lanEnabled },
     });

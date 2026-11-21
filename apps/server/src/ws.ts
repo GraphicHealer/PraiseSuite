@@ -1,5 +1,5 @@
 import { WebSocketServer, type WebSocket } from "ws";
-import type { Server } from "node:http";
+import type { IncomingMessage, Server } from "node:http";
 import type { AuthService, TokenPayload } from "./auth.js";
 
 const HEARTBEAT_MS = 30_000;
@@ -9,6 +9,13 @@ interface Client {
   auth: TokenPayload;
   sessions: Set<string>;
   alive: boolean;
+}
+
+export interface AttachOptions {
+  /** Pre-auth gate run before any upgrade handling — reject returns false. */
+  gate?: (req: IncomingMessage) => boolean;
+  /** Requests without a token authenticate as local admin (internal listener). */
+  trustLocal?: () => boolean;
 }
 
 /**
@@ -28,22 +35,7 @@ export class SessionChannel {
     private readonly isOpenLocal: () => boolean = () => false,
   ) {
     this.wss = new WebSocketServer({ noServer: true });
-    server.on("upgrade", (req, socket, head) => {
-      const url = new URL(req.url ?? "/", "http://localhost");
-      if (url.pathname !== "/ws") {
-        socket.destroy();
-        return;
-      }
-      const token = url.searchParams.get("token");
-      const payload = (token ? this.auth.verify(token) : null)
-        ?? (this.isOpenLocal() ? { sub: "admin", jti: "local", scopes: [], sessionId: null, iat: 0, exp: 0 } as const : null);
-      if (!payload) {
-        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-        socket.destroy();
-        return;
-      }
-      this.wss.handleUpgrade(req, socket, head, (ws) => this.attach(ws, payload));
-    });
+    this.attachTo(server);
 
     this.heartbeat = setInterval(() => {
       for (const c of this.clients) {
@@ -56,6 +48,31 @@ export class SessionChannel {
       }
     }, HEARTBEAT_MS);
     this.heartbeat.unref();
+  }
+
+  /** Route a server's upgrade events into this channel (multi-listener). */
+  attachTo(server: Server, opts: AttachOptions = {}): void {
+    const trustLocal = opts.trustLocal ?? this.isOpenLocal;
+    server.on("upgrade", (req, socket, head) => {
+      if (opts.gate !== undefined && !opts.gate(req)) {
+        socket.destroy();
+        return;
+      }
+      const url = new URL(req.url ?? "/", "http://localhost");
+      if (url.pathname !== "/ws") {
+        socket.destroy();
+        return;
+      }
+      const token = url.searchParams.get("token");
+      const payload = (token ? this.auth.verify(token) : null)
+        ?? (trustLocal() ? { sub: "admin", jti: "local", scopes: [], sessionId: null, iat: 0, exp: 0 } as const : null);
+      if (!payload) {
+        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      this.wss.handleUpgrade(req, socket, head, (ws) => this.attach(ws, payload));
+    });
   }
 
   private attach(ws: WebSocket, auth: TokenPayload): void {

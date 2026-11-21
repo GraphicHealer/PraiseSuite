@@ -411,3 +411,60 @@ describe("api v1", () => {
     expect((await api("/api/v1/songs")).status).toBe(200);
   });
 });
+
+describe("split-listener mode (desktop)", () => {
+  let dualDir: string;
+  let dual: PraiseSuiteApp;
+
+  beforeAll(async () => {
+    dualDir = mkdtempSync(join(tmpdir(), "praisesuite-dual-"));
+    dual = createApp({
+      databasePath: join(dualDir, "db.sqlite"),
+      internalToken: "launch-token",
+      externalPort: 0,
+    });
+  });
+  afterAll(async () => {
+    await dual.close();
+    rmSync(dualDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+
+  it("gates the internal listener on the launch token", async () => {
+    const port = await dual.listenInternal();
+    const ibase = `http://127.0.0.1:${port}`;
+    // No token: API and static routes both refuse.
+    expect((await fetch(`${ibase}/api/v1/health`)).status).toBe(403);
+    expect((await fetch(`${ibase}/`)).status).toBe(403);
+    // Bearer (main-process calls) and cookie (renderer windows) both pass.
+    const r1 = await fetch(`${ibase}/api/v1/health`, {
+      headers: { authorization: "Bearer launch-token" },
+    });
+    expect(r1.status).toBe(200);
+    expect(((await r1.json()) as { authRequired: boolean }).authRequired).toBe(false);
+    const r2 = await fetch(`${ibase}/api/v1/health`, {
+      headers: { cookie: "ps_internal=launch-token" },
+    });
+    expect(r2.status).toBe(200);
+    // Trusted listener: admin routes need no login.
+    expect(
+      (await fetch(`${ibase}/api/v1/songs`, { headers: { cookie: "ps_internal=launch-token" } })).status,
+    ).toBe(200);
+    // Wrong token is refused.
+    expect(
+      (await fetch(`${ibase}/api/v1/health`, { headers: { cookie: "ps_internal=nope" } })).status,
+    ).toBe(403);
+  });
+
+  it("external listener exists only while enabled", async () => {
+    const eport = await dual.setExternal(true);
+    expect(eport).not.toBeNull();
+    // External listener serves normal auth (no internal-token gate).
+    const res = await fetch(`http://127.0.0.1:${eport}/api/v1/health`);
+    expect(res.status).toBe(200);
+    await dual.setExternal(false);
+    await expect(fetch(`http://127.0.0.1:${eport}/api/v1/health`)).rejects.toThrow();
+    // Idempotent re-enable returns a listener again.
+    expect(await dual.setExternal(true)).not.toBeNull();
+    await dual.setExternal(false);
+  });
+});

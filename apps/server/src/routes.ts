@@ -74,6 +74,10 @@ export interface AppDeps {
   broadcastToSession(sessionId: string, message: unknown): void;
   setLanEnabled(enabled: boolean): void;
   getLanEnabled(): boolean;
+  /** Internal listener port (split-listener desktop mode); null = single listener. */
+  getInternalPort?(): number | null;
+  /** External (LAN) listener port — used to compose receiver/stage URLs. */
+  externalPort?: number | undefined;
   /** Single-user mode (desktop): starting a live session ends all others. */
   singleSession?: boolean;
   /** Built web UI directory — used to inject bundled-font @font-face into print docs. */
@@ -121,11 +125,12 @@ export function buildRoutes(deps: AppDeps): Route[] {
   };
 
   return [
-    r("GET", "/api/v1/health", "public", "Service health + API version", async () => ({
+    r("GET", "/api/v1/health", "public", "Service health + API version", async (ctx) => ({
       status: "ok",
       apiVersion: API_VERSION,
-      /** Local mode (LAN off) trusts localhost — no login needed. */
-      authRequired: deps.getLanEnabled(),
+      /** Internal listener is token-gated/trusted; external needs auth when LAN is on. */
+      authRequired:
+        ctx.req.socket.localPort === deps.getInternalPort?.() ? false : deps.getLanEnabled(),
       appVersion: "0.0.1",
     })),
 
@@ -171,12 +176,18 @@ export function buildRoutes(deps: AppDeps): Route[] {
     r("GET", "/api/v1/server/network", "admin", "LAN binding state + listen addresses", async () => ({
       lanEnabled: deps.getLanEnabled(),
       addresses: deps.getLanEnabled() ? lanAddresses() : ["127.0.0.1"],
+      /** External listener port — remote devices connect here, not the UI port. */
+      port: deps.externalPort ?? null,
     })),
 
     r("POST", "/api/v1/server/network", "admin", "Toggle LAN binding (TAS 15.3)", async (ctx) => {
       const body = z.object({ lanEnabled: z.boolean() }).parse(await ctx.body());
       deps.setLanEnabled(body.lanEnabled);
-      return { lanEnabled: deps.getLanEnabled(), addresses: deps.getLanEnabled() ? lanAddresses() : ["127.0.0.1"] };
+      return {
+        lanEnabled: deps.getLanEnabled(),
+        addresses: deps.getLanEnabled() ? lanAddresses() : ["127.0.0.1"],
+        port: deps.externalPort ?? null,
+      };
     }),
 
     r("GET", "/api/v1/songs", "admin", "List/search songs", async (ctx) => {

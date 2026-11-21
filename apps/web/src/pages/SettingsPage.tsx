@@ -35,7 +35,7 @@ export function SettingsPage(): ReactNode {
   const [scripture, setScripture] = useState<SlideStyle | null>(null);
   const [editing, setEditing] = useState<"present" | "scripture" | null>(null);
   const [bibles, setBibles] = useState<{ id: string; name: string; abbreviation: string; books: number }[]>([]);
-  const [net, setNet] = useState<{ lanEnabled: boolean; addresses: string[] } | null>(null);
+  const [net, setNet] = useState<{ lanEnabled: boolean; addresses: string[]; port: number | null } | null>(null);
   const [syncAddr, setSyncAddr] = useState("");
   const [displayMode, setDisplayMode] = useState<string>("auto");
   const [displayCount, setDisplayCount] = useState<number | null>(null);
@@ -199,11 +199,11 @@ export function SettingsPage(): ReactNode {
               {net?.lanEnabled && net.addresses.length > 0 ? (
                 <ul className="mt-1 list-inside list-disc font-mono">
                   {net.addresses.map((a) => (
-                    <li key={a}>http://{a}:{window.location.port || "7729"}/receiver</li>
+                    <li key={a}>http://{a}:{net.port ?? (window.location.port || "7729")}/receiver</li>
                   ))}
                 </ul>
               ) : (
-                <p className="mt-1 font-mono">http://&lt;this-machine-ip&gt;:{window.location.port || "7729"}/receiver</p>
+                <p className="mt-1 font-mono">http://&lt;this-machine-ip&gt;:{net?.port ?? (window.location.port || "7729")}/receiver</p>
               )}
               {!net?.lanEnabled && (
                 <p className="mt-1 text-amber-600 dark:text-amber-400">

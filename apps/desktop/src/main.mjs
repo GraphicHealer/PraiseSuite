@@ -1,18 +1,29 @@
-import { app, BrowserWindow, screen, ipcMain, dialog, shell } from "electron";
+import { app, BrowserWindow, screen, ipcMain, dialog, shell, session } from "electron";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(dir, "..", "..", "..");
+/** External (LAN) port — receivers/stage/remotes. Only bound while LAN access is enabled. */
 const PORT = Number(process.env.PRAISESUITE_PORT ?? 7729);
-const BASE = `http://127.0.0.1:${PORT}`;
+/** Per-launch token gating the internal loopback listener (Electron windows only). */
+const INTERNAL_TOKEN = randomUUID();
+/** Resolved once the server reports its internal port on stdout. */
+let BASE = null;
+let resolveBase;
+const baseReady = new Promise((r) => (resolveBase = r));
 
 let serverProc = null;
 let outputWindow = null;
 let controlWindow = null;
 let presenterWindow = null;
+
+/** Fetch carrying the internal token — main-process calls have no cookies. */
+const localFetch = (url, init) =>
+  fetch(url, { ...init, headers: { authorization: `Bearer ${INTERNAL_TOKEN}` } });
 
 /**
  * Child-process server (TAS 3.5): the same apps/server that serves REST+WS
@@ -34,6 +45,10 @@ function startServer() {
     PRAISESUITE_WEB_ROOT: path.join(ROOT, "apps", "web", "dist"),
     // Desktop is single-user: only one live presentation session at a time.
     PRAISESUITE_SINGLE_SESSION: "1",
+    // Split-listener mode: internal loopback listener on an ephemeral port,
+    // gated by a per-launch token — PORT is the external (LAN) listener.
+    PRAISESUITE_INTERNAL: "1",
+    PRAISESUITE_INTERNAL_TOKEN: INTERNAL_TOKEN,
   };
   if (runtime === "electron") env.ELECTRON_RUN_AS_NODE = "1";
   serverProc = spawn(cmd, [tsxCli, "src/index.ts"], {
@@ -41,7 +56,14 @@ function startServer() {
     env,
     stdio: ["ignore", "pipe", "pipe"],
   });
-  serverProc.stdout.on("data", (d) => process.stdout.write(`[server] ${d}`));
+  serverProc.stdout.on("data", (d) => {
+    process.stdout.write(`[server] ${d}`);
+    const m = /Internal listener: http:\/\/127\.0\.0\.1:(\d+)/.exec(d.toString());
+    if (m && BASE === null) {
+      BASE = `http://127.0.0.1:${m[1]}`;
+      resolveBase();
+    }
+  });
   serverProc.stderr.on("data", (d) => process.stderr.write(`[server] ${d}`));
   serverProc.on("exit", (code) => {
     console.error(`server exited (${code})`);
@@ -53,13 +75,15 @@ function startServer() {
 async function waitForServer(timeoutMs = 20_000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    try {
-      const res = await fetch(`${BASE}/api/v1/health`);
-      if (res.ok) return;
-    } catch {
-      // not up yet
+    await Promise.race([baseReady, new Promise((r) => setTimeout(r, 250))]);
+    if (BASE !== null) {
+      try {
+        const res = await localFetch(`${BASE}/api/v1/health`);
+        if (res.ok) return;
+      } catch {
+        // not up yet
+      }
     }
-    await new Promise((r) => setTimeout(r, 250));
   }
   throw new Error("PraiseSuite server did not start");
 }
@@ -145,7 +169,7 @@ let displayMode = "auto";
 
 async function loadDisplayMode() {
   try {
-    const res = await fetch(`${BASE}/api/v1/settings/present.displayMode`);
+    const res = await localFetch(`${BASE}/api/v1/settings/present.displayMode`);
     if (res.ok) displayMode = ((await res.json()).value ?? "auto") || "auto";
   } catch {
     displayMode = "auto";
@@ -307,10 +331,10 @@ function endPresentation() {
  */
 async function endLiveSessions() {
   try {
-    const res = await fetch(`${BASE}/api/v1/sessions`);
+    const res = await localFetch(`${BASE}/api/v1/sessions`);
     if (!res.ok) return;
     for (const s of await res.json()) {
-      await fetch(`${BASE}/api/v1/sessions/${s.id}/end`, { method: "POST" });
+      await localFetch(`${BASE}/api/v1/sessions/${s.id}/end`, { method: "POST" });
     }
   } catch {
     /* server not up yet */
@@ -331,6 +355,14 @@ app.whenReady().then(async () => {
     await waitForServer();
   } catch (e) {
     console.error(e.message);
+  }
+  // Every Electron window shares defaultSession — one cookie gives the
+  // internal listener's token gate to control/presenter/output/print
+  // windows transparently (fetch, <img>, WebSocket all carry cookies).
+  if (BASE !== null) {
+    await session.defaultSession.cookies
+      .set({ url: BASE, name: "ps_internal", value: INTERNAL_TOKEN })
+      .catch((e) => console.error(`internal cookie failed: ${e.message}`));
   }
   openControlWindow();
   await loadDisplayMode();
