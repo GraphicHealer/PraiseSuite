@@ -66,6 +66,9 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
   const [source, setSource] = useState("");
   const [presentation, setPresentation] = useState("");
   const [capo, setCapo] = useState("");
+  /** OpenSong pop_song_accidentals — preferred accidental style when transposing. */
+  const [accidental, setAccidental] = useState<"auto" | "sharps" | "flats">("auto");
+  const [linkSel, setLinkSel] = useState(-1);
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState("");
   // Print buttons open the standalone preview window (Chrome-style popup).
@@ -229,10 +232,26 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
     if (!song) return;
     // In-place chord-token transpose (OpenSong parity): only chord names in
     // "." lines change; the rest of the document is untouched.
-    const next = transposeSourceText(source, semitones, {});
+    const next = transposeSourceText(source, semitones, accidental === "auto" ? {} : { preferFlats: accidental === "flats" });
     setSource(next);
     applySource(song, next);
     setDirty(true);
+  };
+
+  /** Patch arrangement[0] (capo print flag etc.), creating it when absent. */
+  const updateArr0 = (patch: Partial<SongArrangement>) => {
+    if (!song) return;
+    const a0 = song.arrangements[0];
+    const arr: SongArrangement = a0
+      ? { ...a0, ...patch }
+      : {
+          id: crypto.randomUUID() as SongArrangement["id"],
+          name: "Default",
+          key: null, tempo: null, timeSignature: null,
+          capo: null, notes: null, sequence: [],
+          ...patch,
+        };
+    update({ arrangements: [arr, ...song.arrangements.slice(1)] });
   };
 
   /** Verse-background list helpers (OpenSong <backgrounds> model). */
@@ -313,74 +332,164 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
           >
             Backgrounds
           </button>
-          <span className="ml-auto text-xs text-zinc-500">Chord/Lyrics</span>
         </div>
         {status && <p className="text-xs text-zinc-500">{status}</p>}
 
-      {tab === "general" && (
-        <div className="grid shrink overflow-y-auto grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-4">
+      {/* OpenSong's editor pages are asymmetric two-column layouts, not a
+          uniform grid — the chord/lyrics editor IS the general page's left
+          column (MainWindow can_editor_general_song_editor). */}
+      <div className="flex min-h-0 flex-1 gap-3">
+        {/* General left column: Title / Presentation / the Chord-Lyrics editor.
+            Always mounted so the editor keeps undo history across page switches. */}
+        <div className={`flex w-[45%] min-w-0 flex-col gap-1.5 ${tab !== "general" ? "hidden" : ""}`}>
           <Field label="Title" value={song.title} onChange={(v) => update({ title: v })} />
-          <Field label="AKA" value={song.aka ?? ""} onChange={(v) => update({ aka: v || null })} />
-          <Field label="Author" value={song.authors.join("; ")} onChange={(v) => update({ authors: v.split(";").map((a) => a.trim()).filter(Boolean) })} />
-          <Field label="Copyright" value={song.copyright ?? ""} onChange={(v) => update({ copyright: v || null })} />
-          <Field label="CCLI #" value={song.ccliNumber ?? ""} onChange={(v) => update({ ccliNumber: v || null })} />
-          <Field
-            label="Themes"
-            value={[song.theme, song.secondaryTheme].filter(Boolean).join("; ")}
-            onChange={(v) => {
-              const [t, alt] = v.split(";").map((s) => s.trim());
-              update({ theme: t || null, secondaryTheme: alt || null });
-            }}
-          />
-          <Field label="Folder" value={song.folder ?? ""} onChange={(v) => update({ folder: v || null })} />
-          <Field label="Key" value={song.defaultKey ?? ""} onChange={(v) => update({ defaultKey: v || null })} />
-          <Field label="Key Line" value={song.keyLine ?? ""} onChange={(v) => update({ keyLine: v || null })} />
-          <Field label="Tempo" value={song.tempo ?? ""} onChange={(v) => update({ tempo: v || null })} />
-          <Field label="Time Signature" value={song.timeSignature ?? ""} onChange={(v) => update({ timeSignature: v || null })} />
-          <Field label="Capo" value={capo} onChange={setCapo} />
-          <Field label="Presentation" value={presentation} onChange={(v) => { setPresentation(v); setDirty(true); }} className="col-span-2" />
-        </div>
-      )}
-      {tab === "advanced" && (
-        <div className="grid shrink overflow-y-auto grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-4">
-          <Field label={userLabels[0] ?? "User Defined 1"} value={song.userFields.user1} onChange={(v) => update({ userFields: { ...song.userFields, user1: v } })} />
-          <Field label={userLabels[1] ?? "User Defined 2"} value={song.userFields.user2} onChange={(v) => update({ userFields: { ...song.userFields, user2: v } })} />
-          <Field label={userLabels[2] ?? "User Defined 3"} value={song.userFields.user3} onChange={(v) => update({ userFields: { ...song.userFields, user3: v } })} />
-          <Field label="Background" value={song.background ?? ""} onChange={(v) => update({ background: v || null })} />
-          <Field label="Notes" value={song.notes ?? ""} onChange={(v) => update({ notes: v || null })} className="col-span-2" />
-        </div>
-      )}
-      {tab === "backgrounds" && (
-        <div className="flex shrink flex-col gap-2 overflow-y-auto">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-            <label className="flex items-center gap-1">
-              <input type="radio" name="bg-resize" checked={bgs().resize === "screen"} onChange={() => updateBg({ resize: "screen" })} />
-              Fit to screen
-            </label>
-            <label className="flex items-center gap-1">
-              <input type="radio" name="bg-resize" checked={bgs().resize === "body"} onChange={() => updateBg({ resize: "body" })} />
-              Fit to body
-            </label>
-            <label className="flex items-center gap-1">
-              <input type="radio" name="bg-resize" checked={bgs().resize === ""} onChange={() => updateBg({ resize: "" })} />
-              No resize
-            </label>
-            <label className="flex items-center gap-1">
-              <input type="checkbox" checked={bgs().keepAspect} onChange={(e) => updateBg({ keepAspect: e.target.checked })} />
-              Keep aspect
-            </label>
-            <label className="flex items-center gap-1">
-              <input type="checkbox" checked={bgs().link} onChange={(e) => updateBg({ link: e.target.checked })} />
-              Store as link
-            </label>
-            <label className="flex items-center gap-1">
-              <input type="checkbox" checked={bgs().asText} onChange={(e) => updateBg({ asText: e.target.checked })} />
-              Background as text
-            </label>
+          <Field label="Presentation" value={presentation} onChange={(v) => { setPresentation(v); setDirty(true); }} />
+          <span className="text-xs text-zinc-500">Chord/Lyrics:</span>
+          <div className="min-h-0 flex-1 overflow-hidden rounded border border-zinc-300 dark:border-zinc-700">
+            <CodeMirror
+              value={source}
+              height="100%"
+              theme={dark ? "dark" : "light"}
+              style={{ height: "100%" }}
+              extensions={[opensongLanguage]}
+              onCreateEditor={(view) => { viewRef.current = view; }}
+              onChange={(v) => {
+                setSource(v);
+                setDirty(true);
+              }}
+            />
           </div>
-          <div>
+        </div>
+
+        {/* General right column: author block, insert grid, transpose, links */}
+        {tab === "general" && (
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5 overflow-y-auto">
+            <Field label="Author" value={song.authors.join("; ")} onChange={(v) => update({ authors: v.split(";").map((a) => a.trim()).filter(Boolean) })} />
+            <Field label="Copyright" value={song.copyright ?? ""} onChange={(v) => update({ copyright: v || null })} />
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Hymn #" value={song.hymnNumber ?? ""} onChange={(v) => update({ hymnNumber: v || null })} />
+              <Field label="CCLI #" value={song.ccliNumber ?? ""} onChange={(v) => update({ ccliNumber: v || null })} />
+            </div>
+            <span className="mt-1 text-xs text-zinc-500">Insert:</span>
+            <div className="grid grid-cols-2 gap-1">
+              <button onClick={ins.section} className={btn}>Section</button>
+              <button onClick={ins.comment} className={btn}>Comment</button>
+              <button onClick={ins.lyrics} className={btn}>Lyrics</button>
+              <button onClick={ins.column} className={btn}>Column</button>
+              <button onClick={ins.multiVerse} className={btn}>Multi-Verse</button>
+              <button onClick={ins.page} className={btn}>Page</button>
+            </div>
+            <fieldset className="mt-1 rounded border border-zinc-300 p-1.5 dark:border-zinc-700">
+              <legend className="px-1 text-xs text-zinc-500">Transpose</legend>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-zinc-500">Using:</span>
+                <select className={input} value={accidental} onChange={(e) => setAccidental(e.target.value as typeof accidental)}>
+                  <option value="auto">Auto</option>
+                  <option value="sharps">Sharps</option>
+                  <option value="flats">Flats</option>
+                </select>
+                <select
+                  className={input}
+                  value="0"
+                  onChange={(e) => {
+                    const n = Number.parseInt(e.target.value, 10);
+                    if (n !== 0) transpose(n);
+                    e.target.value = "0";
+                  }}
+                >
+                  {[-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6].map((n) => (
+                    <option key={n} value={n}>{n > 0 ? `+${n}` : n}</option>
+                  ))}
+                </select>
+              </div>
+            </fieldset>
+            <span className="mt-1 text-xs text-zinc-500">Linked Songs:</span>
+            <div className="flex min-h-14 flex-col rounded border border-zinc-300 dark:border-zinc-700">
+              {(song.linkedSongs ?? []).map((l, i) => (
+                <button
+                  key={i}
+                  onClick={() => setLinkSel(i)}
+                  className={`px-2 py-0.5 text-left text-sm ${linkSel === i ? "bg-indigo-100 dark:bg-indigo-950" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
+                >
+                  {l}
+                </button>
+              ))}
+              {(song.linkedSongs ?? []).length === 0 && <span className="px-2 py-1 text-xs text-zinc-400">None</span>}
+            </div>
+            <div className="grid grid-cols-2 gap-1">
+              <button
+                className={btn}
+                onClick={() => void (async () => {
+                  const t = await dlg.prompt("Link song (title):", "");
+                  if (t?.trim()) update({ linkedSongs: [...(song.linkedSongs ?? []), t.trim()] });
+                })()}
+              >
+                Add link
+              </button>
+              <button
+                className={btn}
+                disabled={linkSel < 0 || linkSel >= (song.linkedSongs ?? []).length}
+                onClick={() => {
+                  update({ linkedSongs: (song.linkedSongs ?? []).filter((_, j) => j !== linkSel) });
+                  setLinkSel(-1);
+                }}
+              >
+                Remove link
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Advanced page: themes list left, music fields right
+            (MainWindow can_editor_advanced_song_editor). */}
+        {tab === "advanced" && (
+          <>
+            <div className="flex w-[45%] min-w-0 flex-col gap-1">
+              <span className="text-xs text-zinc-500">Themes:</span>
+              <div className="flex flex-1 flex-col gap-1.5 overflow-y-auto rounded border border-zinc-300 p-1.5 dark:border-zinc-700">
+                <Field label="Theme" value={song.theme ?? ""} onChange={(v) => update({ theme: v || null })} />
+                <Field label="Alternate Theme" value={song.secondaryTheme ?? ""} onChange={(v) => update({ secondaryTheme: v || null })} />
+              </div>
+            </div>
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5 overflow-y-auto">
+              <div className="flex items-end gap-3">
+                <label className="flex flex-col gap-0.5">
+                  <span className="text-xs text-zinc-500">Capo:</span>
+                  <select className={input} value={capo} onChange={(e) => { setCapo(e.target.value); setDirty(true); }}>
+                    <option value="">(none)</option>
+                    {[1, 2, 3, 4, 5, 6, 7].map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </label>
+                <label className="flex items-center gap-1 pb-1.5 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={song.arrangements[0]?.capoPrint === true}
+                    onChange={(e) => updateArr0({ capoPrint: e.target.checked })}
+                  />
+                  Print
+                </label>
+              </div>
+              <Field label="Key" value={song.defaultKey ?? ""} onChange={(v) => update({ defaultKey: v || null })} />
+              <Field label="Time Signature" value={song.timeSignature ?? ""} onChange={(v) => update({ timeSignature: v || null })} />
+              <Field label="Tempo" value={song.tempo ?? ""} onChange={(v) => update({ tempo: v || null })} />
+              <Field label="AKA" value={song.aka ?? ""} onChange={(v) => update({ aka: v || null })} />
+              <Field label="Key Line" value={song.keyLine ?? ""} onChange={(v) => update({ keyLine: v || null })} />
+              <Field label={userLabels[0] ?? "User Defined 1"} value={song.userFields.user1} onChange={(v) => update({ userFields: { ...song.userFields, user1: v } })} />
+              <Field label={userLabels[1] ?? "User Defined 2"} value={song.userFields.user2} onChange={(v) => update({ userFields: { ...song.userFields, user2: v } })} />
+              <Field label={userLabels[2] ?? "User Defined 3"} value={song.userFields.user3} onChange={(v) => update({ userFields: { ...song.userFields, user3: v } })} />
+              <Field label="Folder" value={song.folder ?? ""} onChange={(v) => update({ folder: v || null })} />
+              <Field label="Background" value={song.background ?? ""} onChange={(v) => update({ background: v || null })} />
+              <Field label="Notes" value={song.notes ?? ""} onChange={(v) => update({ notes: v || null })} />
+            </div>
+          </>
+        )}
+
+        {/* Backgrounds page: full-width verse list, then stacked options
+            (MainWindow can_editor_backgrounds_song_editor). */}
+        {tab === "backgrounds" && (
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5 overflow-y-auto">
             <span className="text-xs text-zinc-500">Verse specific backgrounds:</span>
-            <div className="mt-1 flex flex-col gap-1">
+            <div className="flex flex-col gap-1">
               {bgs().items.map((item, i) => (
                 <div key={i} className="flex items-center gap-2 rounded border border-zinc-300 p-1.5 dark:border-zinc-700">
                   <span className="w-16 text-sm font-medium">{item.verse || "(all)"}</span>
@@ -400,24 +509,35 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
               ))}
               {bgs().items.length === 0 && <p className="text-xs text-zinc-500">No verse backgrounds. Pick a section and an image to add one.</p>}
             </div>
+            <BackgroundAdder sections={song.sections.map((s) => s.label)} onAdd={(v, f) => void addBackground(v, f)} />
+            <div className="mt-2 flex flex-col gap-1 text-sm">
+              <label className="flex items-center gap-1.5">
+                <input type="radio" name="bg-resize" checked={bgs().resize === "screen"} onChange={() => updateBg({ resize: "screen" })} />
+                Resize images to fit the screen
+              </label>
+              <label className="flex items-center gap-1.5">
+                <input type="radio" name="bg-resize" checked={bgs().resize === "body"} onChange={() => updateBg({ resize: "body" })} />
+                Resize images to fit the body area
+              </label>
+              <label className="flex items-center gap-1.5">
+                <input type="radio" name="bg-resize" checked={bgs().resize === ""} onChange={() => updateBg({ resize: "" })} />
+                Do not resize images
+              </label>
+              <label className="flex items-center gap-1.5">
+                <input type="checkbox" checked={bgs().keepAspect} onChange={(e) => updateBg({ keepAspect: e.target.checked })} />
+                Keep aspect ratio when resizing images
+              </label>
+              <label className="flex items-center gap-1.5">
+                <input type="checkbox" checked={bgs().link} onChange={(e) => updateBg({ link: e.target.checked })} />
+                Do not store the image in the song, use a link
+              </label>
+              <label className="flex items-center gap-1.5">
+                <input type="checkbox" checked={bgs().asText} onChange={(e) => updateBg({ asText: e.target.checked })} />
+                Show the background instead of the verse text
+              </label>
+            </div>
           </div>
-          <BackgroundAdder sections={song.sections.map((s) => s.label)} onAdd={(v, f) => void addBackground(v, f)} />
-        </div>
-      )}
-
-      <div className="min-h-0 flex-1 overflow-hidden rounded border border-zinc-300 dark:border-zinc-700">
-        <CodeMirror
-          value={source}
-          height="100%"
-          theme={dark ? "dark" : "light"}
-          style={{ height: "100%" }}
-          extensions={[opensongLanguage]}
-          onCreateEditor={(view) => { viewRef.current = view; }}
-          onChange={(v) => {
-            setSource(v);
-            setDirty(true);
-          }}
-        />
+        )}
       </div>
       </div>
 
@@ -439,14 +559,6 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
         </fieldset>
 
         <fieldset className="rounded border border-zinc-300 p-1.5 dark:border-zinc-700">
-          <legend className="px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Transpose</legend>
-          <div className="flex gap-1">
-            <button onClick={() => transpose(-1)} className={`${btn} flex-1`} title="Down a half step">-♭</button>
-            <button onClick={() => transpose(1)} className={`${btn} flex-1`} title="Up a half step">+♯</button>
-          </div>
-        </fieldset>
-
-        <fieldset className="rounded border border-zinc-300 p-1.5 dark:border-zinc-700">
           <legend className="px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Print</legend>
           <div className="flex flex-col gap-1">
             <button
@@ -461,18 +573,6 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
             >
               Lyrics sheet
             </button>
-          </div>
-        </fieldset>
-
-        <fieldset className="rounded border border-zinc-300 p-1.5 dark:border-zinc-700">
-          <legend className="px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Insert</legend>
-          <div className="flex flex-col gap-1">
-            <button onClick={ins.lyrics} className={btn}>Lyrics</button>
-            <button onClick={ins.comment} className={btn}>Comment</button>
-            <button onClick={ins.column} className={btn}>Column</button>
-            <button onClick={ins.page} className={btn}>Page</button>
-            <button onClick={ins.multiVerse} className={btn}>Multi-Verse</button>
-            <button onClick={ins.section} className={btn}>Section</button>
           </div>
         </fieldset>
 
