@@ -20,6 +20,39 @@ let serverProc = null;
 let outputWindow = null;
 let controlWindow = null;
 let presenterWindow = null;
+/** Lets programmatic closes bypass the presentation windows' exit confirm. */
+let closeConfirmed = false;
+let appQuitting = false;
+app.on("before-quit", () => (appQuitting = true));
+
+/**
+ * Closing a presentation window (helper or output canvas) ends the whole
+ * presentation — confirm first. `action` runs on "Exit". `getParent` picks
+ * the window the dialog attaches to — the operator's helper, not the
+ * projection canvas.
+ */
+function confirmExitPresentation(getParent, action) {
+  return (e) => {
+    if (closeConfirmed || appQuitting) return;
+    e.preventDefault();
+    void dialog
+      .showMessageBox(getParent(), {
+        type: "question",
+        title: "PraiseSuite",
+        message: "Exit the presentation?",
+        buttons: ["Exit", "Cancel"],
+        defaultId: 0,
+        cancelId: 1,
+      })
+      .then(({ response }) => {
+        if (response === 0) {
+          closeConfirmed = true;
+          action();
+          closeConfirmed = false;
+        }
+      });
+  };
+}
 
 /** Fetch carrying the internal token — main-process calls have no cookies. */
 const localFetch = (url, init) =>
@@ -247,6 +280,12 @@ function openOutputWindow(url) {
     });
   }
   outputWindow.loadURL(url ?? `${BASE}/receiver`);
+  // The canvas has no X in fullscreen dual/single modes — this mainly covers
+  // the framed preview window. Prompt shows on the helper, not the canvas.
+  outputWindow.on(
+    "close",
+    confirmExitPresentation(() => presenterWindow ?? outputWindow, endPresentation),
+  );
   outputWindow.on("closed", () => {
     outputWindow = null;
     // Single-screen mode: the output window IS the presentation (OpenSong
@@ -276,7 +315,9 @@ ipcMain.handle("ps:toggle-output", () => {
 ipcMain.handle("ps:set-display-mode", (_e, mode) => {
   displayMode = typeof mode === "string" && mode !== "" ? mode : "auto";
   if (outputWindow !== null) {
+    closeConfirmed = true;
     outputWindow.close();
+    closeConfirmed = false;
     outputWindow = null;
   }
   // Output windows exist only while a presentation is running.
@@ -306,6 +347,10 @@ ipcMain.handle("ps:present", (_e, mode, serviceId, itemId) => {
       webPreferences: { contextIsolation: true, preload: path.join(dir, "preload.cjs") },
     });
     presenterWindow.loadURL(`${BASE}/${q}`);
+    presenterWindow.on(
+      "close",
+      confirmExitPresentation(() => presenterWindow, () => presenterWindow?.close()),
+    );
     presenterWindow.on("closed", () => {
       presenterWindow = null;
       endPresentation();
@@ -323,8 +368,11 @@ ipcMain.handle("ps:present", (_e, mode, serviceId, itemId) => {
 
 /** End the presentation: close presentation windows, restore the control window. */
 function endPresentation() {
+  // Explicit exit paths (Return/esc, mode switches) don't re-ask.
+  closeConfirmed = true;
   if (outputWindow !== null) outputWindow.close();
   if (presenterWindow !== null) presenterWindow.close();
+  closeConfirmed = false;
   void endLiveSessions();
   if (controlWindow === null) openControlWindow();
 }
