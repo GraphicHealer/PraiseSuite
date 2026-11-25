@@ -171,16 +171,17 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
   let chordCover: "armed" | "digits" | "space" | "none" = "none";
   let coverSpaceLeft = 0;
 
-  const pushLine = (line: LyricLine, defaultKey?: string) => {
+  const pushLine = (line: LyricLine, defaultKey?: string, srcIdx?: number) => {
     const target = section ?? defaultSection(defaultKey ?? lastDefaultKey);
     if (pendingBreak !== false && line.breakBefore === "none") {
       line.breakBefore = pendingBreak;
     }
     pendingBreak = false;
+    if (srcIdx !== undefined) line.sourceLine = srcIdx;
     target.lines.push(line);
   };
 
-  for (const line of raw) {
+  for (const [srcIdx, line] of raw.entries()) {
     const c0 = line.charAt(0);
     if (/^\|{2,}$/.test(line)) {
       // A line that is only "||" is a bare slide separator — always a break.
@@ -228,27 +229,35 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
       continue;
     }
     if (c0 === ";") {
-      pushLine({
-        text: line.slice(1),
-        chords: [],
-        breakBefore: "none",
-        prefix: null,
-        kind: "comment",
-        lang: null,
-      });
+      pushLine(
+        {
+          text: line.slice(1),
+          chords: [],
+          breakBefore: "none",
+          prefix: null,
+          kind: "comment",
+          lang: null,
+        },
+        undefined,
+        srcIdx,
+      );
       pendingChords = [];
       chordCover = "none";
       continue;
     }
     if (c0 === "-") {
-      pushLine({
-        text: line.slice(1),
-        chords: [],
-        breakBefore: "none",
-        prefix: null,
-        kind: "directive",
-        lang: null,
-      });
+      pushLine(
+        {
+          text: line.slice(1),
+          chords: [],
+          breakBefore: "none",
+          prefix: null,
+          kind: "directive",
+          lang: null,
+        },
+        undefined,
+        srcIdx,
+      );
       pendingChords = [];
       chordCover = "none";
       continue;
@@ -298,6 +307,7 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
           lang: null,
         },
         prefix ?? "",
+        srcIdx,
       );
     });
   }

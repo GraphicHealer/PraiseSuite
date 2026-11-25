@@ -338,6 +338,21 @@ describe("round-trip export", () => {
       expect(b).toEqual(a);
     }
   });
+
+  it("reconstructs dict-merged untagged lyrics in source order", () => {
+    // Man Of Sorrows: untagged verse block 1-5 then chorus block 1-5 — the
+    // dict merges them into [v1,c1] [v2,c2]…, and sourceLine provenance
+    // interleaves them back on export (re-review: byte-identical round-trip).
+    const src = fixtureSong("Man Of Sorrows");
+    const parsed = parseOpenSongSong(src).song;
+    const song = materializeSong(parsed, ids);
+    const out = serializeOpenSongSong(song);
+    const srcLyrics = /<lyrics>([\s\S]*?)<\/lyrics>/.exec(src)![1]!.replace(/\r\n?/g, "\n");
+    const outLyrics = /<lyrics>([\s\S]*?)<\/lyrics>/.exec(out)![1]!;
+    expect(outLyrics.split("\n").map((l) => l.trimEnd())).toEqual(
+      srcLyrics.split("\n").map((l) => l.trimEnd()),
+    );
+  });
 });
 
 describe("duplicates + pipeline", () => {

@@ -67,12 +67,14 @@ function chordLine(line: { text: string; chords: { offset: number; chord: { disp
   return "." + chars.join("").trimEnd();
 }
 
-/** Serialize one section back to OpenSong lyric text. */
-function serializeSection(s: SongSection): string {
-  // Untagged source content (default "" section and digit "1"-"9"
-  // subsections) has no [header] in OpenSong files (D8).
-  const noHeader = s.untagged === true || (s.label === "" && Object.keys(s.options).length === 0);
-  const out: string[] = noHeader ? [] : [sectionHeader(s)];
+/** Serialize a line stream back to OpenSong lyric text (no section header). */
+function serializeLines(
+  lines: readonly import("../../domain/songs/types.js").LyricLine[],
+  /** True for a line whose section recorded a leading blank line — emit ""
+   *  before it (dict-merge reconstruction). */
+  hasLeadingBlank?: (line: import("../../domain/songs/types.js").LyricLine) => boolean,
+): string[] {
+  const out: string[] = [];
   // "inline" break pieces rejoin into one source line (with merged chords).
   let pending: { text: string; chords: { offset: number; chord: { display: string } }[]; prefix: string } | null = null;
   // SongML FindLyricLineCount: one "." line covers a whole run of digit-
@@ -89,7 +91,12 @@ function serializeSection(s: SongSection): string {
     pending = null;
   };
 
-  for (const line of s.lines) {
+  for (const line of lines) {
+    if (hasLeadingBlank?.(line) === true) {
+      flush();
+      out.push("");
+      lastDigitChord = null;
+    }
     if (line.breakBefore === "slide") {
       flush();
       out.push("");
@@ -130,19 +137,60 @@ function serializeSection(s: SongSection): string {
     };
   }
   flush();
-  return out.join("\n");
+  return out;
+}
+
+/** Serialize one section back to OpenSong lyric text. */
+function serializeSection(s: SongSection): string {
+  // Untagged source content (default "" section and digit "1"-"9"
+  // subsections) has no [header] in OpenSong files (D8).
+  const noHeader = s.untagged === true || (s.label === "" && Object.keys(s.options).length === 0);
+  const out: string[] = noHeader ? [] : [sectionHeader(s)];
+  return out.concat(serializeLines(s.lines)).join("\n");
+}
+
+/**
+ * The untagged block serializes as ONE stream sorted by sourceLine: dict
+ * subsections merge non-consecutive same-key lines (e.g. verse1+chorus1),
+ * so per-section emission can't recover source order — interleaving lines
+ * across subsections can (Man Of Sorrows).
+ */
+function serializeUntaggedBlock(sections: readonly SongSection[]): string {
+  type Entry = { line: import("../../domain/songs/types.js").LyricLine };
+  const all: Entry[] = [];
+  const blankBefore = new Map<import("../../domain/songs/types.js").LyricLine, boolean>();
+  for (const sec of sections) {
+    const sorted = [...sec.lines].sort(
+      (a, b) => (a.sourceLine ?? Number.MAX_SAFE_INTEGER) - (b.sourceLine ?? Number.MAX_SAFE_INTEGER),
+    );
+    if (sec.leadingBlank === true && sorted[0] !== undefined) blankBefore.set(sorted[0], true);
+    for (const line of sorted) all.push({ line });
+  }
+  all.sort(
+    (a, b) => (a.line.sourceLine ?? Number.MAX_SAFE_INTEGER) - (b.line.sourceLine ?? Number.MAX_SAFE_INTEGER),
+  );
+  return serializeLines(
+    all.map((e) => e.line),
+    (l) => blankBefore.get(l) === true,
+  ).join("\n");
 }
 
 /**
  * Join serialized sections: "\n\n" when a blank source line separated them
  * (leadingBlank), "\n" when the next header followed directly. Sections
  * parsed before leadingBlank existed default to "\n\n" (the old join).
+ * The leading untagged run serializes as one source-ordered stream.
  */
 function joinSections(sections: readonly SongSection[]): string {
+  let i = 0;
+  while (i < sections.length && sections[i]!.untagged === true) i++;
+  const chunks: { text: string; leadingBlank: boolean | undefined }[] = [];
+  if (i > 0) chunks.push({ text: serializeUntaggedBlock(sections.slice(0, i)), leadingBlank: undefined });
+  for (const s of sections.slice(i)) chunks.push({ text: serializeSection(s), leadingBlank: s.leadingBlank });
   let out = "";
-  sections.forEach((s, i) => {
-    if (i > 0) out += s.leadingBlank === false ? "\n" : "\n\n";
-    out += serializeSection(s);
+  chunks.forEach((c, n) => {
+    if (n > 0) out += c.leadingBlank === false ? "\n" : "\n\n";
+    out += c.text;
   });
   return out;
 }

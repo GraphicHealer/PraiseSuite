@@ -43,6 +43,12 @@ export interface LyricLine {
   kind: LyricLineKind;
   /** 1 or 2 within a bilingual section; null otherwise. */
   lang: 1 | 2 | null;
+  /**
+   * Original <lyrics> source line index — provenance so export can
+   * interleave dict-merged untagged subsections back into source order
+   * (absent on lines created in the editor).
+   */
+  sourceLine?: number;
 }
 
 export interface SongSection {
