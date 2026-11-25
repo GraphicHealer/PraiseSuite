@@ -3,6 +3,7 @@ import {
   buildPlan,
   indexOfPosition,
   navigate,
+  parseOpenSongLyrics,
   positionOfSlide,
   type Service,
   type Song,
@@ -369,6 +370,28 @@ describe("buildPlan", () => {
     expect(p.slides.filter((sl) => !sl.blank).map((sl) => sl.lines)).toEqual([
       ["v1a", "v1b", "c1"],
       ["v2"],
+    ]);
+  });
+
+  it("keeps |/|| pieces of numbered lines in their verse instance (re-review C1)", () => {
+    // A digit-prefixed line split on | or || belongs to that subsection —
+    // the continuation piece must not be filtered out (The Solid Rock V3).
+    const { sections } = parseOpenSongLyrics("[V]\n1numA one||numA two\n2numB one|numB two");
+    const s = song("pieces");
+    s.sections = [
+      { id: "sp" as Song["sections"][0]["id"], ...sections[0]! },
+    ];
+    s.arrangements[0]!.sequence = [
+      { id: "pp1" as Song["arrangements"][0]["sequence"][0]["id"], sectionId: "sp" as Song["sections"][0]["id"], repeats: 1, prefix: "1" },
+      { id: "pp2" as Song["arrangements"][0]["sequence"][0]["id"], sectionId: "sp" as Song["sections"][0]["id"], repeats: 1, prefix: "2" },
+    ];
+    const svc = { ...service, items: [service.items[0]!] };
+    const p = buildPlan(svc, new Map([["song1" as Song["id"], s]]));
+    // V1: the || splits into two slides; V2: the | stays one slide, two lines.
+    expect(p.slides.filter((sl) => !sl.blank).map((sl) => sl.lines)).toEqual([
+      ["numA one"],
+      ["numA two"],
+      ["numB one", "numB two"],
     ]);
   });
 

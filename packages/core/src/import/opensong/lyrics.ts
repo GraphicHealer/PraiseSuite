@@ -285,13 +285,15 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
     if (chordCover === "none") pendingChords = [];
 
     const pieces = splitOnBreaks(text, lineChords);
-    pieces.forEach((piece, idx) => {
+    pieces.forEach((piece) => {
       pushLine(
         {
           text: piece.text,
           chords: piece.chords,
           breakBefore: piece.break,
-          prefix: idx === 0 ? prefix : null,
+          // | / || continuation pieces keep the source prefix — in SongML
+          // they are the same subsection line (re-review C1).
+          prefix,
           kind: "lyric",
           lang: null,
         },
