@@ -343,6 +343,35 @@ describe("buildPlan", () => {
     expect(on.slides.filter((sl) => !sl.blank).map((sl) => sl.lines)).toEqual([["a"], ["b"], ["c"]]);
   });
 
+  it("does not split numbered verses on blank lines (SongML dict model)", () => {
+    // Blanks land in the "" subsection, never inside digit subsections —
+    // a "slide" break on a digit-prefixed line is ignored at presentation
+    // (re-review B1: A Mighty Fortress must stay V1 V2 V3 V4 when
+    // blank_is_slide_change is on).
+    const s = song("numbered");
+    s.sections = [
+      {
+        id: "sn" as Song["sections"][0]["id"], type: "verse", label: "V", options: {},
+        lines: [
+          { text: "v1a", chords: [], breakBefore: "none", prefix: "1", kind: "lyric", lang: null },
+          { text: "v1b", chords: [], breakBefore: "none", prefix: "1", kind: "lyric", lang: null },
+          { text: "c1", chords: [], breakBefore: "slide", prefix: "1", kind: "lyric", lang: null },
+          { text: "v2", chords: [], breakBefore: "none", prefix: "2", kind: "lyric", lang: null },
+        ],
+      },
+    ];
+    s.arrangements[0]!.sequence = [
+      { id: "pn1" as Song["arrangements"][0]["sequence"][0]["id"], sectionId: "sn" as Song["sections"][0]["id"], repeats: 1, prefix: "1" },
+      { id: "pn2" as Song["arrangements"][0]["sequence"][0]["id"], sectionId: "sn" as Song["sections"][0]["id"], repeats: 1, prefix: "2" },
+    ];
+    const svc = { ...service, items: [service.items[0]!] };
+    const p = buildPlan(svc, new Map([["song1" as Song["id"], s]]), { blankIsSlideChange: true });
+    expect(p.slides.filter((sl) => !sl.blank).map((sl) => sl.lines)).toEqual([
+      ["v1a", "v1b", "c1"],
+      ["v2"],
+    ]);
+  });
+
   it("navigates with clamping", () => {
     const sess = "sess" as never;
     const p0 = positionOfSlide(plan, 0, sess);

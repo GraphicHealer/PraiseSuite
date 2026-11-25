@@ -61,6 +61,7 @@ const ServiceSchema = z
   .object({
     id: z.string(),
     name: z.string().optional(),
+    revision: z.object({ id: z.string() }).loose(),
     items: z.array(z.object({ id: z.string(), kind: z.string() }).loose()).optional(),
   })
   .loose();
@@ -981,13 +982,21 @@ async function sessionPlan(
     new Map(songs.filter((s): s is Song => s !== null).map((s) => [s.id, s])),
     {
       songStylePreferred: storage?.getSetting("style.songStylePreferred") !== "false",
-      blankIsSlideChange:
-        (JSON.parse(storage?.getSetting("style.options") ?? "{}") as {
-          blankIsSlideChange?: boolean;
-        }).blankIsSlideChange === true,
+      blankIsSlideChange: styleOptions(storage).blankIsSlideChange === true,
     },
   );
   return { service, plan };
+}
+
+/** Stored PresentSettings options; malformed JSON falls back to defaults. */
+function styleOptions(storage: SqliteStorage | undefined): { blankIsSlideChange?: boolean } {
+  try {
+    return JSON.parse(storage?.getSetting("style.options") ?? "{}") as {
+      blankIsSlideChange?: boolean;
+    };
+  } catch {
+    return {};
+  }
 }
 
 /** Load the stored global style (defaults when unset). */

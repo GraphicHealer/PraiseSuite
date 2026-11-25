@@ -389,6 +389,17 @@ describe("api v1", () => {
     expect(Buffer.from(await res.arrayBuffer())).toEqual(png);
   });
 
+  it("PUT service without revision returns 400, not 500", async () => {
+    // Malformed bodies fail schema validation instead of crashing inside
+    // the repository layer (re-review B2).
+    const res = await api(
+      "/api/v1/services/no-rev",
+      { method: "PUT", body: JSON.stringify({ id: "no-rev", name: "x" }) },
+      adminToken,
+    );
+    expect(res.status).toBe(400);
+  });
+
   it("LAN toggle reports addresses", async () => {
     let res = await api("/api/v1/server/network", {}, adminToken);
     expect((await res.json()) as { lanEnabled: boolean }).toMatchObject({ lanEnabled: false });

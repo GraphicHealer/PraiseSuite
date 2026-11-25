@@ -79,7 +79,9 @@ export interface PresentationPlan {
 /** Lines -> slide slices: "bar" (||) always starts a new slice; "slide" is a
  * blank source line — a boundary ONLY when blank_is_slide_change is on
  * (SongML includeBlankLines); "|" (inline) is a line break within the same
- * slide (SongML DeflateString). */
+ * slide (SongML DeflateString). Breaks only apply to unprefixed lines: in
+ * SongML's dict model a blank or bare || line has no digit prefix, so it
+ * lands in the "" subsection — numbered verses never split on them. */
 function slicesOfSection(
   section: SongSection,
   blankIsSlideChange: boolean,
@@ -88,6 +90,7 @@ function slicesOfSection(
   for (const line of section.lines) {
     if (line.kind !== "lyric") continue;
     if (
+      line.prefix === null &&
       (line.breakBefore === "bar" || (line.breakBefore === "slide" && blankIsSlideChange)) &&
       slices[slices.length - 1]!.lines.length > 0
     )
