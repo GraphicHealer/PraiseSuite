@@ -116,18 +116,9 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
     setDirty(true);
   };
 
-  /** OpenSong style/@blank_is_slide_change, honored by the lyric parser. */
-  const [blankIsSlideChange, setBlankIsSlideChange] = useState(false);
-  useEffect(() => {
-    api
-      .setting<{ blankIsSlideChange?: boolean }>("style.options")
-      .then((r) => setBlankIsSlideChange(r.value?.blankIsSlideChange === true))
-      .catch(() => {});
-  }, []);
-
   /** Rebuild sections from source text, preserving section ids by label. */
   const applySource = (base: Song, text: string = source): Song | null => {
-    const { sections: parsed, warnings } = parseOpenSongLyrics(text, { blankIsSlideChange });
+    const { sections: parsed, warnings } = parseOpenSongLyrics(text);
     const byLabel = new Map(base.sections.map((s) => [s.label, s.id]));
     const used = new Set<string>();
     const sections = parsed.map((s) => {

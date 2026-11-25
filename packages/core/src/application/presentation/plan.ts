@@ -76,14 +76,19 @@ export interface PresentationPlan {
   itemStart: number[];
 }
 
-/** Lines -> slide slices: only "slide"/"bar" start a new slice; "|" (inline)
- * is a line break within the same slide (SongML DeflateString). */
-function slicesOfSection(section: SongSection): { lines: string[]; langs: (1 | 2)[] }[] {
+/** Lines -> slide slices: "bar" (||) always starts a new slice; "slide" is a
+ * blank source line — a boundary ONLY when blank_is_slide_change is on
+ * (SongML includeBlankLines); "|" (inline) is a line break within the same
+ * slide (SongML DeflateString). */
+function slicesOfSection(
+  section: SongSection,
+  blankIsSlideChange: boolean,
+): { lines: string[]; langs: (1 | 2)[] }[] {
   const slices: { lines: string[]; langs: (1 | 2)[] }[] = [{ lines: [], langs: [] }];
   for (const line of section.lines) {
     if (line.kind !== "lyric") continue;
     if (
-      (line.breakBefore === "slide" || line.breakBefore === "bar") &&
+      (line.breakBefore === "bar" || (line.breakBefore === "slide" && blankIsSlideChange)) &&
       slices[slices.length - 1]!.lines.length > 0
     )
       slices.push({ lines: [], langs: [] });
@@ -140,9 +145,12 @@ export function buildPlan(
   songsById: ReadonlyMap<SongId, Song>,
   /** OpenSong song_style_preferred (default true): a song's own <style> may
    *  override an active set style-change for that song's slides. */
-  opts: { songStylePreferred?: boolean } = {},
+  opts: { songStylePreferred?: boolean; blankIsSlideChange?: boolean } = {},
 ): PresentationPlan {
   const songStylePreferred = opts.songStylePreferred ?? true;
+  // OpenSong style/@blank_is_slide_change (default false): blank source
+  // lines split slides only when on; they're always preserved on export.
+  const blankIsSlideChange = opts.blankIsSlideChange ?? false;
   const slides: PlanSlide[] = [];
   const itemStart: number[] = [];
   // OpenSong InsertBlanksIntoSet (style/@blanks): an empty slide before each
@@ -274,7 +282,7 @@ export function buildPlan(
           const backs = verseBacks.length > 0 ? verseBacks : allBacks.filter((b) => b.verse === "");
           const repeats = Math.max(1, as.repeats);
           for (let rep = 0; rep < repeats; rep++) {
-            slicesOfSection(section).forEach(({ lines, langs }, sliceIndex) => {
+            slicesOfSection(section, blankIsSlideChange).forEach(({ lines, langs }, sliceIndex) => {
               const bg = backs.length > 0 ? backs[Math.min(sliceIndex, backs.length - 1)]! : null;
               slides.push({
                 serviceItemId: item.id,

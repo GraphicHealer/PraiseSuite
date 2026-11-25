@@ -121,15 +121,14 @@ function splitOnBreaks(
 
 /**
  * Parse an OpenSong `<lyrics>` block into canonical sections (TAS 8.4):
- * `.` chord lines become offset-anchored annotations; `|`/`||` and blank
- * lines become slide breaks; `;` comments and `-` directives are preserved;
- * `1`-`9` line prefixes become the prefix column; `(L)` sections get
- * interleaved lang assignments.
+ * `.` chord lines become offset-anchored annotations; `|`/`||` breaks and
+ * blank lines are preserved verbatim (OpenSong stores <lyrics> verbatim —
+ * blanks only mean slide-changes at PRESENTATION time via
+ * blank_is_slide_change, see slicesOfSection); `;` comments and `-`
+ * directives are preserved; `1`-`9` line prefixes become the prefix column;
+ * `(L)` sections get interleaved lang assignments.
  */
-export function parseOpenSongLyrics(
-  lyrics: string,
-  opts?: { blankIsSlideChange?: boolean },
-): LyricsParseResult {
+export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
   const warnings: string[] = [];
   const sections: ParsedSection[] = [];
   const raw = lyrics
@@ -146,10 +145,19 @@ export function parseOpenSongLyrics(
   const defaultDict = new Map<string, ParsedSection>();
   const defaultOrder: string[] = [];
   let lastDefaultKey = "";
+  // "slide" = a blank source line (slide boundary only when
+  // blank_is_slide_change); "bar" = a bare "||" line (always a boundary).
+  let pendingBreak: false | "slide" | "bar" = false;
   const defaultSection = (key: string): ParsedSection => {
     let s = defaultDict.get(key);
     if (!s) {
-      s = { type: "other", label: key, lines: [], options: {} };
+      s = { type: "other", label: key, lines: [], options: {}, untagged: true };
+      // A blank source line between untagged subsections is the join, not an
+      // interior break — capture it on the section instead of the first line.
+      if (defaultOrder.length > 0) {
+        s.leadingBlank = pendingBreak === "slide";
+        if (pendingBreak === "slide") pendingBreak = false;
+      }
       defaultDict.set(key, s);
       defaultOrder.push(key);
     }
@@ -158,41 +166,37 @@ export function parseOpenSongLyrics(
   };
 
   let pendingChords: ChordAnnotation[] = [];
-  let pendingBreak = false;
   // SongML FindLyricLineCount: one chord line covers every consecutive
   // digit-prefixed line, or one space-prefixed line (+1 when bilingual).
   let chordCover: "armed" | "digits" | "space" | "none" = "none";
   let coverSpaceLeft = 0;
 
   const pushLine = (line: LyricLine, defaultKey?: string) => {
-    if (pendingBreak && line.breakBefore === "none") {
-      line.breakBefore = "slide";
+    const target = section ?? defaultSection(defaultKey ?? lastDefaultKey);
+    if (pendingBreak !== false && line.breakBefore === "none") {
+      line.breakBefore = pendingBreak;
     }
     pendingBreak = false;
-    const target = section ?? defaultSection(defaultKey ?? lastDefaultKey);
     target.lines.push(line);
   };
-
-  const blankIsSlideChange = opts?.blankIsSlideChange === true;
 
   for (const line of raw) {
     const c0 = line.charAt(0);
     if (/^\|{2,}$/.test(line)) {
-      // A line that is only "||" is a bare slide separator.
-      pendingBreak = true;
+      // A line that is only "||" is a bare slide separator — always a break.
+      pendingBreak = "bar";
       pendingChords = [];
       chordCover = "none";
       continue;
     }
     if (line === "" || /^\|$/.test(line)) {
-      // SongML LyricsToSections drops blank lines unless
-      // blank_is_slide_change is on (then AdjustSlideBreaks maps them to
-      // "||"). A lone "|" deflates to an empty display line — same rule.
-      if (blankIsSlideChange) {
-        pendingBreak = true;
-        pendingChords = [];
-        chordCover = "none";
-      }
+      // SongML stores <lyrics> verbatim: blanks are kept in the model as
+      // "slide" breaks (conditional at presentation time via
+      // blank_is_slide_change) so they export back exactly. A lone "|"
+      // deflates to an empty display line — same handling.
+      if (pendingBreak === false) pendingBreak = "slide";
+      pendingChords = [];
+      chordCover = "none";
       continue;
     }
     if (c0 === "[") {
@@ -207,6 +211,8 @@ export function parseOpenSongLyrics(
         options: parsed.options,
         lines: [],
       };
+      // A blank line between sections is the join, not an interior break.
+      section.leadingBlank = pendingBreak === "slide";
       sections.push(section);
       pendingBreak = false;
       pendingChords = [];

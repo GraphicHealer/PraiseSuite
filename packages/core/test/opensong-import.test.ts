@@ -78,16 +78,13 @@ describe("lyrics parser", () => {
     ]);
   });
 
-  it("drops blank lines by default; slide-breaks only with blank_is_slide_change", () => {
-    // SongML LyricsToSections: a blank line is skipped unless the setting
-    // maps it to "||". Default (off): the line vanishes, no slide break.
-    const off = parseOpenSongLyrics("[V1]\n line one\n\n line two");
-    expect(off.sections[0]!.lines).toHaveLength(2);
-    expect(off.sections[0]!.lines[1]!.breakBefore).toBe("none");
-    const on = parseOpenSongLyrics("[V1]\n line one\n\n line two", {
-      blankIsSlideChange: true,
-    });
-    expect(on.sections[0]!.lines[1]!.breakBefore).toBe("slide");
+  it("preserves blank lines as conditional slide breaks (verbatim storage)", () => {
+    // SongML stores <lyrics> verbatim: blanks always parse to "slide" breaks
+    // so they export back exactly; blank_is_slide_change only decides
+    // whether they split slides at presentation time (buildPlan).
+    const { sections } = parseOpenSongLyrics("[V1]\n line one\n\n line two");
+    expect(sections[0]!.lines).toHaveLength(2);
+    expect(sections[0]!.lines[1]!.breakBefore).toBe("slide");
   });
 
   it("treats || as a slide break and | as a line break within the slide", () => {

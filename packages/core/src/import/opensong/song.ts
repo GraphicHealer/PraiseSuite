@@ -111,10 +111,7 @@ function extractExtras(xml: string, root: Record<string, unknown>): string[] {
  * metadata fields, lyrics -> offset-anchored sections, `<presentation>`
  * order -> the default arrangement.
  */
-export function parseOpenSongSong(
-  xml: string,
-  opts?: { blankIsSlideChange?: boolean },
-): SongParseResult {
+export function parseOpenSongSong(xml: string): SongParseResult {
   const warnings: string[] = [];
   let doc: unknown;
   try {
@@ -127,10 +124,7 @@ export function parseOpenSongSong(
     throw new Error("Invalid OpenSong song: no <song> root element");
   }
 
-  const { sections, warnings: lyricWarnings } = parseOpenSongLyrics(
-    textOf(root["lyrics"]),
-    opts,
-  );
+  const { sections, warnings: lyricWarnings } = parseOpenSongLyrics(textOf(root["lyrics"]));
   warnings.push(...lyricWarnings);
 
   const capoRaw = textOf(root["capo"]).trim();
@@ -217,7 +211,8 @@ export function parseOpenSongSong(
         user2: asString(root["user2"]),
         user3: asString(root["user3"]),
       },
-      background: str(root["background"]),
+      // <background></background> present-but-empty round-trips as "" (null = absent).
+      background: root["background"] === undefined ? null : asString(root["background"]),
       backgrounds: parseBackgrounds(root["backgrounds"]),
       notes: str(root["notes"]),
       hymnNumber: str(root["hymn_number"]),

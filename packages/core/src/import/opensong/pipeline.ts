@@ -5,7 +5,6 @@ import type { Service } from "../../domain/services/types.js";
 import type { MediaAssetId, RevisionId, ServiceId, ServiceItemId, SongId } from "../../ids.js";
 import { materializeSong, parseOpenSongSong, type ParsedSong } from "./song.js";
 import { parseOpenSongSet, resolveSongRefs, type ParsedServiceItem } from "./set.js";
-import { parsePresentSettings } from "./settings.js";
 import {
   detectDuplicates,
   existingInfo,
@@ -79,17 +78,6 @@ export function analyzeImport(
   const sets: AnalyzedSet[] = [];
   const skipped: ImportAnalysis["skipped"] = [];
 
-  // An embedded PresentSettings file controls blank-line slide behavior.
-  let blankIsSlideChange = false;
-  for (const file of files) {
-    if (!file.text.includes("<present_settings")) continue;
-    try {
-      blankIsSlideChange = parsePresentSettings(file.text).options.blankIsSlideChange;
-    } catch {
-      // ignore malformed settings files
-    }
-  }
-
   for (const file of files) {
     const name = file.path.split("/").pop() ?? file.path;
     if (file.text.includes("<present_settings")) {
@@ -106,7 +94,7 @@ export function analyzeImport(
         const parsed = parseOpenSongSet(file.text, name);
         sets.push({ path: file.path, name, items: parsed.items, warnings: parsed.warnings });
       } else {
-        const parsed = parseOpenSongSong(file.text, { blankIsSlideChange });
+        const parsed = parseOpenSongSong(file.text);
         songs.push({ path: file.path, song: parsed.song, warnings: parsed.warnings });
       }
     } catch (e) {

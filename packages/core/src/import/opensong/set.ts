@@ -106,6 +106,10 @@ export function parseOpenSongSet(xml: string, fallbackName: string): SetParseRes
       if (keepAspect) config["keepAspect"] = keepAspect;
       const descSub = asString(group["@_descriptions_in_subtitle"]);
       if (descSub) config["descriptionsInSubtitle"] = descSub;
+      // Group-level <description> (OpenSong image group caption) — distinct
+      // from per-slide descriptions inside <slides>.
+      const groupDesc = asString(group["description"]);
+      if (groupDesc) config["description"] = groupDesc;
       items.push({ ...base, kind: "media", images: imagesOf(group) });
     } else if (type === "style") {
       // OpenSong mid-set style change: @action new|revert + <style> doc.

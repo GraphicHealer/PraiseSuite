@@ -27,10 +27,10 @@ export interface ChordAnnotation {
 export type LyricLineKind = "lyric" | "comment" | "directive";
 
 /**
- * Break before this line (SongML AdjustSlideBreaks): "slide" = blank-line
- * boundary (only when blank_is_slide_change is on); "bar" = || boundary
- * (always a new slide); "inline" = | mid-line split — a new line WITHIN the
- * same slide.
+ * Break before this line (SongML AdjustSlideBreaks): "slide" = a blank
+ * source line — written back as "" and splits the slide ONLY when
+ * blank_is_slide_change is on; "bar" = || boundary (always a new slide);
+ * "inline" = | mid-line split — a new line WITHIN the same slide.
  */
 export type LineBreak = "none" | "slide" | "inline" | "bar";
 
@@ -53,6 +53,14 @@ export interface SongSection {
   lines: LyricLine[];
   /** Section options from `[X](opt;k=v)` syntax; valueless flags map to null (e.g. L). */
   options: Record<string, string | null>;
+  /**
+   * True when this section came from untagged source content (lines before
+   * any `[header]`, or digit-prefixed `1`-`9` subsections) — export writes
+   * no `[label]` header for these, matching the original file.
+   */
+  untagged?: boolean;
+  /** A blank source line separated this section's `[header]` from the previous section. */
+  leadingBlank?: boolean;
 }
 
 /**

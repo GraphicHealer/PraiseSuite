@@ -25,7 +25,7 @@ function song(id: string): Song {
         type: "verse", label: "V1", options: {},
         lines: [
           { text: "line1", chords: [], breakBefore: "none", prefix: null, kind: "lyric", lang: null },
-          { text: "line2", chords: [], breakBefore: "slide", prefix: null, kind: "lyric", lang: null },
+          { text: "line2", chords: [], breakBefore: "bar", prefix: null, kind: "lyric", lang: null },
         ],
       },
       {
@@ -119,7 +119,7 @@ describe("buildPlan", () => {
         lines: [
           { text: "v1a", chords: [], breakBefore: "none", prefix: "1", kind: "lyric", lang: null },
           { text: "v1b", chords: [], breakBefore: "none", prefix: "1", kind: "lyric", lang: null },
-          { text: "v2a", chords: [], breakBefore: "slide", prefix: "2", kind: "lyric", lang: null },
+          { text: "v2a", chords: [], breakBefore: "bar", prefix: "2", kind: "lyric", lang: null },
         ],
       },
     ];
@@ -317,6 +317,30 @@ describe("buildPlan", () => {
     // Non-bilingual slides carry lang 1 for every line.
     const mono = buildPlan(svc, new Map([["song1" as Song["id"], song("song1")]]));
     expect(mono.slides[1]!.langs).toEqual([1]);
+  });
+
+  it("gates blank-line breaks on blank_is_slide_change (presentation-time setting)", () => {
+    // A "slide" break is a blank source line: it splits only when the
+    // runtime setting is on; "bar" (||) always splits (SongML semantics).
+    const s = song("blanky");
+    s.sections = [
+      {
+        id: "sb2" as Song["sections"][0]["id"], type: "verse", label: "V", options: {},
+        lines: [
+          { text: "a", chords: [], breakBefore: "none", prefix: null, kind: "lyric", lang: null },
+          { text: "b", chords: [], breakBefore: "slide", prefix: null, kind: "lyric", lang: null },
+          { text: "c", chords: [], breakBefore: "bar", prefix: null, kind: "lyric", lang: null },
+        ],
+      },
+    ];
+    s.arrangements[0]!.sequence = [
+      { id: "pb2" as Song["arrangements"][0]["sequence"][0]["id"], sectionId: "sb2" as Song["sections"][0]["id"], repeats: 1, prefix: null },
+    ];
+    const svc = { ...service, items: [service.items[0]!] };
+    const off = buildPlan(svc, new Map([["song1" as Song["id"], s]]));
+    expect(off.slides.filter((sl) => !sl.blank).map((sl) => sl.lines)).toEqual([["a", "b"], ["c"]]);
+    const on = buildPlan(svc, new Map([["song1" as Song["id"], s]]), { blankIsSlideChange: true });
+    expect(on.slides.filter((sl) => !sl.blank).map((sl) => sl.lines)).toEqual([["a"], ["b"], ["c"]]);
   });
 
   it("navigates with clamping", () => {

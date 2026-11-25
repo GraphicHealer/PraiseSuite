@@ -1,12 +1,18 @@
 import type { Song, SongSection } from "../../domain/songs/types.js";
 import type { Service } from "../../domain/services/types.js";
 
+/** Escape for attribute values — '"' must be escaped here. */
 function escapeXml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/** Escape for element text — '"' stays literal, like OpenSong writes it. */
+function escapeText(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function sectionHeader(s: SongSection): string {
@@ -63,8 +69,10 @@ function chordLine(line: { text: string; chords: { offset: number; chord: { disp
 
 /** Serialize one section back to OpenSong lyric text. */
 function serializeSection(s: SongSection): string {
-  // The untagged "default" section has no header in OpenSong files (D8).
-  const out: string[] = s.label === "" && Object.keys(s.options).length === 0 ? [] : [sectionHeader(s)];
+  // Untagged source content (default "" section and digit "1"-"9"
+  // subsections) has no [header] in OpenSong files (D8).
+  const noHeader = s.untagged === true || (s.label === "" && Object.keys(s.options).length === 0);
+  const out: string[] = noHeader ? [] : [sectionHeader(s)];
   // "inline" break pieces rejoin into one source line (with merged chords).
   let pending: { text: string; chords: { offset: number; chord: { display: string } }[]; prefix: string } | null = null;
   // SongML FindLyricLineCount: one "." line covers a whole run of digit-
@@ -125,9 +133,23 @@ function serializeSection(s: SongSection): string {
   return out.join("\n");
 }
 
+/**
+ * Join serialized sections: "\n\n" when a blank source line separated them
+ * (leadingBlank), "\n" when the next header followed directly. Sections
+ * parsed before leadingBlank existed default to "\n\n" (the old join).
+ */
+function joinSections(sections: readonly SongSection[]): string {
+  let out = "";
+  sections.forEach((s, i) => {
+    if (i > 0) out += s.leadingBlank === false ? "\n" : "\n\n";
+    out += serializeSection(s);
+  });
+  return out;
+}
+
 /** Serialize just the lyric block (OpenSong <lyrics> notation) — used by source editors. */
 export function serializeOpenSongLyrics(song: Pick<Song, "sections">): string {
-  return song.sections.map(serializeSection).join("\n\n");
+  return joinSections(song.sections);
 }
 
 /** Serialize a Song to the OpenSong XML song format. */
@@ -146,9 +168,9 @@ export function serializeOpenSongSong(song: Song): string {
         : seqTokens.join(" ");
 
   const el = (tag: string, value: string | null | number | undefined) =>
-    `  <${tag}>${escapeXml(value === null || value === undefined ? "" : String(value))}</${tag}>`;
+    `  <${tag}>${escapeText(value === null || value === undefined ? "" : String(value))}</${tag}>`;
 
-  const lyrics = song.sections.map(serializeSection).join("\n\n");
+  const lyrics = joinSections(song.sections);
 
   return (
     `<?xml version="1.0" encoding="UTF-8"?>\n<song>\n` +
@@ -189,12 +211,12 @@ export function serializeOpenSongSong(song: Song): string {
     ((song.linkedSongs ?? []).length === 0
       ? "  <linked_songs/>\n"
       : `  <linked_songs>\n${song.linkedSongs
-          .map((s) => `    <linked_song>${escapeXml(s)}</linked_song>`)
+          .map((s) => `    <linked_song>${escapeText(s)}</linked_song>`)
           .join("\n")}\n  </linked_songs>\n`) +
     (song.notes === null || song.notes === undefined ? "" : el("notes", song.notes) + "\n") +
     (song.background === null ? "" : el("background", song.background) + "\n") +
     serializeBackgrounds(song) +
-    `  <lyrics>${escapeXml(lyrics)}</lyrics>\n` +
+    `  <lyrics>${escapeText(lyrics)}</lyrics>\n` +
     // Unmodeled source elements round-trip verbatim (<pitch>, …).
     (song.extras ?? []).map((x) => `  ${x}\n`).join("") +
     // Song-level <style> (OpenSong "Override Style") — emitted verbatim, last
@@ -239,7 +261,7 @@ export function serializeOpenSongSet(
     item.slides.length === 0
       ? ""
       : `\n      <slides>\n${item.slides
-          .map((s) => `        <slide>\n          <body>${escapeXml(s.body)}</body>\n        </slide>`)
+          .map((s) => `        <slide>\n          <body>${escapeText(s.body)}</body>\n        </slide>`)
           .join("\n")}\n      </slides>`;
   const groups = service.items
     .map((item) => {
@@ -270,9 +292,9 @@ export function serializeOpenSongSet(
         );
       };
       const common =
-        (item.title ? `\n      <title>${escapeXml(item.title)}</title>` : "") +
-        (item.subtitle ? `\n      <subtitle>${escapeXml(item.subtitle)}</subtitle>` : "") +
-        (item.notes ? `\n      <notes>${escapeXml(item.notes)}</notes>` : "");
+        (item.title ? `\n      <title>${escapeText(item.title)}</title>` : "") +
+        (item.subtitle ? `\n      <subtitle>${escapeText(item.subtitle)}</subtitle>` : "") +
+        (item.notes ? `\n      <notes>${escapeText(item.notes)}</notes>` : "");
       if (item.kind === "song") {
         const ref = item.songId === null ? null : songRef(item.songId);
         const name = ref?.name ?? item.title;
@@ -310,13 +332,17 @@ export function serializeOpenSongSet(
                       ? `<image>${imageData(img.storageKey)}</image>`
                       : "") +
                     (img.filename !== undefined
-                      ? `<filename>${escapeXml(img.filename)}</filename>`
+                      ? `<filename>${escapeText(img.filename)}</filename>`
                       : "") +
-                    (img.description !== undefined ? `<description>${escapeXml(img.description)}</description>` : "");
+                    (img.description !== undefined ? `<description>${escapeText(img.description)}</description>` : "");
                   return `        <slide>\n          ${inner}\n        </slide>`;
                 })
                 .join("\n")}\n      </slides>`;
-        return `${attrs("image", name, `${resize}${keepAspect}`)}${common}${imgSlides}\n    </slide_group>`;
+        const groupDesc =
+          typeof item.config["description"] === "string" && item.config["description"] !== ""
+            ? `\n      <description>${escapeText(item.config["description"] as string)}</description>`
+            : "";
+        return `${attrs("image", name, `${resize}${keepAspect}`)}${common}${groupDesc}${imgSlides}\n    </slide_group>`;
       }
       // custom-slides / note / announcement -> OpenSong "custom" group
       return `${attrs("custom", item.title)}${common}${slides(item)}\n    </slide_group>`;
@@ -383,7 +409,7 @@ function styleOverrideXml(
     o.body === undefined && tabs === ""
       ? ""
       : `\n      <body ${fontAttrs(o.body ?? {}, [["highlight_chorus", o.highlightChorus]])}>${tabs}\n      </body>`;
-  const songSub = o.songSubtitle === undefined ? "" : `\n      <song_subtitle>${escapeXml(o.songSubtitle.join("|"))}</song_subtitle>`;
+  const songSub = o.songSubtitle === undefined ? "" : `\n      <song_subtitle>${escapeText(o.songSubtitle.join("|"))}</song_subtitle>`;
   const hasBg =
     o.backgroundColor !== undefined ||
     o.backgroundKey !== undefined ||
@@ -423,7 +449,7 @@ export function serializeStyleXml(
     `<style>\n` +
     `${font(s.title, "title", [["include_verse", s.title.includeVerse ?? false]])}/>\n` +
     `${font(s.subtitle, "subtitle", [["descriptive", s.descriptiveSubtitles]])}/>\n` +
-    `  <song_subtitle>${escapeXml(s.songSubtitle.join("|"))}</song_subtitle>\n` +
+    `  <song_subtitle>${escapeText(s.songSubtitle.join("|"))}</song_subtitle>\n` +
     `${font(s.body, "body", [["highlight_chorus", s.highlightChorus], ["auto_scale", s.body.autoScale]])}>\n` +
     `  ${tabs}\n` +
     `  </body>\n` +

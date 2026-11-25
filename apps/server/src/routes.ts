@@ -979,7 +979,13 @@ async function sessionPlan(
   const plan = buildPlan(
     service,
     new Map(songs.filter((s): s is Song => s !== null).map((s) => [s.id, s])),
-    { songStylePreferred: storage?.getSetting("style.songStylePreferred") !== "false" },
+    {
+      songStylePreferred: storage?.getSetting("style.songStylePreferred") !== "false",
+      blankIsSlideChange:
+        (JSON.parse(storage?.getSetting("style.options") ?? "{}") as {
+          blankIsSlideChange?: boolean;
+        }).blankIsSlideChange === true,
+    },
   );
   return { service, plan };
 }
