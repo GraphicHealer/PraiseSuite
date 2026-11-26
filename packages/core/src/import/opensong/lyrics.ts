@@ -166,6 +166,9 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
   };
 
   let pendingChords: ChordAnnotation[] = [];
+  // Armed "." rows not yet consumed by a lyric line — kept per-row so a run
+  // of orphan chord lines flushes back as one line each (round-trip).
+  let pendingChordRows: { src: number; chords: ChordAnnotation[] }[] = [];
   // SongML FindLyricLineCount: one chord line covers every consecutive
   // digit-prefixed line, or one space-prefixed line (+1 when bilingual).
   let chordCover: "armed" | "digits" | "space" | "none" = "none";
@@ -181,23 +184,45 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
     target.lines.push(line);
   };
 
+  /**
+   * OpenSong draws a "." row even with no lyric line under it (standalone
+   * chord row in print, invisible on slides). When something other than a
+   * lyric line follows — comment, directive, header, break, EOF — the row
+   * becomes a kind:"chord" line instead of being dropped.
+   */
+  const flushOrphanChords = () => {
+    // Only rows still "armed" (never consumed by a lyric line) are orphans —
+    // pendingChords that survive digit/space coverage were already applied
+    // and are just cleared.
+    if (chordCover === "armed") {
+      for (const r of pendingChordRows) {
+        pushLine(
+          { text: "", chords: r.chords, breakBefore: "none", prefix: null, kind: "chord", lang: null },
+          undefined,
+          r.src,
+        );
+      }
+    }
+    pendingChords = [];
+    pendingChordRows = [];
+    chordCover = "none";
+  };
+
   for (const [srcIdx, line] of raw.entries()) {
     const c0 = line.charAt(0);
     if (/^\|{2,}$/.test(line)) {
+      flushOrphanChords();
       // A line that is only "||" is a bare slide separator — always a break.
       pendingBreak = "bar";
-      pendingChords = [];
-      chordCover = "none";
       continue;
     }
     if (line === "" || /^\|$/.test(line)) {
+      flushOrphanChords();
       // SongML stores <lyrics> verbatim: blanks are kept in the model as
       // "slide" breaks (conditional at presentation time via
       // blank_is_slide_change) so they export back exactly. A lone "|"
       // deflates to an empty display line — same handling.
       if (pendingBreak === false) pendingBreak = "slide";
-      pendingChords = [];
-      chordCover = "none";
       continue;
     }
     if (c0 === "[") {
@@ -206,6 +231,7 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
         warnings.push(`Malformed section header: ${line}`);
         continue;
       }
+      flushOrphanChords();
       section = {
         type: sectionType(parsed.label),
         label: parsed.label,
@@ -216,19 +242,24 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
       section.leadingBlank = pendingBreak === "slide";
       sections.push(section);
       pendingBreak = false;
-      pendingChords = [];
-      chordCover = "none";
       continue;
     }
     if (c0 === ".") {
       // A chord line annotates the lyric line(s) that follow it. Only
       // consecutive "." lines accumulate; a new "." after a consumed block
       // starts a fresh row.
-      pendingChords = (chordCover === "armed" ? pendingChords : []).concat(chordAnnotations(line));
+      if (chordCover !== "armed") {
+        pendingChords = [];
+        pendingChordRows = [];
+      }
+      const row = chordAnnotations(line);
+      pendingChords = pendingChords.concat(row);
+      pendingChordRows.push({ src: srcIdx, chords: row });
       chordCover = "armed";
       continue;
     }
     if (c0 === ";") {
+      flushOrphanChords();
       pushLine(
         {
           text: line.slice(1),
@@ -241,11 +272,10 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
         undefined,
         srcIdx,
       );
-      pendingChords = [];
-      chordCover = "none";
       continue;
     }
     if (c0 === "-") {
+      flushOrphanChords();
       pushLine(
         {
           text: line.slice(1),
@@ -258,8 +288,6 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
         undefined,
         srcIdx,
       );
-      pendingChords = [];
-      chordCover = "none";
       continue;
     }
 
@@ -271,6 +299,7 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
     let covered = false;
     if (chordCover === "armed") {
       covered = true;
+      pendingChordRows = []; // consumed — can no longer orphan-flush
       if (isDigitPrefix) {
         chordCover = "digits";
       } else if (c0 === " ") {
@@ -327,11 +356,7 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
     }
   }
 
-  if (pendingChords.length > 0 && chordCover === "armed") {
-    warnings.push(
-      "Chord line(s) at end of lyrics had no lyric line beneath them; chords dropped.",
-    );
-  }
+  flushOrphanChords();
   // Pre-tag content is legal OpenSong (untagged songs, comment preambles) —
   // only flag it when actual lyric lines float in front of tagged sections,
   // which usually means a missing [tag].

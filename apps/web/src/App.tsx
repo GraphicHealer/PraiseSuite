@@ -79,7 +79,15 @@ export function App(): ReactNode {
   const [authed, setAuthed] = useState(api.isAuthed);
   const [authRequired, setAuthRequired] = useState(true);
   const [page, setPage] = useState<Page>("main");
-  const [mainTab, setMainTab] = useState<"songs" | "sets">("songs");
+  // OpenSong drops back to the mode you came from when presentation ends —
+  // persisted so a restart lands there too.
+  const [mainTab, setMainTabState] = useState<"songs" | "sets">(
+    () => (localStorage.getItem("ps.mainTab") === "sets" ? "sets" : "songs"),
+  );
+  const setMainTab = (t: "songs" | "sets") => {
+    localStorage.setItem("ps.mainTab", t);
+    setMainTabState(t);
+  };
   // Popup print window: opened via openPrintPreview (?print=<url>) — standalone UI, no nav chrome.
   const [printParams] = useState(() => {
     const p = new URLSearchParams(window.location.search);
@@ -215,16 +223,6 @@ export function App(): ReactNode {
           }`}
         >
           Editor
-        </button>
-        <button
-          onClick={() => present(null)}
-          className={`rounded px-3 py-1 text-sm font-medium ${
-            page === "present"
-              ? "bg-indigo-600 text-white"
-              : "bg-indigo-100 text-indigo-800 hover:bg-indigo-200 dark:bg-indigo-950 dark:text-indigo-200 dark:hover:bg-indigo-900"
-          }`}
-        >
-          Present
         </button>
         <nav className="flex gap-1">
           {NAV.map((n) => (

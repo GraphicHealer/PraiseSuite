@@ -4,7 +4,7 @@ import type { Song } from "../../domain/songs/types.js";
 import type { Service } from "../../domain/services/types.js";
 import type { MediaAssetId, RevisionId, ServiceId, ServiceItemId, SongId } from "../../ids.js";
 import { materializeSong, parseOpenSongSong, type ParsedSong } from "./song.js";
-import { parseOpenSongSet, resolveSongRefs, type ParsedServiceItem } from "./set.js";
+import { normRefKey, parseOpenSongSet, resolveSongRefs, type ParsedServiceItem } from "./set.js";
 import {
   detectDuplicates,
   existingInfo,
@@ -88,7 +88,9 @@ export function analyzeImport(
       skipped.push({ path: file.path, reason: "not OpenSong XML" });
       continue;
     }
-    const isSet = file.text.includes("<set") && !file.text.includes("<song");
+    // Root-element test: <song_subtitle> inside style groups must not count
+    // as a song doc, and <set> must be the root tag (not <settings etc.).
+    const isSet = /<set[\s>]/.test(file.text) && !/<song[\s>]/.test(file.text);
     try {
       if (isSet) {
         const parsed = parseOpenSongSet(file.text, name);
@@ -151,8 +153,8 @@ export async function applyImport(
   // Song-ref resolution map for set import: title, file name, and
   // folder-qualified variants (OpenSong refs are file names + path attr).
   const byKey = new Map<string, SongId>();
-  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
-  const addKeys = (id: SongId, title: string, folder: string | null, fileName?: string) => {
+  const norm = normRefKey;
+  const addKeys = (id: SongId, title: string, folder: string | null, fileName?: string | null) => {
     byKey.set(norm(title), id);
     if (fileName) byKey.set(norm(fileName), id);
     if (folder) {
@@ -160,7 +162,11 @@ export async function applyImport(
       if (fileName) byKey.set(norm(`${folder}/${fileName}`), id);
     }
   };
-  for (const s of await repos.songs.list()) addKeys(s.id, s.title, s.folder);
+  // Existing songs key by title AND stored fileName — OpenSong set refs use
+  // file names, which can differ from <title> ("X, The" files, *-suffixed
+  // titles, filename-illegal chars). Skipping fileName here stranded refs
+  // when songs and sets were imported in separate runs.
+  for (const s of await repos.songs.list()) addKeys(s.id, s.title, s.folder, s.fileName);
 
   let parsedIdx = 0;
   for (const analyzed of analysis.songs) {
@@ -211,6 +217,7 @@ export async function applyImport(
     }
     if (dir) song.folder = dir;
     const fileName = analyzed.path.replaceAll("\\", "/").split("/").pop();
+    song.fileName = fileName ?? null;
     await repos.songs.save(song);
     addKeys(song.id, song.title, song.folder, fileName);
     report.importedSongs++;

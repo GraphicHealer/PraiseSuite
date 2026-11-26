@@ -232,6 +232,11 @@ class Api {
       method: "POST",
       body: { message },
     });
+  setCustom = (id: string, lines: string[] | null) =>
+    this.req<{ custom: string[] | null }>(`/api/v1/sessions/${encodeURIComponent(id)}/custom`, {
+      method: "POST",
+      body: { lines },
+    });
 
   // plugins
   plugins = () => this.req<PluginManifest[]>("/api/v1/plugins");

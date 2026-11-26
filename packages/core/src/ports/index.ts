@@ -24,6 +24,8 @@ export interface SongSummary {
   theme: string | null;
   /** OpenSong Songs-folder path the song lives under; null = library root. */
   folder: string | null;
+  /** Original OpenSong file name; null when unknown/created in-app. */
+  fileName: string | null;
 }
 
 export interface SongRepository {

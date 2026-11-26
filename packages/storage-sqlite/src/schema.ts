@@ -15,6 +15,7 @@ export const songs = sqliteTable("songs", {
   ccliNumber: text("ccli_number"),
   defaultKey: text("default_key"),
   folder: text("folder"),
+  fileName: text("file_name"),
   revisionId: text("revision_id").notNull(),
   revisionParentId: text("revision_parent_id"),
   data: text("data").notNull(), // full Song JSON

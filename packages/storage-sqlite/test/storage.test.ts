@@ -32,6 +32,7 @@ function makeSong(over: Partial<Song> = {}): Song {
     theme: "God: Attributes",
     secondaryTheme: null,
     folder: null,
+    fileName: null,
     userFields: { user1: "", user2: "", user3: "" },
     sections: [
       {

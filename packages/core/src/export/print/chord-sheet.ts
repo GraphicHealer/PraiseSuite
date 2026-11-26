@@ -12,6 +12,15 @@ export interface SheetOptions {
   capo?: number | undefined;
   /** Full print config (imported PrintSettings); defaults = OpenSong defaults. */
   print?: PrintConfig | undefined;
+  /** Church CCLI license number — footer line, SongML ccli/@number. */
+  ccliLicense?: string | undefined;
+  /**
+   * "fixed" repeats the footer on every printed page (single-song sheet);
+   * "inline" drops it at the end of the song block — used when several
+   * sheets are concatenated in one document (service "print songs"),
+   * where per-song fixed footers would all overlay the same spot.
+   */
+  footer?: "fixed" | "inline" | undefined;
   /** @deprecated prefer `print.roles` */
   roles?: PrintConfig["roles"] | undefined;
 }
@@ -35,8 +44,20 @@ function sectionItems(section: SongSection, hideLang2 = false): Item[] {
   const flush = () => { if (pending) { out.push({ type: "line", wl: pending }); pending = null; } };
   for (const line of section.lines) {
     if (hideLang2 && line.lang === 2) continue;
-    if (line.kind === "comment") { flush(); if (!line.text.startsWith(";")) out.push({ type: "comment", text: line.text }); continue; }
-    if (line.kind === "directive") { flush(); if (line.text !== "") out.push({ type: "directive", text: line.text }); continue; }
+    // Blank source lines become breakBefore on whatever follows — comments
+    // and directives honor it too (OpenSong's empty-line gap applies to any
+    // next element, so comments don't squish against the previous block).
+    const preBreak = line.breakBefore === "slide" || line.breakBefore === "bar";
+    if (line.kind === "comment") { flush(); if (preBreak) out.push({ type: "blank" }); if (!line.text.startsWith(";")) out.push({ type: "comment", text: line.text }); continue; }
+    if (line.kind === "directive") { flush(); if (preBreak) out.push({ type: "blank" }); if (line.text !== "") out.push({ type: "directive", text: line.text }); continue; }
+    // Orphan "." row — standalone chords, no lyric text (blockHtml renders
+    // chord rows only for a chorded line with empty text).
+    if (line.kind === "chord") {
+      flush();
+      if (preBreak) out.push({ type: "blank" });
+      out.push({ type: "line", wl: { text: "", chords: line.chords.map((c) => ({ offset: c.offset, display: c.chord.display })), prefix: " ", lang: null } });
+      continue;
+    }
     if (line.kind !== "lyric") continue;
     if ((line.breakBefore === "slide" || line.breakBefore === "bar") && pending) { flush(); out.push({ type: "blank" }); }
     if (line.breakBefore === "inline" && pending) {
@@ -371,17 +392,23 @@ export function chordSheetHtml(song: Song, opts: SheetOptions = {}): string {
   }
   if (hasColumnBreak) parts.push(`</div>`);
 
-  // SongML Draw_Footer: rule above, centered copyright-font lines below it.
+  // SongML Draw_Footer: the rule always draws, even when no copyright
+  // lines exist. Stacked top→bottom: copyright, CCLI song #, CCLI license.
+  // "fixed" repeats it on every printed page (OpenSong draws it per page);
+  // padding-bottom keeps the last lyric line from sliding underneath.
   const foot: string[] = [];
-  if (song.ccliNumber) foot.push(`<div style="${roleCss(roles["copyright"])}">CCLI Song # ${esc(song.ccliNumber)}</div>`);
   if (song.copyright) foot.push(`<div style="${roleCss(roles["copyright"])}">Copyright © ${esc(song.copyright)}</div>`);
-  if (foot.length) {
-    parts.push(
-      `<div style="position:fixed;bottom:0;left:0;right:0;text-align:center;border-top:1px solid #000;padding-top:2pt">${foot.join("")}</div>`,
-    );
-  }
+  if (song.ccliNumber && song.ccliNumber !== "0000") foot.push(`<div style="${roleCss(roles["copyright"])}">CCLI Song # ${esc(song.ccliNumber)}</div>`);
+  if (opts.ccliLicense) foot.push(`<div style="${roleCss(roles["copyright"])}">CCLI License # ${esc(opts.ccliLicense)}</div>`);
+  const footPos =
+    opts.footer === "inline" ? "" : "position:fixed;bottom:0;left:0;right:0;background:#fff;";
+  parts.push(
+    `<div class="print-footer" style="${footPos}text-align:center;border-top:1px solid #000;padding-top:2pt">${foot.join("")}</div>`,
+  );
   const pageStyle = pageCss(cfg.page);
-  return printPage(`${song.title} — chord sheet`, `<style>${pageStyle}${chorusCss(cfg)}</style>` + parts.join("\n"));
+  // Reserve footer height so the last lyric line never slides underneath.
+  const footPad = opts.footer === "inline" ? "" : `body{padding-bottom:${10 + foot.length * 13}pt}`;
+  return printPage(`${song.title} — chord sheet`, `<style>${pageStyle}${footPad}${chorusCss(cfg)}</style>` + parts.join("\n"));
 }
 
 function chorusCss(cfg: PrintConfig): string {
@@ -427,7 +454,18 @@ export function lyricsSheetHtml(song: Song, opts: SheetOptions = {}): string {
     }
     parts.push("</div>");
   }
-  if (song.copyright) parts.push(`<div style="${roleCss(roles["copyright"])};margin-top:14pt;font-size:8pt">Copyright © ${esc(song.copyright)}</div>`);
+  // Same Draw_Footer contract as the chord sheet: rule always, then
+  // copyright / CCLI song # / CCLI license stacked above it.
+  const foot: string[] = [];
+  if (song.copyright) foot.push(`<div style="${roleCss(roles["copyright"])}">Copyright © ${esc(song.copyright)}</div>`);
+  if (song.ccliNumber && song.ccliNumber !== "0000") foot.push(`<div style="${roleCss(roles["copyright"])}">CCLI Song # ${esc(song.ccliNumber)}</div>`);
+  if (opts.ccliLicense) foot.push(`<div style="${roleCss(roles["copyright"])}">CCLI License # ${esc(opts.ccliLicense)}</div>`);
+  const footPos =
+    opts.footer === "inline" ? "" : "position:fixed;bottom:0;left:0;right:0;background:#fff;";
+  parts.push(
+    `<div class="print-footer" style="${footPos}text-align:center;border-top:1px solid #000;padding-top:2pt">${foot.join("")}</div>`,
+  );
   const pageStyle = pageCss(cfg.page);
-  return printPage(`${song.title} — lyrics`, `<style>${pageStyle}</style>` + parts.join("\n"));
+  const footPad = opts.footer === "inline" ? "" : `body{padding-bottom:${10 + foot.length * 13}pt}`;
+  return printPage(`${song.title} — lyrics`, `<style>${pageStyle}${footPad}</style>` + parts.join("\n"));
 }

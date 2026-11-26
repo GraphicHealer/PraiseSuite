@@ -25,6 +25,7 @@ export const createSong: CommandHandler<CreateSongInput, SongSummary> = async (
     theme: null,
     secondaryTheme: null,
     folder: null,
+    fileName: null,
     aka: null,
     keyLine: null,
     userFields: { user1: "", user2: "", user3: "" },
@@ -47,7 +48,7 @@ export const createSong: CommandHandler<CreateSongInput, SongSummary> = async (
     },
   };
   await ctx.repos.songs.save(song);
-  return { id: song.id, title: song.title, authors: song.authors, theme: null, folder: null };
+  return { id: song.id, title: song.title, authors: song.authors, theme: null, folder: null, fileName: null };
 };
 
 export const getSong: QueryHandler<{ id: SongId }, Song | null> = async (

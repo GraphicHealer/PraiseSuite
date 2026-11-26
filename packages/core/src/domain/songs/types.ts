@@ -24,7 +24,7 @@ export interface ChordAnnotation {
   chord: Chord;
 }
 
-export type LyricLineKind = "lyric" | "comment" | "directive";
+export type LyricLineKind = "lyric" | "comment" | "directive" | "chord";
 
 /**
  * Break before this line (SongML AdjustSlideBreaks): "slide" = a blank
@@ -119,6 +119,13 @@ export interface Song extends Revisioned {
   secondaryTheme: string | null;
   /** Library folder this song belongs to (OpenSong Songs/ subfolders; from import path). */
   folder: string | null;
+  /**
+   * Original OpenSong file name (no extension — OpenSong songs are
+   * extensionless). Set references resolve by file name, and file names
+   * can differ from <title> (e.g. "X, The" files vs "The X" titles or
+   * filename-illegal chars in titles). null = created in-app.
+   */
+  fileName: string | null;
   /** User-defined fields; labels come from installation settings (OpenSong user1-3). */
   userFields: { user1: string; user2: string; user3: string };
   sections: SongSection[];

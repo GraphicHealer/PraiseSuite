@@ -127,9 +127,23 @@ export function parseOpenSongSet(xml: string, fallbackName: string): SetParseRes
   return { name: fallbackName, items, warnings };
 }
 
-function normKey(s: string): string {
-  return s.toLowerCase().replace(/\s+/g, " ").trim();
+/**
+ * Song-ref key normalization: NFC (macOS NFD filenames vs NFC titles), path
+ * separators collapsed (`Hymns//Name` from a trailing-slash `path` attr),
+ * lowercase, whitespace-squeezed.
+ */
+export function normRefKey(s: string): string {
+  return s
+    .normalize("NFC")
+    .replace(/\\/g, "/")
+    .replace(/\/{2,}/g, "/")
+    .replace(/^\/+|\/+$/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
 }
+
+const normKey = normRefKey;
 
 /**
  * Resolve OpenSong song references. `byKey` is keyed by normalized title,

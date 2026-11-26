@@ -301,7 +301,10 @@ function SetsMode({
   const dlg = useDialog();
   const [services, setServices] = useState<Service[]>([]);
   const [current, setCurrent] = useState<Service | null>(null);
-  const [sel, setSel] = useState<number | null>(null);
+  const [sel, setSel] = useState<number | null>(() => {
+    const v = Number.parseInt(localStorage.getItem("ps.lastSel") ?? "", 10);
+    return Number.isFinite(v) ? v : null;
+  });
   const [clipboard, setClipboard] = useState<ServiceItem | null>(null);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState("");
@@ -316,6 +319,10 @@ function SetsMode({
   const reload = () => api.services().then(setServices).catch((e) => setError((e as Error).message));
   useEffect(() => {
     void reload();
+    // OpenSong reopens the last-opened set — remember it across tab switches
+    // and app restarts (leaving Sets mode never deselects the current set).
+    const last = localStorage.getItem("ps.lastSet");
+    if (last) void api.service(last).then((svc) => setCurrent((c) => c ?? svc)).catch(() => {});
   }, []);
   // D16: refresh the set list when the window regains focus (import/external edits).
   useEffect(() => {
@@ -325,7 +332,18 @@ function SetsMode({
     return () => { window.removeEventListener("focus", onFocus); clearInterval(t); };
   }, []);
 
-  const open = (s: Service) => { setCurrent(s); setSel(null); setDirty(false); };
+  const open = (s: Service) => {
+    localStorage.setItem("ps.lastSet", s.id);
+    localStorage.removeItem("ps.lastSel");
+    setCurrent(s);
+    setSel(null);
+    setDirty(false);
+  };
+  const pick = (i: number | null) => {
+    setSel(i);
+    if (i === null) localStorage.removeItem("ps.lastSel");
+    else localStorage.setItem("ps.lastSel", String(i));
+  };
   const openGuarded = (s: Service) => {
     void (async () => {
       if (dirty && current?.id !== s.id && !(await dlg.confirm("Discard unsaved changes?"))) return;
@@ -441,7 +459,7 @@ function SetsMode({
               {current.items.map((it, i) => (
                 <li key={it.id}>
                   <button
-                    onClick={() => setSel(i)}
+                    onClick={() => pick(i)}
                     className={`flex w-full items-center gap-2 rounded border px-3 py-1.5 text-left text-sm ${
                       sel === i ? "border-indigo-400 bg-indigo-50 dark:bg-indigo-950" : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800"
                     }`}

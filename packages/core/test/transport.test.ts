@@ -36,6 +36,7 @@ function inMemoryRepos(): Repositories {
           authors: s.authors,
           theme: s.theme,
           folder: s.folder,
+          fileName: s.fileName,
         }),
       ),
     search: async (q) =>
@@ -48,6 +49,7 @@ function inMemoryRepos(): Repositories {
             authors: s.authors,
             theme: s.theme,
             folder: s.folder,
+            fileName: s.fileName,
           }),
         ),
   };

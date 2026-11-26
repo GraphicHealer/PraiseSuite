@@ -80,6 +80,9 @@ const MIGRATIONS: string[] = [
   `
   ALTER TABLE songs ADD COLUMN folder TEXT;
   `,
+  `
+  ALTER TABLE songs ADD COLUMN file_name TEXT;
+  `,
 ];
 
 export function migrate(db: Database.Database): void {

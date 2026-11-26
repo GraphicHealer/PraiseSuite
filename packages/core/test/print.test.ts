@@ -25,7 +25,7 @@ function song(): Song {
     copyright: "(c) 2026 PD",
     ccliNumber: "123",
     defaultKey: "G", tempo: "120", timeSignature: "4/4",
-    aka: null, keyLine: null, theme: "Worship", secondaryTheme: null, folder: null,
+    aka: null, keyLine: null, theme: "Worship", secondaryTheme: null, folder: null, fileName: null,
     userFields: { user1: "", user2: "", user3: "" },
     sections: [
       {

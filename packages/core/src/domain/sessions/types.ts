@@ -61,6 +61,10 @@ export interface PresentationSession {
   mode: OutputMode;
   /** Alert message overlaid on all outputs, or null. */
   alert: string | null;
+  /** Spontaneous text shown with the current style instead of the plan slide
+   *  (operator quick text — never saved into the service). Cleared by any
+   *  navigation; absent on older sessions. */
+  custom?: string[] | null | undefined;
   /** jti of the token currently holding control, or null when free (TAS 13.4). */
   controlOwner: string | null;
   createdAt: string; // ISO 8601

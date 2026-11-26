@@ -420,7 +420,7 @@ describe("duplicates + pipeline", () => {
         save: async (s: Song) => void songs.set(s.id, s),
         delete: async () => {},
         list: async (): Promise<SongSummary[]> =>
-          [...songs.values()].map((s) => ({ id: s.id, title: s.title, authors: s.authors, theme: s.theme, folder: s.folder })),
+          [...songs.values()].map((s) => ({ id: s.id, title: s.title, authors: s.authors, theme: s.theme, folder: s.folder, fileName: s.fileName })),
         search: async () => [],
       },
       services: {

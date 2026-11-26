@@ -51,14 +51,12 @@ export function PresentPage({
   const [plan, setPlan] = useState<Plan | null>(null);
   const [controlling, setControlling] = useState(false);
   const [receiverUrl, setReceiverUrl] = useState("");
-  const [alertText, setAlertText] = useState("");
   const [fullscreen, setFullscreen] = useState(false);
   const [addTab, setAddTab] = useState<AddItemTab | null>(null);
   const [frozen, setFrozen] = useState<SlideResponse | null>(null);
   const [error, setError] = useState("");
   const wsRef = useRef<WebSocket | null>(null);
   const curRowRef = useRef<HTMLTableRowElement | null>(null);
-  const alertRef = useRef<HTMLInputElement | null>(null);
 
   const refreshSlide = useCallback(async (id: string) => {
     try {
@@ -238,6 +236,31 @@ export function PresentPage({
   /** OpenSong [Q]/[S] quick-insert opens the shared Add Item dialog. */
   const openAdd = useCallback((tab: AddItemTab) => setAddTab(tab), []);
 
+  /** [A] Alert — OpenSong ShowAlert pops an InputBox (OK/Cancel), not an
+   *  inline field. Empty/OK clears; Cancel leaves the current alert. */
+  const openAlert = useCallback(() => {
+    if (!session) return;
+    void (async () => {
+      const text = await dlg.prompt("Alert message:", slide?.alert ?? "");
+      if (text === null) return; // Cancel — keep the current alert
+      await api.setAlert(session.id, text === "" ? null : text).catch(() => {});
+      void refreshSlide(session.id);
+    })();
+  }, [session, dlg, slide?.alert, refreshSlide]);
+
+  /** [U] Spontaneous — operator quick text shown with the on-screen style;
+   *  session-only, never written into the service. */
+  const openSpontaneous = useCallback(() => {
+    if (!session) return;
+    void (async () => {
+      const text = await dlg.prompt("Spontaneous text:", "");
+      if (text === null) return;
+      const lines = text.split("\n").map((l) => l.trim()).filter((l) => l !== "");
+      await api.setCustom(session.id, lines.length > 0 ? lines : null).catch(() => {});
+      void refreshSlide(session.id);
+    })();
+  }, [session, dlg, refreshSlide]);
+
   // [M] toggles the OUTPUT window (OpenSong Full Screen); falls back to
   // this window's fullscreen in plain browsers.
   const toggleFullscreen = useCallback(() => {
@@ -323,7 +346,8 @@ export function PresentPage({
           case "h": toggle("hidden"); break;
           case "l": toggle("logo"); break;
           case "f": toggle("freeze"); break;
-          case "a": alertRef.current?.focus(); break;
+          case "a": openAlert(); break;
+          case "u": openSpontaneous(); break;
           case "q": openAdd("song"); break;
           case "s": openAdd("scripture"); break;
           case "m": toggleFullscreen(); break;
@@ -341,7 +365,7 @@ export function PresentPage({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [session, controlling, plan, doNavigate, jumpToItem, prevSection, jumpToSection, setMode, toggleFullscreen, leave, confirmEnd, openAdd]);
+  }, [session, controlling, plan, doNavigate, jumpToItem, prevSection, jumpToSection, setMode, toggleFullscreen, leave, confirmEnd, openAdd, openAlert, openSpontaneous]);
 
   // OpenSong timerAdvance (slide_group @seconds): fires once per slide —
   // past the last slide of the group, @loop wraps to its first slide,
@@ -596,25 +620,11 @@ export function PresentPage({
                   Take control
                 </button>
               )}
-              <button disabled={!controlling} onClick={() => alertRef.current?.focus()} className={btn}>[A] Alert</button>
-              <input
-                ref={alertRef}
-                value={alertText}
-                onChange={(e) => setAlertText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && session) {
-                    void api.setAlert(session.id, alertText || null).then(() => refreshSlide(session.id));
-                    (e.target as HTMLInputElement).blur();
-                  }
-                }}
-                placeholder="Alert text…"
-                className="rounded border border-zinc-300 bg-transparent px-2 py-0.5 text-xs dark:border-zinc-700"
-              />
+              <button disabled={!controlling} onClick={openAlert} className={btn}>[A] Alert…</button>
               {slide?.alert && (
                 <button
                   disabled={!controlling}
                   onClick={() => {
-                    setAlertText("");
                     if (session) void api.setAlert(session.id, null).then(() => refreshSlide(session.id));
                   }}
                   className={`${btn} text-amber-600`}
@@ -622,6 +632,7 @@ export function PresentPage({
                   Clear alert
                 </button>
               )}
+              <button disabled={!controlling} onClick={openSpontaneous} className={btn}>[U] Spontaneous…</button>
               <button disabled={!controlling || !session.serviceId} onClick={() => openAdd("song")} className={btn}>
                 [Q] Add Song
               </button>

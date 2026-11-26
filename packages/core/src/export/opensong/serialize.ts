@@ -104,7 +104,13 @@ function serializeLines(
     }
     if (line.kind !== "lyric") {
       flush();
-      out.push((line.kind === "comment" ? ";" : "-") + line.text);
+      if (line.kind === "chord") {
+        // Orphan "." row — no lyric line beneath it (before comments,
+        // directives, headers, EOF). Emits standalone, exactly as written.
+        out.push(chordLine({ text: "", chords: line.chords }));
+      } else {
+        out.push((line.kind === "comment" ? ";" : "-") + line.text);
+      }
       lastDigitChord = null;
       continue;
     }

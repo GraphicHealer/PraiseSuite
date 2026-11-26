@@ -475,11 +475,30 @@ export function buildRoutes(deps: AppDeps): Route[] {
         ...session,
         position,
         blanked: false,
+        custom: null, // any navigation dismisses a spontaneous slide
         lastActivityAt: new Date().toISOString(),
       };
       await deps.repos.sessions.save(updated);
       deps.broadcastToSession(session.id, { type: "position", sessionId: session.id, position, blanked: false });
       return { position, slide: indexOfPosition(plan, position), total: plan.slides.length };
+    }),
+
+    // Spontaneous text: shown with the currently-on-screen style, never
+    // written into the service. null/empty clears it (next nav also does).
+    r("POST", "/api/v1/sessions/:id/custom", "guest", "Show/clear a spontaneous text slide", async (ctx) => {
+      const session = await deps.repos.sessions.get(ctx.params["id"]! as SessionId);
+      if (!session) throw new ApiError(404, "not_found", "Session not found");
+      requireControl(ctx, session);
+      const body = z.object({ lines: z.array(z.string()).nullable() }).parse(await ctx.body());
+      const lines = body.lines?.map((l) => l.trim()).filter((l) => l !== "") ?? null;
+      const updated: PresentationSession = {
+        ...session,
+        custom: lines !== null && lines.length > 0 ? lines : null,
+        lastActivityAt: new Date().toISOString(),
+      };
+      await deps.repos.sessions.save(updated);
+      deps.broadcastToSession(session.id, { type: "position", sessionId: session.id, position: updated.position });
+      return { custom: updated.custom };
     }),
 
     r("POST", "/api/v1/sessions/:id/blank", "guest", "Blank/unblank outputs", async (ctx) => {
@@ -688,6 +707,8 @@ export function buildRoutes(deps: AppDeps): Route[] {
       if (body.mainSettings !== undefined) {
         const main = parseMainSettings(body.mainSettings);
         deps.storage.setSetting("style.userFields", JSON.stringify(main.userFieldLabels));
+        if (main.ccliLicense !== "") deps.storage.setSetting("general.ccli", JSON.stringify(main.ccliLicense));
+        deps.storage.setSetting("general.image", JSON.stringify(main.image));
         out.warnings.push(...main.userFieldLabels.filter((l) => l !== "").map((l) => `user field label: ${l}`));
       }
       return out;
@@ -803,9 +824,10 @@ export function buildRoutes(deps: AppDeps): Route[] {
       const tr = Number.parseInt(ctx.query.get("transpose") ?? "0", 10) || 0;
       const capoRaw = ctx.query.get("capo");
       const capo = capoRaw === null ? undefined : Number.parseInt(capoRaw, 10) || 0;
+      const ccliLicense = ccliLicenseOf(deps.storage);
       const html = mode === "lyrics"
-        ? lyricsSheetHtml(song, { print })
-        : chordSheetHtml(song, { print, transpose: tr, capo });
+        ? lyricsSheetHtml(song, { print, ccliLicense })
+        : chordSheetHtml(song, { print, transpose: tr, capo, ccliLicense });
       ctx.res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       ctx.res.end(withFonts(html, deps.webRoot));
       return undefined;
@@ -831,9 +853,12 @@ export function buildRoutes(deps: AppDeps): Route[] {
       if (!svc) throw new ApiError(404, "not_found", "Service not found");
       const parts: string[] = [];
       const cfg = applyPrintOverrides(printConfig(deps.storage), ctx.query);
+      const ccliLicense = ccliLicenseOf(deps.storage);
       for (const item of svc.items.filter((i) => i.kind === "song" && i.songId !== null)) {
         const song = await deps.repos.songs.get(item.songId!);
-        if (song) parts.push(chordSheetHtml(song, { print: cfg }));
+        // Inline footer: per-song fixed footers would all overlay the same
+        // spot on every page of the combined document.
+        if (song) parts.push(chordSheetHtml(song, { print: cfg, ccliLicense, footer: "inline" }));
       }
       if (parts.length === 0) throw new ApiError(404, "not_found", "No songs in service");
       const html = parts
@@ -858,8 +883,13 @@ export function buildRoutes(deps: AppDeps): Route[] {
     r("GET", "/api/v1/export/service/:id", "admin", "Export a service as an OpenSong set", async (ctx) => {
       const svc = await deps.repos.services.get(ctx.params["id"]! as Service["id"]);
       if (!svc) throw new ApiError(404, "not_found", "Service not found");
+      // OpenSong set refs use file names — prefer the stored original name
+      // (titles can differ: "X, The" files, *-suffixed titles).
       const titles = new Map(
-        (await deps.repos.songs.list()).map((s) => [s.id as string, { name: s.title, folder: s.folder }]),
+        (await deps.repos.songs.list()).map((s) => [
+          s.id as string,
+          { name: s.fileName ?? s.title, folder: s.folder },
+        ]),
       );
       // Pre-fetch embedded image data for re-embedding into <image> (N4).
       const imageKeys = svc.items.flatMap((item) =>
@@ -1070,7 +1100,7 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
       hymn_number: sng.hymnNumber,
       author: sng.authors.length > 0 ? sng.authors.join("; ") : null,
       ccli_number: sng.ccliNumber,
-      ccli_license: storage.getSetting("opensong.ccliLicense"),
+      ccli_license: ccliLicenseOf(storage) ?? null,
     };
     const captions: Record<string, string> = {
       copyright: "Copyright: ",
@@ -1124,13 +1154,44 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
     return { prev: ids.slice(0, at).map((x) => x.id), curr: ids[at]!.id, rest: ids.slice(at + 1).map((x) => x.id) };
   };
 
+  // Spontaneous text: the operator's custom lines draw with whatever style
+  // and background are on screen now — no title/subtitle, no verse map.
+  if (session.custom && session.custom.length > 0) {
+    return {
+      index: idx,
+      total: plan.slides.length,
+      title: "",
+      lines: session.custom,
+      langs: [],
+      kind: "custom",
+      mediaKey: null,
+      style,
+      backgroundKey: await backgroundFor(slide, song, style),
+      backgroundAsText: false,
+      logoKey: style.logoKey,
+      loopSeconds: null,
+      imageResize: null,
+      imageKeepAspect: true,
+      subtitle: null,
+      emphasize: false,
+      seconds: 0,
+      loop: false,
+      transition: 0,
+      verseMap: null,
+      mouseCursor: "hidden",
+      next: null,
+    };
+  }
+
   return {
     index: idx,
     total: plan.slides.length,
     /* On-slide title = the item's name (OpenSong draws slide_group @name);
      * the "— V1" section suffix only exists for the helper's slide list.
      * Blank separator slides have no <title> — they draw background only. */
-    title: slide.blank ? "" : (item?.title ?? slide.title),
+    // Media slides draw no title — OpenSong image slides have no <title>
+    // element, so the item name never shows on screen.
+    title: slide.blank || slide.kind === "media" ? "" : (item?.title ?? slide.title),
     lines: slide.lines,
     /** Bilingual (L) sections: per-line language 1|2 for multilanguage styling. */
     langs: slide.langs,
@@ -1142,9 +1203,23 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
     logoKey: style.logoKey,
     /** Announcement-loop timing in seconds (OpenSong item loop interval). */
     loopSeconds: typeof item?.config["loopSeconds"] === "number" ? (item.config["loopSeconds"] as number) : null,
-    /** OpenSong image-group @resize/@keep_aspect for media slides. */
-    imageResize: slide.kind === "media" ? ((item?.config["resize"] as string | undefined) ?? "") : null,
-    imageKeepAspect: slide.kind === "media" ? item?.config["keepAspect"] !== "false" : true,
+    /** OpenSong image-group @resize/@keep_aspect for media slides. Missing
+     *  attrs resolve through image_quality main settings (SetML: "default" →
+     *  fit_to_screen → fit_to_body → natural; keep_aspect → @keepaspect). */
+    imageResize: slide.kind === "media"
+      ? (() => {
+          const r = item?.config["resize"] as string | undefined;
+          if (r !== undefined && r !== "" && r !== "default") return r;
+          const d = imageDefaultsOf(storage);
+          return d.fitToScreen ? "screen" : d.fitToBody ? "body" : "";
+        })()
+      : null,
+    imageKeepAspect: slide.kind === "media"
+      ? (() => {
+          const k = item?.config["keepAspect"] as string | undefined;
+          return k !== undefined && k !== "default" ? k === "true" : imageDefaultsOf(storage).keepAspect;
+        })()
+      : true,
     subtitle: (() => {
       if (slide.blank) return null; // OpenSong blank groups draw no title/subtitle
       const base = subtitleFor(item, song, style);
@@ -1202,6 +1277,26 @@ function logSongActivity(storage: SqliteStorage, song: Song, action: number): vo
     ccliNumber: song.ccliNumber,
     hasChords: (song.sections ?? []).some((s) => s.lines.some((l) => l.chords.length > 0)),
   });
+}
+
+/** OpenSong ImageDefaults (main_settings image_quality → "general.image"). */
+function imageDefaultsOf(storage: SqliteStorage): { fitToScreen: boolean; fitToBody: boolean; keepAspect: boolean } {
+  try {
+    const v = JSON.parse(storage.getSetting("general.image") ?? "null") as { fitToScreen?: boolean; fitToBody?: boolean; keepAspect?: boolean } | null;
+    return { fitToScreen: v?.fitToScreen ?? true, fitToBody: v?.fitToBody ?? false, keepAspect: v?.keepAspect ?? false };
+  } catch {
+    return { fitToScreen: true, fitToBody: false, keepAspect: false };
+  }
+}
+
+/** Church CCLI license (main_settings ccli/@number → "general.ccli"). */
+function ccliLicenseOf(storage: SqliteStorage): string | undefined {
+  try {
+    const v = JSON.parse(storage.getSetting("general.ccli") ?? "null");
+    return typeof v === "string" && v !== "" ? v : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function printConfig(storage: SqliteStorage): import("@praisesuite/core").PrintConfig {

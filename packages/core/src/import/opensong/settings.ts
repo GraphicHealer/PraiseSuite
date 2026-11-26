@@ -60,7 +60,9 @@ function textStyle(el: unknown, base: TextStyle): TextStyle {
     fill: bool(e["@_fill"]),
     fillColor: asString(e["@_fill_color"]) || base.fillColor,
     enabled: e["@_enabled"] === undefined ? true : bool(e["@_enabled"]),
-    autoScale: bool(e["@_auto_scale"]),
+    // OpenSong SlideStyle: BodyScale defaults TRUE when @auto_scale is
+    // absent — without this, imported styles never shrink oversized slides.
+    autoScale: e["@_auto_scale"] === undefined ? true : bool(e["@_auto_scale"]),
     ...(e["@_include_verse"] !== undefined ? { includeVerse: bool(e["@_include_verse"]) } : {}),
     // OpenSong @margin-* per element, px in the 640-unit design space.
     ...(e["@_margin-left"] !== undefined ? { marginLeft: num(e["@_margin-left"], 0) } : {}),
@@ -270,17 +272,32 @@ export interface PrintConfig {
   options?: PrintVisibility | undefined;
 }
 
-/** MainSettings bits we use: custom labels for the user1-3 song fields. */
-export function parseMainSettings(xml: string): { userFieldLabels: string[] } {
+/** MainSettings bits we use: custom labels for the user1-3 song fields,
+ *  plus the church's CCLI license number (print footer, SongML Draw_Footer). */
+export function parseMainSettings(xml: string): {
+  userFieldLabels: string[];
+  ccliLicense: string;
+  /** OpenSong image_quality — media-slide resize/keep_aspect defaults. */
+  image: { fitToScreen: boolean; fitToBody: boolean; keepAspect: boolean };
+} {
   const doc = parseXml(xml);
   const root = asRecord(asRecord(doc)["main_settings"] ?? asRecord(doc)["settings"]);
   const ud = asRecord(root["user_defined"]);
+  const ccli = asRecord(root["ccli"]);
+  const iq = asRecord(root["image_quality"]);
   return {
     userFieldLabels: [
       asString(ud["@_user1"]),
       asString(ud["@_user2"]),
       asString(ud["@_user3"]),
     ],
+    ccliLicense: asString(ccli["@_number"]),
+    image: {
+      // ImageDefaults: fit_to_screen defaults TRUE, fit_to_body/keepaspect false.
+      fitToScreen: iq["@_fit_to_screen"] === undefined ? true : bool(iq["@_fit_to_screen"]),
+      fitToBody: bool(iq["@_fit_to_body"]),
+      keepAspect: bool(iq["@_keepaspect"]),
+    },
   };
 }
 

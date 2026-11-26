@@ -206,6 +206,7 @@ export function parseOpenSongSong(xml: string): SongParseResult {
       theme: str(root["theme"]),
       secondaryTheme: str(root["alttheme"]),
       folder: null,
+      fileName: null,
       userFields: {
         user1: asString(root["user1"]),
         user2: asString(root["user2"]),

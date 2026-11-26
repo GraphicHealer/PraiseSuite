@@ -77,6 +77,7 @@ export class SqliteSongRepository implements SongRepository {
         ccliNumber: song.ccliNumber,
         defaultKey: song.defaultKey,
         folder: song.folder,
+        fileName: song.fileName,
         revisionId: song.revision.id,
         revisionParentId: song.revision.parentId,
         data,
@@ -91,6 +92,7 @@ export class SqliteSongRepository implements SongRepository {
           ccliNumber: song.ccliNumber,
           defaultKey: song.defaultKey,
           folder: song.folder,
+          fileName: song.fileName,
           revisionId: song.revision.id,
           revisionParentId: song.revision.parentId,
           data,
@@ -125,6 +127,7 @@ export class SqliteSongRepository implements SongRepository {
         authors: schema.songs.authors,
         theme: schema.songs.theme,
         folder: schema.songs.folder,
+        fileName: schema.songs.fileName,
       })
       .from(schema.songs)
       .orderBy(asc(schema.songs.folder), asc(schema.songs.title))
@@ -135,6 +138,7 @@ export class SqliteSongRepository implements SongRepository {
       authors: JSON.parse(r.authors) as string[],
       theme: r.theme,
       folder: r.folder,
+      fileName: r.fileName,
     }));
   }
 
