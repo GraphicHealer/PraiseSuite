@@ -339,6 +339,20 @@ describe("round-trip export", () => {
     }
   });
 
+  it("falls back to section order when provenance is incomplete", () => {
+    // A line edited in place (no sourceLine) can't be placed in the
+    // source-order merge — the untagged block falls back to per-section
+    // order instead of moving the line to the end.
+    const parsed = parseOpenSongSong(fixtureSong("Man Of Sorrows")).song;
+    const song = materializeSong(parsed, ids);
+    const newLine = { ...song.sections[0]!.lines[0]!, text: "EDITED" };
+    delete newLine.sourceLine;
+    song.sections[0]!.lines.splice(1, 0, newLine);
+    const out = /<lyrics>([\s\S]*?)<\/lyrics>/.exec(serializeOpenSongSong(song))![1]!;
+    expect(out).toContain("1Man of Sorrows");
+    expect(out.indexOf("EDITED")).toBeLessThan(out.indexOf("Ruined sinners"));
+  });
+
   it("reconstructs dict-merged untagged lyrics in source order", () => {
     // Man Of Sorrows: untagged verse block 1-5 then chorus block 1-5 — the
     // dict merges them into [v1,c1] [v2,c2]…, and sourceLine provenance

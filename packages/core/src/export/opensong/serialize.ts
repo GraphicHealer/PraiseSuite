@@ -153,26 +153,33 @@ function serializeSection(s: SongSection): string {
  * The untagged block serializes as ONE stream sorted by sourceLine: dict
  * subsections merge non-consecutive same-key lines (e.g. verse1+chorus1),
  * so per-section emission can't recover source order — interleaving lines
- * across subsections can (Man Of Sorrows).
+ * across subsections can (Man Of Sorrows). Only used when every line has
+ * provenance — a line without sourceLine (edited in place via the API)
+ * can't be placed in the stream, so the block falls back to section order.
  */
 function serializeUntaggedBlock(sections: readonly SongSection[]): string {
-  type Entry = { line: import("../../domain/songs/types.js").LyricLine };
-  const all: Entry[] = [];
+  const allSourced = sections.every((s) => s.lines.every((l) => l.sourceLine !== undefined));
+  if (!allSourced) {
+    let out = "";
+    sections.forEach((s, i) => {
+      if (i > 0) out += s.leadingBlank === false ? "\n" : "\n\n";
+      out += serializeLines(s.lines).join("\n");
+    });
+    return out;
+  }
+  const all: import("../../domain/songs/types.js").LyricLine[] = [];
   const blankBefore = new Map<import("../../domain/songs/types.js").LyricLine, boolean>();
   for (const sec of sections) {
     const sorted = [...sec.lines].sort(
       (a, b) => (a.sourceLine ?? Number.MAX_SAFE_INTEGER) - (b.sourceLine ?? Number.MAX_SAFE_INTEGER),
     );
     if (sec.leadingBlank === true && sorted[0] !== undefined) blankBefore.set(sorted[0], true);
-    for (const line of sorted) all.push({ line });
+    for (const line of sorted) all.push(line);
   }
   all.sort(
-    (a, b) => (a.line.sourceLine ?? Number.MAX_SAFE_INTEGER) - (b.line.sourceLine ?? Number.MAX_SAFE_INTEGER),
+    (a, b) => (a.sourceLine ?? Number.MAX_SAFE_INTEGER) - (b.sourceLine ?? Number.MAX_SAFE_INTEGER),
   );
-  return serializeLines(
-    all.map((e) => e.line),
-    (l) => blankBefore.get(l) === true,
-  ).join("\n");
+  return serializeLines(all, (l) => blankBefore.get(l) === true).join("\n");
 }
 
 /**
