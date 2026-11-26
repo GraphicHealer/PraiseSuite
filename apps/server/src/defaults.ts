@@ -17,7 +17,12 @@ import { storeMedia, type SqliteStorage } from "@praisesuite/storage-sqlite";
  * `assets/opensong-defaults/` and seed media storage + style settings.
  */
 function defaultsDir(): string {
-  return join(dirname(fileURLToPath(import.meta.url)), "..", "assets", "opensong-defaults");
+  // Packaged desktop builds ship the defaults outside the bundle layout —
+  // PRAISESUITE_ASSETS points at them; dev resolves them relative to src/.
+  return (
+    process.env["PRAISESUITE_ASSETS"] ??
+    join(dirname(fileURLToPath(import.meta.url)), "..", "assets", "opensong-defaults")
+  );
 }
 
 const IMAGE_TYPES: Record<string, string> = {

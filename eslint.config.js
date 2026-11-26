@@ -6,7 +6,7 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    ignores: ["**/dist/**", "**/build/**", "**/coverage/**", "**/node_modules/**", "**/public/vendor/**"],
+    ignores: ["**/dist/**", "**/build/**", "**/coverage/**", "**/node_modules/**", "**/public/vendor/**", "**/staging/**", "**/release/**"],
   },
   {
     // Plain-JS files (Electron main, configs) run in Node — TS files get

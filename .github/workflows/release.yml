@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+
+      # Builds web dist + server bundle, stages the app (bundled node.exe,
+      # better-sqlite3 prebuild matching the runner's Node ABI), and runs
+      # electron-builder → release/PraiseSuite-Setup-*.exe + *-portable.exe.
+      - name: Package desktop app
+        working-directory: apps/desktop
+        run: node scripts/stage.mjs --pack
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            apps/desktop/release/PraiseSuite-Setup-*.exe
+            apps/desktop/release/*-portable.exe
+          generate_release_notes: true

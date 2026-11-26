@@ -1,0 +1,41 @@
+appId: dev.praisesuite.app
+productName: PraiseSuite
+copyright: Copyright © 2025
+directories:
+  output: ../release
+files:
+  - main.mjs
+  - preload.cjs
+  - icon.ico
+  - package.json
+# The server is a separate Node process — its native module (better-sqlite3)
+# needs a real Node ABI, so it ships outside the asar alongside node.exe.
+extraResources:
+  - from: runtime
+    to: runtime
+  - from: server
+    to: server
+    filter:
+      # Mentioning node_modules disables electron-builder's automatic
+      # "!**/node_modules/**" exclusion — the bundle needs better-sqlite3.
+      - "**/*"
+      - "**/node_modules/**"
+  - from: web
+    to: web
+  - from: assets
+    to: assets
+asar: true
+npmRebuild: false
+win:
+  target:
+    - nsis
+    - portable
+  icon: icon.ico
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: PraiseSuite
+  artifactName: ${productName}-Setup-${version}.${ext}
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}

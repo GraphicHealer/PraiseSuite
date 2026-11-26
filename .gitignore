@@ -16,3 +16,8 @@ NUL
 # Local review notes — never committed
 reveiws/
 reviews/
+
+# desktop packaging
+apps/desktop/staging/
+apps/desktop/release/
+apps/server/dist/

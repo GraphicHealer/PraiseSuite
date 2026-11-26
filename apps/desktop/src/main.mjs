@@ -1,7 +1,8 @@
 import { app, BrowserWindow, screen, ipcMain, dialog, shell, session } from "electron";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -60,22 +61,16 @@ const localFetch = (url, init) =>
 
 /**
  * Child-process server (TAS 3.5): the same apps/server that serves REST+WS
- * is spawned under Electron's Node runtime (ELECTRON_RUN_AS_NODE), so a
- * renderer crash can never take the data layer down with it.
+ * runs as its own process, so a renderer crash can never take the data
+ * layer down with it. Packaged builds spawn the bundled Node runtime
+ * (resources/runtime/node.exe — its ABI matches the shipped better-sqlite3
+ * prebuild); dev spawns system `node` with tsx on the TypeScript sources.
  */
-function startServer() {
-  const serverDir = path.join(ROOT, "apps", "server");
-  // Prefer a system Node for dev — better-sqlite3's native module is built
-  // against Node's ABI there. Packaged builds can force Electron's runtime
-  // (ELECTRON_RUN_AS_NODE) with an electron-rebuilt module.
-  const tsxCli = path.join(serverDir, "node_modules", "tsx", "dist", "cli.mjs");
-  const runtime = process.env.PRAISESUITE_SERVER_RUNTIME ?? "node";
-  const cmd = runtime === "electron" ? process.execPath : runtime;
+function startServer(dataDir) {
   const env = {
     ...process.env,
     PORT: String(PORT),
-    PRAISESUITE_DATA: path.join(app.getPath("userData"), "data"),
-    PRAISESUITE_WEB_ROOT: path.join(ROOT, "apps", "web", "dist"),
+    PRAISESUITE_DATA: dataDir,
     // Desktop is single-user: only one live presentation session at a time.
     PRAISESUITE_SINGLE_SESSION: "1",
     // Split-listener mode: internal loopback listener on an ephemeral port,
@@ -83,12 +78,31 @@ function startServer() {
     PRAISESUITE_INTERNAL: "1",
     PRAISESUITE_INTERNAL_TOKEN: INTERNAL_TOKEN,
   };
-  if (runtime === "electron") env.ELECTRON_RUN_AS_NODE = "1";
-  serverProc = spawn(cmd, [tsxCli, "src/index.ts"], {
-    cwd: serverDir,
-    env,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  // If a user's shell sets ELECTRON_RUN_AS_NODE globally, it would make the
+  // bundled runtime act like Electron-node on exes — strip it (the bundled
+  // runtime is real node.exe anyway).
+  delete env.ELECTRON_RUN_AS_NODE;
+  let cmd, args, cwd;
+  if (app.isPackaged) {
+    const res = process.resourcesPath;
+    cmd = path.join(res, "runtime", "node.exe");
+    args = ["server.mjs"];
+    // node_modules can't sit at the extraResources root (electron-builder
+    // filters it) — the server lives one level down in server/app/.
+    cwd = path.join(res, "server", "app");
+    env.PRAISESUITE_WEB_ROOT = path.join(res, "web");
+    env.PRAISESUITE_ASSETS = path.join(res, "assets", "opensong-defaults");
+  } else {
+    cmd = process.env.PRAISESUITE_SERVER_RUNTIME ?? "node";
+    args = [path.join("node_modules", "tsx", "dist", "cli.mjs"), "src/index.ts"];
+    cwd = path.join(ROOT, "apps", "server");
+    env.PRAISESUITE_WEB_ROOT = path.join(ROOT, "apps", "web", "dist");
+    if (cmd === "electron") {
+      cmd = process.execPath;
+      env.ELECTRON_RUN_AS_NODE = "1";
+    }
+  }
+  serverProc = spawn(cmd, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
   serverProc.stdout.on("data", (d) => {
     process.stdout.write(`[server] ${d}`);
     const m = /Internal listener: http:\/\/127\.0\.0\.1:(\d+)/.exec(d.toString());
@@ -102,6 +116,70 @@ function startServer() {
     console.error(`server exited (${code})`);
     serverProc = null;
   });
+}
+
+/**
+ * Portable builds (electron-builder sets PORTABLE_EXECUTABLE_DIR to the
+ * exe's folder) keep their data where the user chooses — the pick is
+ * remembered in `praisesuite-data-path.txt` next to the exe. Paths inside
+ * the exe's folder are stored RELATIVE so a USB stick's changing drive
+ * letter doesn't break the link.
+ */
+const PORTABLE_DIR = process.env.PORTABLE_EXECUTABLE_DIR;
+const PORTABLE_MARKER = PORTABLE_DIR
+  ? path.join(PORTABLE_DIR, "praisesuite-data-path.txt")
+  : null;
+
+/** Resolve a marker-stored path: relative means relative to the exe dir. */
+function portablePath(stored) {
+  return path.isAbsolute(stored) ? stored : path.resolve(PORTABLE_DIR, stored);
+}
+
+/** Record the chosen dir in the marker — relative when under the exe dir. */
+async function writePortableMarker(dir) {
+  const rel = path.relative(PORTABLE_DIR, dir);
+  const stored = rel.startsWith("..") || path.isAbsolute(rel) ? dir : `.${path.sep}${rel}`;
+  await writeFile(PORTABLE_MARKER, stored, "utf8");
+}
+
+/** First-run / missing-dir prompt: default next to the exe, or a folder pick. */
+async function pickPortableDataDir() {
+  const { response } = await dialog.showMessageBox({
+    type: "question",
+    title: "PraiseSuite",
+    message: "Where should PraiseSuite store its data?",
+    detail:
+      "Songs, sets, media, and settings live in this folder. Keeping it next " +
+      "to the app makes the whole setup portable.",
+    buttons: ["Next to the app", "Choose a folder…", "Quit"],
+    defaultId: 0,
+    cancelId: 2,
+  });
+  if (response === 2) return null;
+  if (response === 0) return path.join(PORTABLE_DIR, "PraiseSuite Data");
+  const { canceled, filePaths } = await dialog.showOpenDialog({
+    title: "Choose a data folder",
+    defaultPath: PORTABLE_DIR,
+    properties: ["openDirectory", "createDirectory", "promptToCreate"],
+  });
+  return canceled || filePaths.length === 0 ? pickPortableDataDir() : filePaths[0];
+}
+
+async function resolveDataDir() {
+  if (PORTABLE_MARKER === null) return path.join(app.getPath("userData"), "data");
+  try {
+    const stored = (await readFile(PORTABLE_MARKER, "utf8")).trim();
+    const dir = portablePath(stored);
+    // A vanished folder means the user moved/renamed it — re-ask rather than
+    // silently starting with an empty library.
+    if (existsSync(dir)) return dir;
+  } catch {
+    /* no marker yet — first run */
+  }
+  const dir = await pickPortableDataDir();
+  if (dir === null) return null;
+  await writePortableMarker(dir).catch(() => {}); // read-only exe dir → ask every run
+  return dir;
 }
 
 /** Wait until the API responds before opening windows. */
@@ -403,7 +481,17 @@ ipcMain.handle("ps:is-output", (e) => outputWindow !== null && e.sender === outp
 ipcMain.handle("ps:display-count", () => screen.getAllDisplays().length);
 
 app.whenReady().then(async () => {
-  startServer();
+  const dataDir = await resolveDataDir();
+  if (dataDir === null) {
+    app.exit(0);
+    return;
+  }
+  if (PORTABLE_DIR) {
+    // Keep Chromium's caches/userData inside the chosen folder too — a
+    // portable app shouldn't leave traces in %APPDATA%.
+    app.setPath("userData", path.join(dataDir, ".electron"));
+  }
+  startServer(dataDir);
   try {
     await waitForServer();
   } catch (e) {

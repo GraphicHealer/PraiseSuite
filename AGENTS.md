@@ -25,12 +25,14 @@ redesign will build on. Implications:
 - `pnpm typecheck` — `tsc --noEmit` across packages
 - `pnpm lint` — ESLint; `packages/core` has boundary rules forbidding Node APIs
 - `pnpm -r run build` — full workspace build (web production build included)
+- `pnpm -C apps/desktop dist` — stage + pack the desktop app with electron-builder → `apps/desktop/release/` emits `PraiseSuite-Setup-*.exe` (NSIS installer) and `PraiseSuite-*-portable.exe`. `pnpm -C apps/desktop stage` stages only. Releases publish via `.github/workflows/release.yml` on `v*` tags.
 
 ## Verification workflow
 
 - After any change/addition: run `pnpm lint`, `pnpm -r run typecheck`, `pnpm test`, and `pnpm -r run build` **locally** before committing.
 - After pushing, **check CI too**: `gh run list --limit 5` (and `gh run watch`/`gh run view --log-failed` to diagnose). Local green is not enough — keep CI green on every commit, not just milestone checkpoints.
-- The desktop test instance: `pnpm -C apps/web build && pnpm -C apps/desktop dev`. Note: `ELECTRON_RUN_AS_NODE` must not be set in the launching shell, and the child server needs `node` on PATH (see `apps/desktop/src/main.mjs`).
+- The desktop test instance: `pnpm -C apps/web build && pnpm -C apps/desktop dev`. Note: `ELECTRON_RUN_AS_NODE` must not be set in the launching shell, and the child server needs `node` on PATH (see `apps/desktop/src/main.mjs`). Packaged builds instead ship `resources/runtime/node.exe` (copied from the packaging machine's Node, matching the npm-installed better-sqlite3 prebuild ABI) and spawn `resources/server/app/server.mjs`.
+- Portable exe data lives where the user picks on first run; the choice is stored (relative when under the exe dir) in `praisesuite-data-path.txt` next to the exe. Installed builds use `%APPDATA%/PraiseSuite/data`.
 
 ## Non-negotiable rules (from the architecture spec)
 
