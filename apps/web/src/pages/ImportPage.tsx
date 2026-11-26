@@ -25,12 +25,16 @@ export function ImportPage({ seed }: { seed?: { name: string; text: string } | n
 
   const pick = async (list: FileList | null) => {
     if (!list) return;
+    // Skip binary files (Backgrounds images, media, fonts) — they are never
+    // valid OpenSong XML and reading them as text can balloon a folder pick
+    // into a 100MB+ payload that freezes the tab. Same list expandZip uses.
+    const skipExt = /\.(jpe?g|png|gif|webp|bmp|tiff?|mp4|mov|avi|wmv|mp3|wav|flac|ttf|otf|woff2?|ico|pdf|exe|dll|db|ds_store)$/i;
     const out: ImportFilePayload[] = [];
     for (const f of Array.from(list)) {
       if (f.name.toLowerCase().endsWith(".zip")) {
         const expanded = expandZip(new Uint8Array(await f.arrayBuffer()));
         out.push(...expanded.map((e) => ({ path: `${f.name}/${e.path}`, text: e.text })));
-      } else {
+      } else if (!skipExt.test(f.name)) {
         out.push({ path: f.webkitRelativePath || f.name, text: await readXmlFile(f) });
       }
     }
