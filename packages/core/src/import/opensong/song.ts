@@ -142,13 +142,16 @@ export function parseOpenSongSong(xml: string): SongParseResult {
   const presentation = asString(root["presentation"]).trim();
   const sequence: { sectionIndex: number; repeats: number; prefix: string | null }[] = [];
   if (presentation !== "") {
+    // OpenSong's section dict lookup ignores case: "V2" in <presentation>
+    // still matches a "[v2]" header (Dictionary keys compare caselessly).
+    const findSec = (lbl: string) => sections.findIndex((s) => s.label.toUpperCase() === lbl.toUpperCase());
     for (const tag of presentation.split(/\s+/)) {
-      let idx = sections.findIndex((s) => s.label === tag);
+      let idx = findSec(tag);
       let prefix: string | null = null;
       if (idx === -1) {
         const m = /^([A-Za-z]+)(\d+)$/.exec(tag);
         if (m) {
-          idx = sections.findIndex((s) => s.label === m[1]);
+          idx = findSec(m[1]!);
           if (idx !== -1) prefix = m[2]!;
         }
       }

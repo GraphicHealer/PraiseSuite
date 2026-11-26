@@ -241,7 +241,14 @@ export function buildPlan(
    */
   const styleForItem = (item: ServiceItem): StyleOverride | null => {
     const stackTop = styleStack[styleStack.length - 1];
-    const itemStyle = item.config["style"] as StyleOverride | undefined;
+    let itemStyle = item.config["style"] as StyleOverride | undefined;
+    // Same unrenderable-background guard as songStyleOf: a set item imported
+    // before style backgrounds went through media storage carries the raw
+    // base64 as its key — drop it rather than emit a bad mediaUrl.
+    if (itemStyle !== undefined && typeof itemStyle.backgroundKey === "string" && itemStyle.backgroundKey.length > 200 && !itemStyle.backgroundKey.includes("/")) {
+      itemStyle = { ...itemStyle };
+      delete itemStyle.backgroundKey;
+    }
     const song = item.kind === "song" && item.songId !== null ? (songsById.get(item.songId) ?? null) : null;
     const songStyle = song !== null ? songStyleOf(song) : null;
     if (itemStyle === undefined && songStyle !== null && (styleStack.length === 0 || songStylePreferred))

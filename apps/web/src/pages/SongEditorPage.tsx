@@ -157,12 +157,14 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
         const repeats = m ? Number.parseInt(m[2]!, 10) : 1;
         // "C" -> section C; "V1" -> section V with verse prefix 1 (unless a
         // section is literally labeled V1).
-        let hit = pool.find((p) => p.label === ref);
+        // OpenSong's section dict ignores case: "V2" still hits a "[v2]" header.
+        const findSec = (lbl: string) => pool.find((p) => p.label.toUpperCase() === lbl.toUpperCase());
+        let hit = findSec(ref);
         let prefix: string | null = null;
         if (!hit) {
           const vm = /^([A-Za-z]+)(\d+)$/.exec(ref);
           if (vm) {
-            hit = pool.find((p) => p.label === vm[1]);
+            hit = findSec(vm[1]!);
             if (hit) prefix = vm[2]!;
           }
         }

@@ -170,6 +170,44 @@ describe("song parser", () => {
     expect(warnings.some((w) => w.includes("C9"))).toBe(true);
   });
 
+  it("matches presentation tags to section labels case-insensitively", () => {
+    // OpenSong's section dict compares caselessly: "V2" hits a "[v2]" header.
+    const direct = parseOpenSongSong(
+      `<?xml version="1.0"?><song><title>T</title><presentation>V1 V2</presentation><lyrics>[v1]\n one\n[v2]\n two</lyrics></song>`,
+    );
+    expect(direct.warnings).toEqual([]);
+    expect(direct.song.arrangements[0]!.sequence).toHaveLength(2);
+    // …and the label+digit split ("V2" -> "[v]" + prefix 2) is caseless too.
+    const split = parseOpenSongSong(
+      `<?xml version="1.0"?><song><title>T</title><presentation>V1 V2</presentation><lyrics>[v]\n1 one\n2 two</lyrics></song>`,
+    );
+    expect(split.warnings).toEqual([]);
+    expect(split.song.arrangements[0]!.sequence.map((s) => s.prefix)).toEqual(["1", "2"]);
+  });
+
+  it("merges repeated section headers into one section (SongML dict)", () => {
+    // LyricsToSections: a repeated header appends to the existing dict entry,
+    // which keeps its first position in the order.
+    const { sections } = parseOpenSongLyrics("[V1]\n verse\n[C]\n chorus one\n[V2]\n verse two\n[C]\n chorus two\n");
+    expect(sections.map((s) => s.label)).toEqual(["V1", "C", "V2"]);
+    expect(sections[1]!.lines.map((l) => l.text.trim())).toEqual(["chorus one", "chorus two"]);
+    // Case-insensitive: "[c]" merges into "[C]" too.
+    const ci = parseOpenSongLyrics("[C]\n a\n[c]\n b\n");
+    expect(ci.sections.map((s) => s.label)).toEqual(["C"]);
+    expect(ci.sections[0]!.lines.map((l) => l.text.trim())).toEqual(["a", "b"]);
+  });
+
+  it("an unclosed header starts its own unnamed section", () => {
+    // SongML ParseSectionLine fails on "[V1" -> section "" — the block's
+    // lines must not fold into the previous section.
+    const { sections, warnings } = parseOpenSongLyrics("[C]\n chorus\n[V1\n verse one\n[V2]\n verse two\n");
+    expect(warnings.some((w) => w.includes("Malformed"))).toBe(true);
+    expect(sections.map((s) => s.label)).toEqual(["C", "", "V2"]);
+    expect(sections[0]!.lines.map((l) => l.text.trim())).toEqual(["chorus"]);
+    expect(sections[1]!.lines.map((l) => l.text.trim())).toEqual(["verse one"]);
+    expect(sections[2]!.lines.map((l) => l.text.trim())).toEqual(["verse two"]);
+  });
+
   it("parses <backgrounds> verse images with fit/link/as-text flags", () => {
     const xml = `<?xml version="1.0"?><song><title>T</title><lyrics>[V1]\n x</lyrics>
       <backgrounds resize="screen" keep_aspect="true" link="false" background_as_text="true">
@@ -448,6 +486,47 @@ describe("duplicates + pipeline", () => {
     expect(resolved).toHaveLength(1);
     expect(svc.items.filter((i) => i.kind === "song" && i.songId === null)).toHaveLength(3);
     expect(report.warnings.some((w) => w.includes("not found"))).toBe(true);
+  });
+
+  it("applyImport stores a style-change group's embedded background as media", async () => {
+    const services = new Map<string, Service>();
+    const media = new Map<string, string>();
+    const repos = {
+      songs: {
+        get: async () => null,
+        save: async () => {},
+        delete: async () => {},
+        list: async (): Promise<SongSummary[]> => [],
+        search: async () => [],
+      },
+      services: {
+        get: async (id: Service["id"]) => services.get(id) ?? null,
+        save: async (s: Service) => void services.set(s.id, s),
+        delete: async () => {},
+        list: async () => [...services.values()],
+      },
+    };
+    const fakeBg = "QUJD".repeat(100); // >200 chars, no "/" — the embedded-data heuristic
+    const setXml = `<?xml version="1.0"?><set name="S"><slide_groups>
+      <slide_group name="-- Change Style --" type="style" action="new" print="true" seconds="0" loop="false">
+        <style><background image_fit="1">${fakeBg}</background></style>
+      </slide_group>
+    </slide_groups></set>`;
+    const report = await applyImport(
+      analyzeImport([{ path: "Sets/S", text: setXml }]),
+      ids, repos,
+      {
+        storeMedia: async (name) => {
+          media.set(name, `media/${name}`);
+          return { id: "m1", storageKey: `media/${name}` };
+        },
+      },
+    );
+    expect(report.importedSets).toBe(1);
+    const styleItem = [...services.values()][0]!.items.find((i) => i.kind === "style")!;
+    const style = styleItem.config["style"] as { backgroundKey?: string };
+    expect(style.backgroundKey).toBe("media/opensong-style-background.jpg");
+    expect(media.has("opensong-style-background.jpg")).toBe(true);
   });
 });
 

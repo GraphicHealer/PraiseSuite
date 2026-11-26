@@ -145,6 +145,10 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
   const defaultDict = new Map<string, ParsedSection>();
   const defaultOrder: string[] = [];
   let lastDefaultKey = "";
+  // SongML's sections dict merges repeated headers — "[C]" blocks two
+  // verses apart concatenate into one "C" entry, and Xojo Dictionary keys
+  // compare caselessly so "[c]" hits the same entry as "[C]".
+  const taggedDict = new Map<string, ParsedSection>();
   // "slide" = a blank source line (slide boundary only when
   // blank_is_slide_change); "bar" = a bare "||" line (always a boundary).
   let pendingBreak: false | "slide" | "bar" = false;
@@ -229,18 +233,36 @@ export function parseOpenSongLyrics(lyrics: string): LyricsParseResult {
       const parsed = parseSectionHeader(line);
       if (!parsed) {
         warnings.push(`Malformed section header: ${line}`);
+        flushOrphanChords();
+        // SongML ParseSectionLine leaves section="" on a failed header, so
+        // the block's lines form their own unnamed section — they must not
+        // fold into the previous one.
+        section = { type: "other", label: "", options: {}, lines: [], untagged: true };
+        section.leadingBlank = pendingBreak === "slide";
+        sections.push(section);
+        pendingBreak = false;
         continue;
       }
       flushOrphanChords();
-      section = {
-        type: sectionType(parsed.label),
-        label: parsed.label,
-        options: parsed.options,
-        lines: [],
-      };
-      // A blank line between sections is the join, not an interior break.
-      section.leadingBlank = pendingBreak === "slide";
-      sections.push(section);
+      const key = parsed.label.toUpperCase();
+      const existing = taggedDict.get(key);
+      if (existing) {
+        // Repeated header: lines append to the first section with this
+        // label; later options merge in (e.g. a "[C:L]" re-occurrence).
+        section = existing;
+        Object.assign(existing.options, parsed.options);
+      } else {
+        section = {
+          type: sectionType(parsed.label),
+          label: parsed.label,
+          options: parsed.options,
+          lines: [],
+        };
+        // A blank line between sections is the join, not an interior break.
+        section.leadingBlank = pendingBreak === "slide";
+        sections.push(section);
+        taggedDict.set(key, section);
+      }
       pendingBreak = false;
       continue;
     }

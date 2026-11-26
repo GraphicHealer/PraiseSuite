@@ -289,6 +289,20 @@ export async function applyImport(
         }
       }
       if (stored.length > 0) item.config["images"] = stored;
+      // Style-change groups can embed a <style><background> base64 image —
+      // it needs media storage just like a song's, else the override's
+      // backgroundKey holds raw data that can't resolve to a URL.
+      const st = item.config["style"] as { backgroundKey?: string | null } | undefined;
+      if (
+        st && typeof st.backgroundKey === "string" && st.backgroundKey.length > 200 &&
+        !st.backgroundKey.includes("/") && options.storeMedia !== undefined
+      ) {
+        try {
+          st.backgroundKey = (await options.storeMedia("opensong-style-background.jpg", "image/jpeg", st.backgroundKey)).storageKey;
+        } catch {
+          report.warnings.push(`${analyzedSet.path}: style background for "${item.title}" could not be stored`);
+        }
+      }
       items.push({ ...item, id: ids.next() as ServiceItemId, mediaAssetId });
     }
     const service: Service = {

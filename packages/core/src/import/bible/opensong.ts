@@ -1,5 +1,5 @@
 import type { BibleBook, BibleTranslation } from "../../domain/bible/types.js";
-import { BOOK_NAMES } from "../../domain/bible/types.js";
+import { BOOK_NAMES, bookNumber } from "../../domain/bible/types.js";
 import type { BibleId } from "../../ids.js";
 import { asRecord, asString, attrOf, parseXml, textOf } from "../opensong/xml.js";
 
@@ -18,14 +18,22 @@ function list(el: unknown): Record<string, unknown>[] {
  * Verse text may contain <t> segments (OpenSong joins them with "-"); any
  * child markup is flattened to text.
  */
-export function parseOpenSongBible(xml: string, id: BibleId): BibleTranslation {
+export function parseOpenSongBible(xml: string, id: BibleId, fileName?: string): BibleTranslation {
   const doc = asRecord(parseXml(xml));
   const root = asRecord(doc["bible"] ?? doc["XMLBIBLE"]);
   const bookEls = list(root["b"] ?? root["BIBLEBOOK"]);
   if (bookEls.length === 0) throw new Error("Invalid Bible XML: no <b>/<BIBLEBOOK> elements");
 
   const books: BibleBook[] = bookEls.map((b, i) => {
-    const num = Number.parseInt(attrOf(b, "n") || attrOf(b, "bnumber") || String(i + 1), 10);
+    // OpenSong bibles carry the book NAME in n (<b bnumber="1" n="Genesis">;
+    // Bible.xojo_code ~line 966 BookNames.Append ...GetAttribute("n")), while
+    // invented/Zefania formats use a numeric n or bnumber for the number.
+    const nAttr = attrOf(b, "n") ?? "";
+    const nNum = Number.parseInt(nAttr, 10);
+    const namedN = nAttr !== "" && !Number.isFinite(nNum);
+    const num = Number.isFinite(nNum)
+      ? nNum
+      : Number.parseInt(attrOf(b, "bnumber") ?? "", 10) || bookNumber(nAttr) || i + 1;
     const chapterEls = list(b["c"] ?? b["CHAPTER"]);
     // Sparse-safe: index by declared chapter/verse numbers, not parse order.
     const chapters: string[][] = [];
@@ -45,14 +53,19 @@ export function parseOpenSongBible(xml: string, id: BibleId): BibleTranslation {
     }
     return {
       number: num,
-      name: asString(b["name"] ?? attrOf(b, "name") ?? attrOf(b, "bname") ?? "") || (BOOK_NAMES[num - 1] ?? `Book ${num}`),
+      name: asString(b["name"] ?? attrOf(b, "name") ?? attrOf(b, "bname") ?? "")
+        || (namedN ? nAttr : "")
+        || (BOOK_NAMES[num - 1] ?? `Book ${num}`),
       abbrev: asString(b["abbrev"] ?? attrOf(b, "abbrev") ?? "") || null,
       chapters,
     };
   });
+  // OpenSong lists a bible by its file name (scripture/xml/@use_filename
+  // default); the biblename attr is only a fallback for fileless imports.
+  const fileLabel = fileName ? fileName.replace(/\.[^.]+$/, "") : "";
   return {
     id,
-    name: asString(root["@_biblename"] ?? root["biblename"] ?? root["@_name"] ?? "") || "Imported Bible",
+    name: fileLabel || asString(root["@_biblename"] ?? root["biblename"] ?? root["@_name"] ?? "") || "Imported Bible",
     abbreviation: asString(root["@_abbreviation"] ?? root["abbreviation"] ?? "") || "Bible",
     language: asString(root["@_language"] ?? "") || null,
     copyright: asString(root["copyright"] ?? root["@_copyright"] ?? "") || null,

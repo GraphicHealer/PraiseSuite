@@ -587,7 +587,7 @@ export function buildRoutes(deps: AppDeps): Route[] {
       let importedBibles = 0;
       for (const b of analysis.bibles) {
         try {
-          await storeBibleXml(deps, b.xml);
+          await storeBibleXml(deps, b.xml, b.name);
           importedBibles++;
         } catch (e) {
           report.warnings.push(`${b.path}: bible import failed — ${(e as Error).message}`);
@@ -794,7 +794,7 @@ export function buildRoutes(deps: AppDeps): Route[] {
       const latin = /encoding=["'](?:iso-8859-1|windows-1252|latin1)["']/i.test(head);
       const xml = buf.toString(latin ? "latin1" : "utf-8");
       try {
-        return await storeBibleXml(deps, xml);
+        return await storeBibleXml(deps, xml, new URL(body.url).pathname.split("/").pop() || undefined);
       } catch (e) {
         throw new ApiError(400, "bad_bible", `Not a Bible XML: ${(e as Error).message}`);
       }
@@ -1358,8 +1358,9 @@ function imageDefaultsOf(storage: SqliteStorage): { fitToScreen: boolean; fitToB
 async function storeBibleXml(
   deps: { ids: { next: () => string }; repos: { files: { put: (k: string, d: Uint8Array) => Promise<void> } }; storage: SqliteStorage },
   xml: string,
+  fileName?: string,
 ): Promise<{ id: string; name: string; abbreviation: string; books: number }> {
-  const bible = parseOpenSongBible(xml, deps.ids.next() as BibleId);
+  const bible = parseOpenSongBible(xml, deps.ids.next() as BibleId, fileName);
   return await storeBible(deps, bible);
 }
 

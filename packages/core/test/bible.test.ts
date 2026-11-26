@@ -55,6 +55,27 @@ describe("OpenSong Bible import", () => {
     expect(z.books[0]!.number).toBe(1);
     expect(passage(z, { book: 1, chapter: 1, startVerse: 1, endVerse: 2 })[1]).toContain("without form");
   });
+  it("real OpenSong format: n is the book NAME, bnumber the number", () => {
+    // <b bnumber="N" n="Name"> — the shape every shipped OpenSong bible uses.
+    const xml = `<?xml version="1.0"?>
+    <bible biblename="ENGLISHESV">
+      <b bnumber="1" n="Genesis"><c n="1">
+        <v n="1">In the beginning, God created the heavens and the earth.</v>
+      </c></b>
+      <b bnumber="43" n="John"><c n="3"><v n="16">For God so loved the world</v></c></b>
+    </bible>`;
+    const b = parseOpenSongBible(xml, "esv" as BibleId, "ESV.xml");
+    expect(b.name).toBe("ESV"); // OpenSong lists the file name, not biblename
+    expect(b.books.map((x) => [x.number, x.name])).toEqual([[1, "Genesis"], [43, "John"]]);
+    expect(passage(b, { book: 43, chapter: 3, startVerse: 16, endVerse: 16 })).toEqual(["For God so loved the world"]);
+  });
+  it("OpenSong format without bnumber: number falls back to name/position", () => {
+    const xml = `<bible><b n="Genesis"><c n="1"><v n="1">x</v></c></b><b n="Revelation"><c n="22"><v n="21">y</v></c></b></bible>`;
+    const b = parseOpenSongBible(xml, "x" as BibleId);
+    expect(b.books[0]!.number).toBe(1);
+    expect(b.books[1]!.number).toBe(66); // name lookup beats position (2)
+    expect(b.books[1]!.name).toBe("Revelation");
+  });
   it("clamps out-of-range refs", () => {
     expect(clampReference(bible, { book: 43, chapter: 3, startVerse: 16, endVerse: 99 }))
       .toMatchObject({ endVerse: 18 });
