@@ -20,7 +20,16 @@ interface PsBridge {
   setDisplayMode?: (mode: string) => Promise<string>;
   present?: (mode: string, serviceId: string | null, itemId: string | null) => Promise<string>;
   presentExit?: () => Promise<void>;
+  /** File-association/protocol launch buffered before this window mounted. */
+  pendingOpen?: () => Promise<OpenTarget | null>;
+  /** Live OS launches (second-instance) after startup. */
+  onOpen?: (cb: (target: OpenTarget) => void) => void;
 }
+
+/** OS open-target delivered via the desktop preload bridge. */
+export type OpenTarget =
+  | { type: "file"; name: string; text: string }
+  | { type: "url"; url: string };
 
 function LoginGate({ onDone }: { onDone: () => void }) {
   const [password, setPassword] = useState("");
@@ -102,6 +111,21 @@ export function App(): ReactNode {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
   }, [dark]);
+
+  // OS launches: double-clicked song/set files stage into the import flow;
+  // praisesuite:// URLs currently just focus the app (no deep routes yet).
+  const [importSeed, setImportSeed] = useState<{ name: string; text: string } | null>(null);
+  useEffect(() => {
+    const ps = (window as unknown as { ps?: PsBridge }).ps;
+    const handle = (t: OpenTarget) => {
+      if (t.type === "file") {
+        setImportSeed({ name: t.name, text: t.text });
+        setPage("import");
+      }
+    };
+    void ps?.pendingOpen?.().then((t) => t && handle(t));
+    ps?.onOpen?.(handle);
+  }, []);
 
   // Presenter window: resolve the ?service=<id> into a start request.
   useEffect(() => {
@@ -244,7 +268,7 @@ export function App(): ReactNode {
               onImport={() => setPage("import")}
             />
           )}
-          {page === "import" && <ImportPage />}
+          {page === "import" && <ImportPage seed={importSeed} />}
           {page === "present" && (
             <PresentPage
               key={presentReq?.service ? `${presentReq.service.id}:${presentReq.itemId ?? ""}` : "pick"}

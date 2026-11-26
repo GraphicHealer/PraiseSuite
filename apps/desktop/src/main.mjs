@@ -1,7 +1,7 @@
 import { app, BrowserWindow, screen, ipcMain, dialog, shell, session } from "electron";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,6 +16,11 @@ const INTERNAL_TOKEN = randomUUID();
 let BASE = null;
 let resolveBase;
 const baseReady = new Promise((r) => (resolveBase = r));
+
+// Single instance: double-clicking an associated file or a praisesuite://
+// link while the app runs forwards to the existing window instead of
+// spawning a second copy (which would fight over the same SQLite DB).
+if (!app.requestSingleInstanceLock()) app.exit(0);
 
 let serverProc = null;
 let outputWindow = null;
@@ -181,6 +186,72 @@ async function resolveDataDir() {
   await writePortableMarker(dir).catch(() => {}); // read-only exe dir → ask every run
   return dir;
 }
+
+/**
+ * File-association / protocol launches. Windows puts the target in argv:
+ * `PraiseSuite.exe "C:\...\song.xml"` or `PraiseSuite.exe "praisesuite://…"`.
+ * `pendingOpen` is pulled by the renderer on mount (race-free); later
+ * activations arrive via second-instance → "ps:open".
+ */
+let pendingOpen = openTargetFromArgv(process.argv);
+
+function openTargetFromArgv(argv) {
+  for (const a of argv.slice(1)) {
+    if (typeof a === "string" && a.startsWith("praisesuite://")) {
+      return { type: "url", url: a };
+    }
+  }
+  for (const a of argv.slice(1)) {
+    if (typeof a === "string" && !a.startsWith("--")) {
+      try {
+        if (statSync(a).isFile()) return { type: "file", path: a };
+      } catch {
+        /* not a filesystem arg */
+      }
+    }
+  }
+  return null;
+}
+
+// File targets carry {path} from argv parsing; materialize {name, text}
+// here — renderers can't touch the filesystem and the import flow wants
+// the contents anyway.
+async function materializeTarget(t) {
+  if (t === null || t.type !== "file") return t;
+  try {
+    return { type: "file", name: path.basename(t.path), text: await readFile(t.path, "utf8") };
+  } catch {
+    return null;
+  }
+}
+
+ipcMain.handle("ps:pending-open", async () => {
+  const t = await materializeTarget(pendingOpen);
+  pendingOpen = null;
+  return t;
+});
+
+async function deliverOpenTarget(t) {
+  t = await materializeTarget(t);
+  if (t === null) return;
+  // Targets belong in the control UI — the presenter/output windows can't
+  // show the import flow. Restore it when a presentation is up.
+  if (controlWindow === null) {
+    pendingOpen = t;
+    openControlWindow();
+    return;
+  }
+  // Still loading → leave it for the renderer's pendingOpen pull on mount.
+  if (controlWindow.webContents.isLoading()) {
+    pendingOpen = t;
+    return;
+  }
+  controlWindow.webContents.send("ps:open", t);
+  if (controlWindow.isMinimized()) controlWindow.restore();
+  controlWindow.focus();
+}
+
+app.on("second-instance", (_e, argv) => void deliverOpenTarget(openTargetFromArgv(argv)));
 
 /** Wait until the API responds before opening windows. */
 async function waitForServer(timeoutMs = 20_000) {
@@ -490,6 +561,10 @@ app.whenReady().then(async () => {
     // Keep Chromium's caches/userData inside the chosen folder too — a
     // portable app shouldn't leave traces in %APPDATA%.
     app.setPath("userData", path.join(dataDir, ".electron"));
+  } else {
+    // praisesuite:// links. The NSIS installer registers this too; portable
+    // builds deliberately stay out of the registry (leave-no-trace).
+    app.setAsDefaultProtocolClient("praisesuite");
   }
   startServer(dataDir);
   try {

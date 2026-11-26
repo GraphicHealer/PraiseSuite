@@ -25,4 +25,8 @@ contextBridge.exposeInMainWorld("ps", {
   presentExit: () => ipcRenderer.invoke("ps:present-exit"),
   /** Signal that a live session exists — the output window opens on this. */
   sessionLive: () => ipcRenderer.send("ps:session-live"),
+  /** File/protocol launch payload buffered since startup (pull — race-free). */
+  pendingOpen: () => ipcRenderer.invoke("ps:pending-open"),
+  /** OS file-association / praisesuite:// launches after startup. */
+  onOpen: (cb) => ipcRenderer.on("ps:open", (_e, target) => cb(target)),
 });

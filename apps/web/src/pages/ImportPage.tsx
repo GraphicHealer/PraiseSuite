@@ -1,17 +1,27 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { expandZip } from "@praisesuite/core";
 import { api, type ImportFilePayload, type ImportPreview, type ImportReport } from "../api.js";
 
 const btn =
   "rounded border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800";
 
-export function ImportPage(): ReactNode {
+export function ImportPage({ seed }: { seed?: { name: string; text: string } | null }): ReactNode {
   const [files, setFiles] = useState<ImportFilePayload[]>([]);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [report, setReport] = useState<ImportReport | null>(null);
   const [dupAction, setDupAction] = useState<"skip" | "replace" | "import">("skip");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  // File-association launch: the file arrives already staged — preview it.
+  useEffect(() => {
+    if (!seed) return;
+    const staged = [{ path: seed.name, text: seed.text }];
+    setFiles(staged);
+    setPreview(null);
+    setReport(null);
+    void api.importPreview(staged).then(setPreview).catch((e) => setError((e as Error).message));
+  }, [seed]);
 
   const pick = async (list: FileList | null) => {
     if (!list) return;

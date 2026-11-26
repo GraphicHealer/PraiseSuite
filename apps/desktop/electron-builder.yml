@@ -39,3 +39,11 @@ nsis:
   artifactName: ${productName}-Setup-${version}.${ext}
 portable:
   artifactName: ${productName}-${version}-portable.${ext}
+# No fileAssociations: OpenSong songs/sets are extensionless and .xml is too
+# generic to claim. The argv file-target code in main.mjs still honors manual
+# "Open with" picks and files dropped on the exe.
+protocols:
+  - name: praisesuite
+    description: PraiseSuite deep link
+    schemes:
+      - praisesuite
