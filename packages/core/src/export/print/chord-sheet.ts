@@ -37,6 +37,25 @@ type Item =
   | { type: "comment"; text: string }
   | { type: "directive"; text: string };
 
+// Two-column sheets: OpenSong draws same-size text into ColumnWidth and
+// clips, but the chosen behavior here is to scale each block down so its
+// widest line fits the half column. Runs before printToPDF on the loadURL
+// path; the PrintPreview paged.js pass replicates it (scripts don't run
+// through innerHTML injection). previousElementSibling binds each script
+// copy to its own container when song bodies merge into a service print.
+const COL_FIT_SCRIPT =
+  `<script>(function(){var d=document.currentScript.previousElementSibling;` +
+  `if(!d||!d.classList||!d.classList.contains("ps-cols"))return;` +
+  `var g=parseFloat(getComputedStyle(d).columnGap)||0,w=(d.clientWidth-g)/2,s=1,i,e;` +
+  `for(i=0;i<d.children.length;i++){e=d.children[i];if(e.scrollWidth>w&&w>0)s=Math.min(s,w/e.scrollWidth);}` +
+  `if(s<0.999)for(i=0;i<d.children.length;i++)d.children[i].style.zoom=s;` +
+  `})();</script>`;
+
+/** Emitted right after a `.ps-cols` container's content (closes it + fits). */
+const closeCols = (parts: string[]): void => {
+  parts.push(`</div>`, COL_FIT_SCRIPT);
+};
+
 /** Ordered stream: "|" pieces merged into one written line, comments/directives inline. */
 function sectionItems(section: SongSection, hideLang2 = false): Item[] {
   const out: Item[] = [];
@@ -307,7 +326,7 @@ export function chordSheetHtml(song: Song, opts: SheetOptions = {}): string {
   }
 
   const hasColumnBreak = song.sections.some((s) => s.lines.some((l) => l.kind === "directive" && l.text === "--"));
-  if (hasColumnBreak) parts.push(`<div style="columns:2;column-gap:2em">`);
+  if (hasColumnBreak) parts.push(`<div class="ps-cols" style="columns:2;column-gap:2em">`);
 
   const vis = cfg.options;
   // "Print presentation order": sections in the first arrangement's sequence
@@ -397,7 +416,7 @@ export function chordSheetHtml(song: Song, opts: SheetOptions = {}): string {
     }
     parts.push("</div>");
   }
-  if (hasColumnBreak) parts.push(`</div>`);
+  if (hasColumnBreak) closeCols(parts);
 
   // SongML Draw_Footer: the rule always draws, even when no copyright
   // lines exist. Stacked top→bottom: copyright, CCLI song #, CCLI license.
@@ -407,15 +426,18 @@ export function chordSheetHtml(song: Song, opts: SheetOptions = {}): string {
   if (song.copyright) foot.push(`<div style="${roleCss(roles["copyright"])}">Copyright © ${esc(song.copyright)}</div>`);
   if (song.ccliNumber && song.ccliNumber !== "0000") foot.push(`<div style="${roleCss(roles["copyright"])}">CCLI Song # ${esc(song.ccliNumber)}</div>`);
   if (opts.ccliLicense) foot.push(`<div style="${roleCss(roles["copyright"])}">CCLI License # ${esc(opts.ccliLicense)}</div>`);
-  const footPos =
-    opts.footer === "inline" ? "" : "position:fixed;bottom:0;left:0;right:0;background:#fff;";
+  // position:fixed must come from a stylesheet rule, not an inline style:
+  // paged.js hoists fixed elements into each page box only when it sees the
+  // declaration in a rule; inline styles are invisible to that scan.
+  const footRule =
+    opts.footer === "inline" ? "" : `.print-footer{position:fixed;bottom:0;left:0;right:0;background:#fff}`;
   parts.push(
-    `<div class="print-footer" style="${footPos}text-align:center;border-top:1px solid #000;padding-top:2pt">${foot.join("")}</div>`,
+    `<div class="print-footer" style="text-align:center;border-top:1px solid #000;padding-top:2pt">${foot.join("")}</div>`,
   );
   const pageStyle = pageCss(cfg.page);
   // Reserve footer height so the last lyric line never slides underneath.
   const footPad = opts.footer === "inline" ? "" : `body{padding-bottom:${10 + foot.length * 13}pt}`;
-  return printPage(`${song.title} — chord sheet`, `<style>${pageStyle}${footPad}${chorusCss(cfg)}</style>` + parts.join("\n"));
+  return printPage(`${song.title} — chord sheet`, `<style>${pageStyle}${footPad}${footRule}${chorusCss(cfg)}</style>` + parts.join("\n"));
 }
 
 function chorusCss(cfg: PrintConfig): string {
@@ -438,6 +460,9 @@ export function lyricsSheetHtml(song: Song, opts: SheetOptions = {}): string {
       `<span style="${roleCss(roles["author"])}">${esc(song.authors.join("; "))}</span>` +
     `</div>`,
   );
+  const hasColumnBreak = song.sections.some((s) => s.lines.some((l) => l.kind === "directive" && l.text === "--"));
+  if (hasColumnBreak) parts.push(`<div class="ps-cols" style="columns:2;column-gap:2em">`);
+
   let firstSec = true;
   for (const section of song.sections) {
     if (section.leadingBlank === true && !firstSec) {
@@ -462,22 +487,28 @@ export function lyricsSheetHtml(song: Song, opts: SheetOptions = {}): string {
         // Musician notes — chord sheets only, hidden on lyric sheets.
       } else if (item.type === "blank") {
         parts.push(`<div style="height:1em"></div>`);
+      } else {
+        if (item.text === "-!!" || item.text === "!!") parts.push(`<div style="break-before:page"></div>`);
+        else if (item.text === "--" || item.text === "---") parts.push(`<div style="break-before:column"></div>`);
+        else if (item.text.startsWith("__") || item.text.startsWith("-__")) parts.push(`<hr style="border:none;border-top:${cfg.borderThickness}px solid #999;margin:4pt 0">`);
+        else parts.push(`<div style="${roleCss(roles["lyrics"])}">${esc("-" + item.text)}</div>`);
       }
     }
     parts.push("</div>");
   }
+  if (hasColumnBreak) closeCols(parts);
   // Same Draw_Footer contract as the chord sheet: rule always, then
   // copyright / CCLI song # / CCLI license stacked above it.
   const foot: string[] = [];
   if (song.copyright) foot.push(`<div style="${roleCss(roles["copyright"])}">Copyright © ${esc(song.copyright)}</div>`);
   if (song.ccliNumber && song.ccliNumber !== "0000") foot.push(`<div style="${roleCss(roles["copyright"])}">CCLI Song # ${esc(song.ccliNumber)}</div>`);
   if (opts.ccliLicense) foot.push(`<div style="${roleCss(roles["copyright"])}">CCLI License # ${esc(opts.ccliLicense)}</div>`);
-  const footPos =
-    opts.footer === "inline" ? "" : "position:fixed;bottom:0;left:0;right:0;background:#fff;";
+  const footRule =
+    opts.footer === "inline" ? "" : `.print-footer{position:fixed;bottom:0;left:0;right:0;background:#fff}`;
   parts.push(
-    `<div class="print-footer" style="${footPos}text-align:center;border-top:1px solid #000;padding-top:2pt">${foot.join("")}</div>`,
+    `<div class="print-footer" style="text-align:center;border-top:1px solid #000;padding-top:2pt">${foot.join("")}</div>`,
   );
   const pageStyle = pageCss(cfg.page);
   const footPad = opts.footer === "inline" ? "" : `body{padding-bottom:${10 + foot.length * 13}pt}`;
-  return printPage(`${song.title} — lyrics`, `<style>${pageStyle}${footPad}</style>` + parts.join("\n"));
+  return printPage(`${song.title} — lyrics`, `<style>${pageStyle}${footPad}${footRule}</style>` + parts.join("\n"));
 }

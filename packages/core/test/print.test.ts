@@ -185,6 +185,32 @@ describe("chordSheetHtml (SongML slice model)", () => {
     expect(h).toContain("break-before:page");
   });
 
+  it("wraps --- songs in .ps-cols with a fit script (scaled-to-column text)", () => {
+    const { sections } = parseOpenSongLyrics("[V]\nline one\n---\nline two\n");
+    const s = song();
+    const h = chordSheetHtml({ ...s, sections: sections.map((x, i) => ({ ...x, id: `sec${i}` as Song["sections"][0]["id"] })) });
+    expect(h).toContain('class="ps-cols"');
+    expect(h).toContain("break-before:column");
+    expect(h).toContain("document.currentScript");
+    // lyrics sheets honor the same directives
+    const l = lyricsSheetHtml({ ...s, sections: sections.map((x, i) => ({ ...x, id: `sec${i}` as Song["sections"][0]["id"] })) });
+    expect(l).toContain('class="ps-cols"');
+    expect(l).toContain("break-before:column");
+  });
+
+  it("emits the footer as a stylesheet position:fixed rule, not inline", () => {
+    // paged.js only hoists fixed elements declared via a stylesheet rule —
+    // an inline style leaves the footer invisible in the preview.
+    for (const h of [chordSheetHtml(song()), lyricsSheetHtml(song())]) {
+      expect(h).toContain(".print-footer{position:fixed");
+      expect(h).toContain('class="print-footer"');
+      expect(h).not.toContain('class="print-footer" style="position:fixed');
+      expect(h).toContain("Copyright © (c) 2026 PD");
+    }
+    // inline mode (merged service print): no fixed positioning
+    expect(chordSheetHtml(song(), { footer: "inline" })).not.toContain("position:fixed");
+  });
+
   it("renders numbered-verse prefixes in a margin column", () => {
     const { sections } = parseOpenSongLyrics("[V]\n.A B\n1 first verse line\n2 second verse line\n");
     const s = song();

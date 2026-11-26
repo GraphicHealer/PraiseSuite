@@ -149,6 +149,26 @@ export function PrintWindow({ params }: { params: URLSearchParams }): ReactNode 
         if (cancelled || !hostRef.current) return;
         hostRef.current.innerHTML = "";
         const flow = await new Previewer().preview(doc.body.innerHTML, styles, hostRef.current);
+        // Replicates the sheets' embedded column-fit script — it never runs
+        // here since the body arrives via innerHTML. All paged.js clones of
+        // one .ps-cols share a data-ref; the tightest fragment sets the scale.
+        const scaleByRef = new Map<string, number>();
+        const colClones: { c: HTMLElement; ref: string }[] = [];
+        hostRef.current.querySelectorAll<HTMLElement>(".ps-cols").forEach((c) => {
+          const ref = c.dataset["ref"] ?? "";
+          const gap = parseFloat(getComputedStyle(c).columnGap) || 0;
+          const w = (c.clientWidth - gap) / 2;
+          let s = 1;
+          for (const el of Array.from(c.children) as HTMLElement[]) {
+            if (w > 0 && el.scrollWidth > w) s = Math.min(s, w / el.scrollWidth);
+          }
+          scaleByRef.set(ref, Math.min(scaleByRef.get(ref) ?? 1, s));
+          colClones.push({ c, ref });
+        });
+        for (const { c, ref } of colClones) {
+          const s = scaleByRef.get(ref) ?? 1;
+          if (s < 0.999) for (const el of Array.from(c.children) as HTMLElement[]) el.style.zoom = String(s);
+        }
         if (!cancelled) setPageCount(flow.total);
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
