@@ -591,6 +591,7 @@ function SetsMode({
           {editingItem !== null && current.items[editingItem] !== undefined && (
             <ItemEditor
               item={current.items[editingItem]!}
+              globalStyle={globalStyle}
               songKey={current.items[editingItem]!.songId !== null ? songKeys[current.items[editingItem]!.songId!] : undefined}
               onSave={(it) => patchItems(current.items.map((x, i) => (i === editingItem ? it : x)))}
               onClose={() => setEditingItem(null)}
