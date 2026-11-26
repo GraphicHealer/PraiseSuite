@@ -323,7 +323,14 @@ export function chordSheetHtml(song: Song, opts: SheetOptions = {}): string {
 
   const lyricSize = roles["lyrics"]?.size ?? 12;
   const isDigit = (p: string) => /^[1-9]$/.test(p);
+  let firstSec = true;
   for (const section of ordered) {
+    // SongML draws a blank source line before a section header as a
+    // one-lyric-line gap (skipped only at the top of a column/page).
+    if (section.leadingBlank === true && !firstSec) {
+      parts.push(`<div style="height:${Math.round(lyricSize * 1.2)}pt"></div>`);
+    }
+    firstSec = false;
     const chorus = section.label.charAt(0).toUpperCase() === "C" && cfg.highlightChorus;
     const bilingual = section.options["L"] !== undefined;
     parts.push(`<div class="sec" style="margin-top:${secSpace.before}pt">`);
@@ -431,7 +438,12 @@ export function lyricsSheetHtml(song: Song, opts: SheetOptions = {}): string {
       `<span style="${roleCss(roles["author"])}">${esc(song.authors.join("; "))}</span>` +
     `</div>`,
   );
+  let firstSec = true;
   for (const section of song.sections) {
+    if (section.leadingBlank === true && !firstSec) {
+      parts.push(`<div style="height:1em"></div>`);
+    }
+    firstSec = false;
     const bilingual = section.options["L"] !== undefined;
     const chorus = section.label.charAt(0).toUpperCase() === "C" && cfg.highlightChorus;
     parts.push(`<div class="sec" style="break-inside:avoid;margin-top:${secSpace.before}pt">`);
@@ -447,7 +459,7 @@ export function lyricsSheetHtml(song: Song, opts: SheetOptions = {}): string {
         parts.push(`<div style="${roleCss(roles[lang2 ? "lyrics_language2" : "lyrics"])}${chorus ? ";font-weight:bold" : ""}">${esc(text)}</div>`);
         rowIdx++;
       } else if (item.type === "comment") {
-        parts.push(`<div style="${roleCss(roles["copyright"])}">${esc(item.text)}</div>`);
+        // Musician notes — chord sheets only, hidden on lyric sheets.
       } else if (item.type === "blank") {
         parts.push(`<div style="height:1em"></div>`);
       }
