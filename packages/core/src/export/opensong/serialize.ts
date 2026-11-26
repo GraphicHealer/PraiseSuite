@@ -154,11 +154,17 @@ function serializeSection(s: SongSection): string {
  * subsections merge non-consecutive same-key lines (e.g. verse1+chorus1),
  * so per-section emission can't recover source order — interleaving lines
  * across subsections can (Man Of Sorrows). Only used when every line has
- * provenance — a line without sourceLine (edited in place via the API)
- * can't be placed in the stream, so the block falls back to section order.
+ * provenance AND each section's model order still matches it — a line
+ * without sourceLine, or a reorder that leaves sourceLines non-ascending
+ * (edited in place via the API), can't be represented in the stream, so
+ * the block falls back to section order.
  */
 function serializeUntaggedBlock(sections: readonly SongSection[]): string {
-  const allSourced = sections.every((s) => s.lines.every((l) => l.sourceLine !== undefined));
+  const allSourced = sections.every(
+    (s) =>
+      s.lines.every((l) => l.sourceLine !== undefined) &&
+      s.lines.every((l, i) => i === 0 || l.sourceLine! >= s.lines[i - 1]!.sourceLine!),
+  );
   if (!allSourced) {
     let out = "";
     sections.forEach((s, i) => {

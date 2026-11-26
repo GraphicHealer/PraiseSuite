@@ -353,6 +353,17 @@ describe("round-trip export", () => {
     expect(out.indexOf("EDITED")).toBeLessThan(out.indexOf("Ruined sinners"));
   });
 
+  it("falls back to section order when sourceLines are reordered", () => {
+    // A structured edit that reorders lines but keeps stale sourceLines —
+    // model order wins over stale provenance.
+    const parsed = parseOpenSongSong(fixtureSong("Man Of Sorrows")).song;
+    const song = materializeSong(parsed, ids);
+    const lines = song.sections[0]!.lines;
+    lines.reverse(); // [chorus1, verse1] — sourceLines no longer ascending
+    const out = /<lyrics>([\s\S]*?)<\/lyrics>/.exec(serializeOpenSongSong(song))![1]!;
+    expect(out.indexOf("Ruined sinners")).toBeLessThan(out.indexOf("Man of Sorrows"));
+  });
+
   it("reconstructs dict-merged untagged lyrics in source order", () => {
     // Man Of Sorrows: untagged verse block 1-5 then chorus block 1-5 — the
     // dict merges them into [v1,c1] [v2,c2]…, and sourceLine provenance
