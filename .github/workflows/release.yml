@@ -1,8 +1,11 @@
 name: Release
 
+# Draft a GitHub Release (v* tag) → this builds the Windows artifacts and
+# attaches them to that release. workflow_dispatch = build without a release.
 on:
-  push:
-    tags: ["v*"]
+  release:
+    types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -12,6 +15,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.sha }}
 
       - uses: pnpm/action-setup@v4
         with:
@@ -34,10 +39,13 @@ jobs:
         working-directory: apps/desktop
         run: node scripts/stage.mjs --pack
 
-      - name: Publish GitHub Release
+      # On release events this attaches the EXEs to that release; on manual
+      # runs it creates a draft release so the artifacts still land somewhere.
+      - name: Publish artifacts
         uses: softprops/action-gh-release@v2
         with:
           files: |
             apps/desktop/release/PraiseSuite-Setup-*.exe
             apps/desktop/release/*-portable.exe
+          draft: ${{ github.event_name == 'workflow_dispatch' }}
           generate_release_notes: true
