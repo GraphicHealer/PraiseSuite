@@ -361,11 +361,14 @@ export function StyleEditor({
   style,
   heading = "Style Editor",
   onSave,
+  onSaveAs,
   onClose,
 }: {
   style: SlideStyle;
   heading?: string;
   onSave: (s: SlideStyle) => void;
+  /** When set, a "Save As…" button offers to keep the style in the named library. */
+  onSaveAs?: (s: SlideStyle) => void;
   onClose: () => void;
 }): ReactNode {
   const [s, setS] = useState<SlideStyle>(() => JSON.parse(JSON.stringify(style)) as SlideStyle);
@@ -501,6 +504,9 @@ export function StyleEditor({
         </fieldset>
 
         <div className="flex justify-end gap-2">
+          {onSaveAs && (
+            <button className={btn} onClick={() => onSaveAs(s)}>Save As…</button>
+          )}
           <button className={btn} onClick={onClose}>Cancel</button>
           <button className="rounded bg-indigo-600 px-4 py-1.5 text-sm text-white hover:bg-indigo-500" onClick={() => onSave(s)}>OK</button>
         </div>

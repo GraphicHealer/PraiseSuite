@@ -618,13 +618,14 @@ export function buildRoutes(deps: AppDeps): Route[] {
       return style;
     }),
 
-    // Named styles for set style items: the two OpenSong built-ins plus
-    // every song's own <style> (106 songs in a typical library carry one).
+    // Named styles for set style items: the two OpenSong built-ins, user-saved
+    // styles, plus every song's own <style> (a real library carries 100+).
     r("GET", "/api/v1/styles", "admin", "Styles available to set style items", async () => {
       const presets = [
         { id: "default_style", name: "Default style", style: loadStyle(deps.storage) },
         { id: "scripture_style", name: "Scripture style", style: loadScriptureStyle(deps.storage) ?? defaultSlideStyle() },
       ];
+      const saved = Object.entries(namedStyles(deps.storage)).map(([name, style]) => ({ name, style }));
       const songs: { id: string; title: string; style: unknown }[] = [];
       for (const s of await deps.repos.songs.list()) {
         const song = await deps.repos.songs.get(s.id);
@@ -636,7 +637,19 @@ export function buildRoutes(deps: AppDeps): Route[] {
           }
         }
       }
-      return { presets, songs };
+      return { presets, saved, songs };
+    }),
+
+    // Save a named style into the style library (style.named map).
+    r("PUT", "/api/v1/styles/:name", "admin", "Save a named style", async (ctx) => {
+      const name = decodeURIComponent(ctx.params["name"] ?? "").trim();
+      if (name === "") throw new ApiError(400, "invalid_name", "Style name required");
+      const body = z.record(z.string(), z.unknown()).parse(await ctx.body());
+      const style = { ...defaultSlideStyle(), ...(body as Partial<SlideStyle>) };
+      const all = namedStyles(deps.storage);
+      all[name] = style;
+      deps.storage.setSetting("style.named", JSON.stringify(all));
+      return { name, style };
     }),
 
     // Apply the bundled "OpenSong Defaults" — {styles:false} seeds the 6
@@ -1080,6 +1093,15 @@ function loadStyle(storage: SqliteStorage): SlideStyle {
     return { ...defaultSlideStyle(), ...(JSON.parse(raw) as Partial<SlideStyle>) };
   } catch {
     return defaultSlideStyle();
+  }
+}
+
+/** User-saved named styles — the "Saved styles" section of the style picker. */
+function namedStyles(storage: SqliteStorage): Record<string, Partial<SlideStyle>> {
+  try {
+    return (JSON.parse(storage.getSetting("style.named") ?? "{}") as Record<string, Partial<SlideStyle>>);
+  } catch {
+    return {};
   }
 }
 

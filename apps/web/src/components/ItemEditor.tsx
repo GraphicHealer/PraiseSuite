@@ -7,6 +7,7 @@ import {
 import type { SlideStyle } from "../slide-types.js";
 import { api } from "../api.js";
 import { StyleEditor } from "./StyleEditor.js";
+import { useDialog } from "./Dialog.js";
 
 const input =
   "rounded border border-zinc-300 bg-transparent px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900";
@@ -103,20 +104,52 @@ export function ItemEditor({
   // Named styles to load into the item: OpenSong's two built-ins, then
   // every library song's own <style> (OpenSong keeps them per-song).
   const [choices, setChoices] = useState<{ group: string; name: string; style: SlideStyle }[]>([]);
-  const [chosen, setChosen] = useState("");
+  // "" = untouched; "custom" = the item's own (hand-edited) style; a number
+  // = index into `choices`. The item's own style preselects Custom.
+  const [chosen, setChosen] = useState(() => (item.config["style"] !== undefined ? "custom" : ""));
   const [editStyle, setEditStyle] = useState(false);
-  useEffect(() => {
-    if (item.kind !== "style") return;
-    void api
+  const dlg = useDialog();
+  const loadChoices = () =>
+    api
       .stylesList()
       .then((r) =>
         setChoices([
           ...r.presets.map((p) => ({ group: "Styles", name: p.name, style: p.style })),
+          ...r.saved.map((s) => ({ group: "Saved styles", name: s.name, style: s.style })),
           ...r.songs.map((s) => ({ group: "Song styles", name: s.title, style: s.style })),
         ]),
       )
       .catch(() => {});
+  useEffect(() => {
+    if (item.kind !== "style") return;
+    void loadChoices();
   }, [item.kind]);
+  /** "Save As…" in the embedded StyleEditor: name it into the style library,
+   *  then select it in the dropdown by name. */
+  const saveStyleAs = async (s: SlideStyle) => {
+    const name = (await dlg.prompt("Name this style:", ""))?.trim();
+    if (!name) return;
+    try {
+      await api.saveNamedStyle(name, s);
+    } catch {
+      return;
+    }
+    setCfg("style", toOverride(s));
+    setEditStyle(false);
+    void api
+      .stylesList()
+      .then((r) => {
+        const next = [
+          ...r.presets.map((p) => ({ group: "Styles", name: p.name, style: p.style })),
+          ...r.saved.map((x) => ({ group: "Saved styles", name: x.name, style: x.style })),
+          ...r.songs.map((x) => ({ group: "Song styles", name: x.title, style: x.style })),
+        ];
+        setChoices(next);
+        const i = next.findIndex((c) => c.group === "Saved styles" && c.name === name);
+        setChosen(i >= 0 ? String(i) : "custom");
+      })
+      .catch(() => setChosen("custom"));
+  };
 
   const baseStyle = globalStyle ?? defaultSlideStyle();
   const curOverride = cfg["style"] as SlideStyleOverride | undefined;
@@ -257,14 +290,18 @@ export function ItemEditor({
                     <select
                       value={chosen}
                       onChange={(e) => {
-                        setChosen(e.target.value);
-                        const c = choices[Number(e.target.value)];
-                        if (c) setCfg("style", toOverride(c.style));
+                        const v = e.target.value;
+                        setChosen(v);
+                        if (v !== "custom" && v !== "") {
+                          const c = choices[Number(v)];
+                          if (c) setCfg("style", toOverride(c.style));
+                        }
                       }}
                       className={`${input} flex-1`}
                     >
                       <option value="">Choose a style…</option>
-                      {["Styles", "Song styles"].map((g) => (
+                      {cfg["style"] !== undefined && <option value="custom">Custom</option>}
+                      {["Styles", "Saved styles", "Song styles"].map((g) => (
                         <optgroup key={g} label={g}>
                           {choices.map((c, i) =>
                             c.group === g ? <option key={i} value={i}>{c.name}</option> : null,
@@ -411,8 +448,10 @@ export function ItemEditor({
           onClose={() => setEditStyle(false)}
           onSave={(s) => {
             setCfg("style", toOverride(s));
+            setChosen("custom");
             setEditStyle(false);
           }}
+          onSaveAs={(s) => void saveStyleAs(s)}
         />
       )}
     </div>
