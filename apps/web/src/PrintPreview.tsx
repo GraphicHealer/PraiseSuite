@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { mdiMagnifyMinus, mdiMagnifyPlus, mdiMinus, mdiPlus } from "@mdi/js";
 import { Previewer } from "pagedjs";
+import { Icon } from "./components/Icon.js";
 
 declare global {
   interface Window {
@@ -339,9 +341,9 @@ export function PrintWindow({ params }: { params: URLSearchParams }): ReactNode 
             <div>
               <span className={label}>Transpose</span>
               <div className="flex items-center gap-1">
-                <button onClick={() => set("transpose", opts.transpose - 1)} className="w-7 rounded border border-zinc-700 px-1 text-sm hover:bg-zinc-800">−</button>
+                <button onClick={() => set("transpose", opts.transpose - 1)} className="w-7 rounded border border-zinc-700 px-1 text-sm hover:bg-zinc-800"><Icon path={mdiMinus} /></button>
                 <span className="w-8 text-center text-sm">{opts.transpose > 0 ? `+${opts.transpose}` : opts.transpose}</span>
-                <button onClick={() => set("transpose", opts.transpose + 1)} className="w-7 rounded border border-zinc-700 px-1 text-sm hover:bg-zinc-800">+</button>
+                <button onClick={() => set("transpose", opts.transpose + 1)} className="w-7 rounded border border-zinc-700 px-1 text-sm hover:bg-zinc-800"><Icon path={mdiPlus} /></button>
               </div>
             </div>
             <div>
@@ -363,9 +365,9 @@ export function PrintWindow({ params }: { params: URLSearchParams }): ReactNode 
       {/* Rendered sheets. */}
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-center justify-end gap-1 border-b border-zinc-800 bg-zinc-900 px-3 py-1.5">
-          <button onClick={() => setZoom((z) => Math.max(0.3, z - 0.15))} className="rounded border border-zinc-700 px-2 text-sm text-zinc-300 hover:bg-zinc-800">−</button>
+          <button onClick={() => setZoom((z) => Math.max(0.3, z - 0.15))} className="rounded border border-zinc-700 px-2 text-sm text-zinc-300 hover:bg-zinc-800"><Icon path={mdiMagnifyMinus} /></button>
           <span className="w-12 text-center text-xs text-zinc-400">{Math.round(zoom * 100)}%</span>
-          <button onClick={() => setZoom((z) => Math.min(3, z + 0.15))} className="rounded border border-zinc-700 px-2 text-sm text-zinc-300 hover:bg-zinc-800">+</button>
+          <button onClick={() => setZoom((z) => Math.min(3, z + 0.15))} className="rounded border border-zinc-700 px-2 text-sm text-zinc-300 hover:bg-zinc-800"><Icon path={mdiMagnifyPlus} /></button>
         </div>
         <div className="min-h-0 flex-1 overflow-auto bg-zinc-800">
           {error !== "" ? (

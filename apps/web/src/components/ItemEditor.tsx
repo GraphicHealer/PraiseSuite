@@ -5,7 +5,9 @@ import {
   type SlideStyleOverride,
 } from "@praisesuite/core";
 import type { SlideStyle } from "../slide-types.js";
+import { mdiArrowDown, mdiArrowUp, mdiClose } from "@mdi/js";
 import { api } from "../api.js";
+import { Icon } from "./Icon.js";
 import { StyleEditor } from "./StyleEditor.js";
 import { useDialog } from "./Dialog.js";
 
@@ -370,9 +372,9 @@ export function ItemEditor({
                         }}
                         className={`${input} !py-0.5 w-32 text-xs`}
                       />
-                      <button disabled={i === 0} onClick={() => moveImg(i, -1)} className={miniBtn} title="Move up">↑</button>
-                      <button disabled={i === imgs.length - 1} onClick={() => moveImg(i, 1)} className={miniBtn} title="Move down">↓</button>
-                      <button onClick={() => setImages(imgs.filter((_, j) => j !== i))} className={`${miniBtn} text-red-600`} title="Remove">✕</button>
+                      <button disabled={i === 0} onClick={() => moveImg(i, -1)} className={miniBtn} title="Move up"><Icon path={mdiArrowUp} size={0.65} /></button>
+                      <button disabled={i === imgs.length - 1} onClick={() => moveImg(i, 1)} className={miniBtn} title="Move down"><Icon path={mdiArrowDown} size={0.65} /></button>
+                      <button onClick={() => setImages(imgs.filter((_, j) => j !== i))} className={`${miniBtn} text-red-600`} title="Remove"><Icon path={mdiClose} size={0.65} /></button>
                     </li>
                   ))}
                   {imgs.length === 0 && (

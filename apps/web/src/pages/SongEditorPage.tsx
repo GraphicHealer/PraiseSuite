@@ -14,8 +14,10 @@ import {
   type SongSectionId,
   type ArrangementSectionId,
 } from "@praisesuite/core";
+import { mdiArrowLeft } from "@mdi/js";
 import { api } from "../api.js";
 import { useDialog } from "../components/Dialog.js";
+import { Icon } from "../components/Icon.js";
 import { StyleEditor } from "../components/StyleEditor.js";
 import { opensongLanguage } from "../opensong-language.js";
 import { useDark } from "../use-dark.js";
@@ -321,7 +323,7 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         {/* Toolbar: navigation + editor tabs only */}
         <div className="flex items-center gap-2">
-          {onBack && <button onClick={onBack} className={btn}>←</button>}
+          {onBack && <button onClick={onBack} className={btn} title="Back"><Icon path={mdiArrowLeft} /></button>}
           <button
             onClick={() => setTab("general")}
             className={`${btn} ${tab === "general" ? "bg-indigo-100 dark:bg-indigo-950" : ""}`}

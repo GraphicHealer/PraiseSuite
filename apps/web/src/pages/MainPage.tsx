@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Service, ServiceItem, ServiceItemId, SlideStyle, SlideStyleOverride, SongId, SongSummary } from "@praisesuite/core";
+import { mdiFolderMinus, mdiFolderPlus, mdiPencil } from "@mdi/js";
 import { api } from "../api.js";
 import { AddItemDialog, type AddItemTab } from "../components/AddItemDialog.js";
 import { useDialog } from "../components/Dialog.js";
+import { Icon } from "../components/Icon.js";
 import { ItemEditor } from "../components/ItemEditor.js";
 import { StyleEditor } from "../components/StyleEditor.js";
 import { openPrintPreview } from "../PrintPreview.js";
@@ -174,8 +176,8 @@ function SongsMode({
               <option key={f} value={f}>{f}</option>
             ))}
           </select>
-          <button onClick={() => void addFolder()} className={btn} title="Add folder">+</button>
-          <button onClick={() => void deleteFolder()} disabled={folder === null} className={btn} title="Delete folder">−</button>
+          <button onClick={() => void addFolder()} className={btn} title="Add folder"><Icon path={mdiFolderPlus} /></button>
+          <button onClick={() => void deleteFolder()} disabled={folder === null} className={btn} title="Delete folder"><Icon path={mdiFolderMinus} /></button>
         </label>
         <span className="-mb-1 text-sm font-semibold">Songs:</span>
         <ul className="min-h-0 flex-1 divide-y divide-zinc-200 overflow-y-auto rounded border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
@@ -522,7 +524,7 @@ function SetsMode({
                       className="ml-auto shrink-0 rounded px-1 text-xs text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
                       style={it.kind === "song" && it.songId !== null && songKeys[it.songId] ? { marginLeft: 0 } : undefined}
                     >
-                      ✏
+                      <Icon path={mdiPencil} size={0.65} />
                     </span>
                   </button>
                 </li>
