@@ -225,7 +225,7 @@ export function buildPlan(
         // the global/song background survives instead of a bad lookup.
         if (song.styleBackgroundKey !== null && song.styleBackgroundKey !== undefined) {
           out.backgroundKey = song.styleBackgroundKey;
-        } else if (typeof out.backgroundKey === "string" && out.backgroundKey.length > 200 && !out.backgroundKey.includes("/")) {
+        } else if (typeof out.backgroundKey === "string" && out.backgroundKey.length > 200 && !out.backgroundKey.startsWith("media/")) {
           delete out.backgroundKey;
         }
       }
@@ -245,7 +245,7 @@ export function buildPlan(
     // Same unrenderable-background guard as songStyleOf: a set item imported
     // before style backgrounds went through media storage carries the raw
     // base64 as its key — drop it rather than emit a bad mediaUrl.
-    if (itemStyle !== undefined && typeof itemStyle.backgroundKey === "string" && itemStyle.backgroundKey.length > 200 && !itemStyle.backgroundKey.includes("/")) {
+    if (itemStyle !== undefined && typeof itemStyle.backgroundKey === "string" && itemStyle.backgroundKey.length > 200 && !itemStyle.backgroundKey.startsWith("media/")) {
       itemStyle = { ...itemStyle };
       delete itemStyle.backgroundKey;
     }

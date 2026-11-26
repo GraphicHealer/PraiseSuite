@@ -506,7 +506,7 @@ describe("duplicates + pipeline", () => {
         list: async () => [...services.values()],
       },
     };
-    const fakeBg = "QUJD".repeat(100); // >200 chars, no "/" — the embedded-data heuristic
+    const fakeBg = "/9j/4AAQSkZJRgAB".repeat(30); // real base64 contains "/" — the heuristic must not exclude it
     const setXml = `<?xml version="1.0"?><set name="S"><slide_groups>
       <slide_group name="-- Change Style --" type="style" action="new" print="true" seconds="0" loop="false">
         <style><background image_fit="1">${fakeBg}</background></style>

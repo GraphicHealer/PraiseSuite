@@ -295,7 +295,7 @@ export async function applyImport(
       const st = item.config["style"] as { backgroundKey?: string | null } | undefined;
       if (
         st && typeof st.backgroundKey === "string" && st.backgroundKey.length > 200 &&
-        !st.backgroundKey.includes("/") && options.storeMedia !== undefined
+        !st.backgroundKey.startsWith("media/") && options.storeMedia !== undefined
       ) {
         try {
           st.backgroundKey = (await options.storeMedia("opensong-style-background.jpg", "image/jpeg", st.backgroundKey)).storageKey;
