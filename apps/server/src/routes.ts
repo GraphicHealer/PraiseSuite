@@ -40,6 +40,7 @@ import {
   parseMainSettings,
   DEFAULT_PRINT_CONFIG,
   parseReference,
+  parseSlideStyleXml,
   ACTIVITY,
   positionOfSlide,
   resolveSlideStyle,
@@ -615,6 +616,27 @@ export function buildRoutes(deps: AppDeps): Route[] {
       const style = { ...defaultSlideStyle(), ...(body as Partial<SlideStyle>) };
       deps.storage.setSetting("style.scripture", JSON.stringify(style));
       return style;
+    }),
+
+    // Named styles for set style items: the two OpenSong built-ins plus
+    // every song's own <style> (106 songs in a typical library carry one).
+    r("GET", "/api/v1/styles", "admin", "Styles available to set style items", async () => {
+      const presets = [
+        { id: "default_style", name: "Default style", style: loadStyle(deps.storage) },
+        { id: "scripture_style", name: "Scripture style", style: loadScriptureStyle(deps.storage) ?? defaultSlideStyle() },
+      ];
+      const songs: { id: string; title: string; style: unknown }[] = [];
+      for (const s of await deps.repos.songs.list()) {
+        const song = await deps.repos.songs.get(s.id);
+        if (song?.styleXml !== null && song?.styleXml !== undefined && song.styleXml !== "") {
+          try {
+            songs.push({ id: song.id, title: song.title, style: parseSlideStyleXml(song.styleXml) });
+          } catch {
+            /* unparsable style — skip */
+          }
+        }
+      }
+      return { presets, songs };
     }),
 
     // Apply the bundled "OpenSong Defaults" — {styles:false} seeds the 6

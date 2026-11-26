@@ -264,6 +264,11 @@ class Api {
   saveStyle = (style: SlideStyle) =>
     this.req<SlideStyle>("/api/v1/style", { method: "PUT", body: style as unknown as Record<string, unknown> });
   scriptureStyle = () => this.req<SlideStyle>("/api/v1/style/scripture");
+  /** Named styles for set style items: built-ins + per-song <style>s. */
+  stylesList = () =>
+    this.req<{ presets: { id: string; name: string; style: SlideStyle }[]; songs: { id: string; title: string; style: SlideStyle }[] }>(
+      "/api/v1/styles",
+    );
   saveScriptureStyle = (style: SlideStyle) =>
     this.req<SlideStyle>("/api/v1/style/scripture", { method: "PUT", body: style as unknown as Record<string, unknown> });
   /** Seed OpenSong's bundled defaults; styles=false adds background images only. */

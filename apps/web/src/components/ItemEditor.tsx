@@ -100,15 +100,19 @@ export function ItemEditor({
 
   /* ── Style item: preset loader + embedded style editor ─────────── */
 
-  const [presets, setPresets] = useState<{ name: string; style: SlideStyle }[]>([]);
+  // Named styles to load into the item: OpenSong's two built-ins, then
+  // every library song's own <style> (OpenSong keeps them per-song).
+  const [choices, setChoices] = useState<{ group: string; name: string; style: SlideStyle }[]>([]);
+  const [chosen, setChosen] = useState("");
   const [editStyle, setEditStyle] = useState(false);
   useEffect(() => {
     if (item.kind !== "style") return;
-    void Promise.all([api.style(), api.scriptureStyle()])
-      .then(([d, s]) =>
-        setPresets([
-          { name: "Default style", style: d },
-          { name: "Scripture style", style: s },
+    void api
+      .stylesList()
+      .then((r) =>
+        setChoices([
+          ...r.presets.map((p) => ({ group: "Styles", name: p.name, style: p.style })),
+          ...r.songs.map((s) => ({ group: "Song styles", name: s.title, style: s.style })),
         ]),
       )
       .catch(() => {});
@@ -249,18 +253,23 @@ export function ItemEditor({
               {str("action") !== "revert" && (
                 <>
                   {field(
-                    "Load preset",
+                    "Style",
                     <select
-                      value=""
+                      value={chosen}
                       onChange={(e) => {
-                        const p = presets[Number(e.target.value)];
-                        if (p) setCfg("style", toOverride(p.style));
+                        setChosen(e.target.value);
+                        const c = choices[Number(e.target.value)];
+                        if (c) setCfg("style", toOverride(c.style));
                       }}
-                      className={input}
+                      className={`${input} flex-1`}
                     >
                       <option value="">Choose a style…</option>
-                      {presets.map((p, i) => (
-                        <option key={i} value={i}>{p.name}</option>
+                      {["Styles", "Song styles"].map((g) => (
+                        <optgroup key={g} label={g}>
+                          {choices.map((c, i) =>
+                            c.group === g ? <option key={i} value={i}>{c.name}</option> : null,
+                          )}
+                        </optgroup>
                       ))}
                     </select>,
                   )}
