@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { mdiContentSaveEdit } from "@mdi/js";
 import { api } from "../api.js";
 import { BUNDLED_FONTS } from "../fonts.js";
+import { Icon } from "./Icon.js";
 import { SlideCanvas } from "./SlideCanvas.js";
 import type { SlideStyle, StyleTab, TextStyle } from "../slide-types.js";
 
@@ -505,7 +507,7 @@ export function StyleEditor({
 
         <div className="flex justify-end gap-2">
           {onSaveAs && (
-            <button className={btn} onClick={() => onSaveAs(s)}>Save As…</button>
+            <button className={btn} onClick={() => onSaveAs(s)}><Icon path={mdiContentSaveEdit} /> Save As…</button>
           )}
           <button className={btn} onClick={onClose}>Cancel</button>
           <button className="rounded bg-indigo-600 px-4 py-1.5 text-sm text-white hover:bg-indigo-500" onClick={() => onSave(s)}>OK</button>

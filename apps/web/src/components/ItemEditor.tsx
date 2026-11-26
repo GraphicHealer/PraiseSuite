@@ -5,7 +5,7 @@ import {
   type SlideStyleOverride,
 } from "@praisesuite/core";
 import type { SlideStyle } from "../slide-types.js";
-import { mdiArrowDown, mdiArrowUp, mdiClose } from "@mdi/js";
+import { mdiArrowDown, mdiArrowUp, mdiClose, mdiImagePlusOutline, mdiPaletteOutline } from "@mdi/js";
 import { api } from "../api.js";
 import { Icon } from "./Icon.js";
 import { StyleEditor } from "./StyleEditor.js";
@@ -313,7 +313,7 @@ export function ItemEditor({
                     </select>,
                   )}
                   <button onClick={() => setEditStyle(true)} className={dlgBtn}>
-                    Edit style…
+                    <Icon path={mdiPaletteOutline} /> Edit style…
                   </button>
                 </>
               )}
@@ -327,7 +327,7 @@ export function ItemEditor({
                   <span className="text-zinc-500">Images</span>
                   <span className="flex gap-1">
                     <button onClick={() => fileRef.current?.click()} className={miniBtn}>
-                      Add…
+                      <Icon path={mdiImagePlusOutline} size={0.6} /> Add…
                     </button>
                     {library.length > 0 && (
                       <select

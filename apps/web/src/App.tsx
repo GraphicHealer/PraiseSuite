@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Service } from "@praisesuite/core";
+import { mdiCogOutline, mdiLogout, mdiMusicBoxMultipleOutline, mdiWeatherNight, mdiWhiteBalanceSunny } from "@mdi/js";
 import { api, ApiError } from "./api.js";
+import { Icon } from "./components/Icon.js";
 import { MainPage } from "./pages/MainPage.js";
 import { DialogProvider } from "./components/Dialog.js";
 import { PresentPage } from "./pages/PresentPage.js";
@@ -12,7 +14,7 @@ type Page = "main" | "import" | "present" | "settings";
 
 // Import lives inside Settings now (OpenSong's settings-window model) —
 // only Settings remains a top-level nav entry.
-const NAV: { id: Page; label: string }[] = [{ id: "settings", label: "Settings" }];
+const NAV: { id: Page; label: string; icon: string }[] = [{ id: "settings", label: "Settings", icon: mdiCogOutline }];
 
 interface PsBridge {
   setDisplayMode?: (mode: string) => Promise<string>;
@@ -220,7 +222,7 @@ export function App(): ReactNode {
               : "hover:bg-zinc-100 dark:hover:bg-zinc-800"
           }`}
         >
-          Editor
+          <Icon path={mdiMusicBoxMultipleOutline} /> Editor
         </button>
         <nav className="flex gap-1">
           {NAV.map((n) => (
@@ -233,13 +235,13 @@ export function App(): ReactNode {
                   : "hover:bg-zinc-100 dark:hover:bg-zinc-800"
               }`}
             >
-              {n.label}
+              <Icon path={n.icon} /> {n.label}
             </button>
           ))}
         </nav>
         <div className="ml-auto flex items-center gap-2">
-          <button onClick={() => setDark((d) => !d)} className="rounded px-2 py-1 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800">
-            {dark ? "Light" : "Dark"}
+          <button onClick={() => setDark((d) => !d)} className="rounded px-2 py-1 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800" title={dark ? "Switch to light mode" : "Switch to dark mode"}>
+            <Icon path={dark ? mdiWhiteBalanceSunny : mdiWeatherNight} />
           </button>
           {authRequired && (
             <button
@@ -248,8 +250,9 @@ export function App(): ReactNode {
                 setAuthed(false);
               }}
               className="rounded px-2 py-1 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              title="Sign out"
             >
-              Sign out
+              <Icon path={mdiLogout} />
             </button>
           )}
         </div>

@@ -1,17 +1,22 @@
 import { useEffect, useState, type ReactNode } from "react";
+import {
+  mdiBookCross, mdiCogOutline, mdiContentSave, mdiDelete, mdiDownload, mdiImport,
+  mdiMonitor, mdiPaletteOutline, mdiRestore,
+} from "@mdi/js";
 import { api, readXmlFile } from "../api.js";
+import { Icon } from "../components/Icon.js";
 import { ImportPage } from "./ImportPage.js";
 import { SlideCanvas } from "../components/SlideCanvas.js";
 import { StyleEditor } from "../components/StyleEditor.js";
 import type { SlideStyle } from "../slide-types.js";
 
 type SettingsSection = "styles" | "display" | "bibles" | "network" | "import";
-const SECTIONS: [SettingsSection, string][] = [
-  ["styles", "Styles"],
-  ["display", "Display"],
-  ["bibles", "Bibles"],
-  ["network", "Network"],
-  ["import", "Import"],
+const SECTIONS: [SettingsSection, string, string][] = [
+  ["styles", "Styles", mdiPaletteOutline],
+  ["display", "Display", mdiMonitor],
+  ["bibles", "Bibles", mdiBookCross],
+  ["network", "Network", mdiCogOutline],
+  ["import", "Import", mdiImport],
 ];
 
 /** OpenSong SStyleCanvas: a rendered slide preview that opens StyleWindow on click. */
@@ -135,7 +140,7 @@ export function SettingsPage({
     <div className="flex h-full">
       {/* OpenSong settings windows: section nav down the side. */}
       <nav className="w-44 shrink-0 space-y-1 border-r border-zinc-200 p-3 dark:border-zinc-800">
-        {SECTIONS.map(([id, label]) => (
+        {SECTIONS.map(([id, label, icon]) => (
           <button
             key={id}
             onClick={() => setSection(id)}
@@ -145,7 +150,7 @@ export function SettingsPage({
                 : "hover:bg-zinc-100 dark:hover:bg-zinc-800"
             }`}
           >
-            {label}
+            <Icon path={icon} /> {label}
           </button>
         ))}
       </nav>
@@ -167,14 +172,14 @@ export function SettingsPage({
                 className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
                 title="Reset both styles and media to OpenSong's shipped defaults"
               >
-                Load OpenSong defaults
+                <Icon path={mdiRestore} /> Load OpenSong defaults
               </button>
               <label className="cursor-pointer rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800">
-                Import OpenSong settings…
+                <Icon path={mdiImport} /> Import OpenSong settings…
                 <input type="file" multiple className="hidden" onChange={(e) => void importSettings(e.target.files)} />
               </label>
               <button onClick={() => void save()} className="rounded bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-500">
-                Save
+                <Icon path={mdiContentSave} /> Save
               </button>
             </>
           )}
@@ -337,15 +342,16 @@ export function SettingsPage({
               <button
                 className="ml-auto text-xs text-red-600 hover:underline"
                 onClick={() => void api.deleteBible(b.id).then(() => api.bibles().then(setBibles))}
+                title="Remove this translation"
               >
-                remove
+                <Icon path={mdiDelete} size={0.6} /> remove
               </button>
             </li>
           ))}
           {bibles.length === 0 && <li className="py-1 text-sm text-zinc-500">No translations installed.</li>}
         </ul>
         <label className="cursor-pointer rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800">
-          Import OpenSong/Zefania Bible XML…
+          <Icon path={mdiImport} /> Import OpenSong/Zefania Bible XML…
           <input type="file" multiple className="hidden" onChange={(e) => void importBible(e.target.files)} />
         </label>
         <div className="mt-2 flex gap-2">
@@ -360,7 +366,7 @@ export function SettingsPage({
             disabled={!bibleUrl.trim()}
             className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
           >
-            Download
+            <Icon path={mdiDownload} /> Download
           </button>
         </div>
       </fieldset>

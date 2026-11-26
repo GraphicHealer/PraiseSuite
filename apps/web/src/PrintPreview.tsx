@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { mdiMagnifyMinus, mdiMagnifyPlus, mdiMinus, mdiPlus } from "@mdi/js";
+import { mdiClose, mdiMagnifyMinus, mdiMagnifyPlus, mdiMinus, mdiPlus } from "@mdi/js";
 import { Previewer } from "pagedjs";
 import { Icon } from "./components/Icon.js";
 
@@ -358,7 +358,7 @@ export function PrintWindow({ params }: { params: URLSearchParams }): ReactNode 
         </fieldset>
 
         <button onClick={() => window.close()} className="mt-auto rounded border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800">
-          Close
+          <Icon path={mdiClose} /> Close
         </button>
       </aside>
 

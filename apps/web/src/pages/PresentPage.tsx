@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { PresentationSession, Service, ServiceItem } from "@praisesuite/core";
+import { mdiBellOffOutline, mdiCast, mdiMonitorEye, mdiRemoteDesktop } from "@mdi/js";
 import { AddItemDialog, type AddItemTab } from "../components/AddItemDialog.js";
 import { useDialog } from "../components/Dialog.js";
+import { Icon } from "../components/Icon.js";
 import { SlideCanvas } from "../components/SlideCanvas.js";
 import { api, type PresentMode, type SlideResponse } from "../api.js";
 
@@ -617,7 +619,7 @@ export function PresentPage({
             <div className="flex flex-col gap-1">
               {!controlling && (
                 <button onClick={() => void takeControl()} className={`${btn} bg-indigo-600 text-white hover:bg-indigo-500`}>
-                  Take control
+                  <Icon path={mdiRemoteDesktop} /> Take control
                 </button>
               )}
               <button disabled={!controlling} onClick={openAlert} className={btn}>[A] Alert…</button>
@@ -629,7 +631,7 @@ export function PresentPage({
                   }}
                   className={`${btn} text-amber-600`}
                 >
-                  Clear alert
+                  <Icon path={mdiBellOffOutline} /> Clear alert
                 </button>
               )}
               <button disabled={!controlling} onClick={openSpontaneous} className={btn}>[U] Spontaneous…</button>
@@ -640,8 +642,8 @@ export function PresentPage({
                 [S] Scripture
               </button>
               <button onClick={toggleFullscreen} className={btn}>[M] {fullscreen ? "Normal Screen" : "Full Screen"}</button>
-              <button onClick={() => void makeReceiverUrl()} className={btn}>Receiver link</button>
-              <a href="/stage" target="_blank" rel="noreferrer" className={`${btn} block text-center`}>Stage view</a>
+              <button onClick={() => void makeReceiverUrl()} className={btn}><Icon path={mdiCast} /> Receiver link</button>
+              <a href="/stage" target="_blank" rel="noreferrer" className={`${btn} block text-center`}><Icon path={mdiMonitorEye} /> Stage view</a>
               <button onClick={() => confirmEnd()} className={btn}>[Esc] End</button>
             </div>
           </fieldset>

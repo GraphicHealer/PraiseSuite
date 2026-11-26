@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Service, ServiceItem, ServiceItemId, SlideStyle, SlideStyleOverride, SongId, SongSummary } from "@praisesuite/core";
-import { mdiFolderMinus, mdiFolderPlus, mdiPencil } from "@mdi/js";
+import {
+  mdiArrowDown, mdiArrowUp, mdiBookOpenPageVariant, mdiCardTextOutline, mdiContentCopy,
+  mdiContentPaste, mdiContentSave, mdiContentSaveEdit, mdiDelete, mdiExport, mdiFileChartOutline,
+  mdiFilePlusOutline, mdiFolderMinus, mdiFolderPlus, mdiFormatClear, mdiImageOutline, mdiImport,
+  mdiMagnify, mdiMusicNote, mdiMusicNotePlus, mdiPaletteOutline, mdiPencil, mdiPlay,
+  mdiPlaylistMusic, mdiPlaylistPlus, mdiPresentationPlay, mdiPrinter, mdiRenameBox,
+} from "@mdi/js";
 import { api } from "../api.js";
 import { AddItemDialog, type AddItemTab } from "../components/AddItemDialog.js";
 import { useDialog } from "../components/Dialog.js";
@@ -48,13 +54,13 @@ export function MainPage({
           onClick={() => onModeChange("songs")}
           className={`rounded px-4 py-1 text-sm font-medium ${mode === "songs" ? "bg-indigo-600 text-white" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
         >
-          Songs
+          <Icon path={mdiMusicNote} /> Songs
         </button>
         <button
           onClick={() => onModeChange("sets")}
           className={`rounded px-4 py-1 text-sm font-medium ${mode === "sets" ? "bg-indigo-600 text-white" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
         >
-          Sets
+          <Icon path={mdiPlaylistMusic} /> Sets
         </button>
       </div>
       <div className="min-h-0 flex-1">
@@ -197,25 +203,30 @@ function SongsMode({
           ))}
           {list.length === 0 && <li className="px-3 py-6 text-center text-sm text-zinc-500">No songs.</li>}
         </ul>
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Find…"
-          className={input}
-          title="Find songs (All Songs → Find)"
-        />
+        <div className="relative">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Find…"
+            className={`${input} w-full pl-7`}
+            title="Find songs (All Songs → Find)"
+          />
+          <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-zinc-400">
+            <Icon path={mdiMagnify} size={0.7} />
+          </span>
+        </div>
         {error && <p className="text-xs text-red-600">{error}</p>}
         <div className="grid grid-cols-2 gap-2">
           <div className={grp}>
             <span className={grpLabel}>New song</span>
-            <button onClick={() => void create()} className={btn}>Create</button>
-            <button onClick={onImport} className={btn}>Import…</button>
+            <button onClick={() => void create()} className={btn}><Icon path={mdiFilePlusOutline} /> Create</button>
+            <button onClick={onImport} className={btn}><Icon path={mdiImport} /> Import…</button>
           </div>
           <div className={grp}>
             <span className={grpLabel}>All songs</span>
-            <button onClick={() => setPrintUrl(api.printUrl("/api/v1/print/songbook"))} className={btn}>Print</button>
-            <button onClick={exportAll} className={btn}>Export</button>
-            <button onClick={() => setPrintUrl(api.printUrl("/api/v1/print/activity"))} className={btn}>CCLI report</button>
+            <button onClick={() => setPrintUrl(api.printUrl("/api/v1/print/songbook"))} className={btn}><Icon path={mdiPrinter} /> Print</button>
+            <button onClick={exportAll} className={btn}><Icon path={mdiExport} /> Export</button>
+            <button onClick={() => setPrintUrl(api.printUrl("/api/v1/print/activity"))} className={btn}><Icon path={mdiFileChartOutline} /> CCLI report</button>
           </div>
         </div>
       </div>
@@ -465,7 +476,7 @@ function SetsMode({
               </button>
             ))}
           </div>
-          <button onClick={() => void createSet()} className={btn}>+ New set</button>
+          <button onClick={() => void createSet()} className={btn}><Icon path={mdiPlaylistPlus} /> New set</button>
         </div>
       </aside>
 
@@ -536,11 +547,11 @@ function SetsMode({
             <div className={grp}>
               <span className={grpLabel}>New item</span>
               <div className="flex flex-wrap gap-1">
-                <button onClick={() => setAddTab("song")} className={btn}>Add Item…</button>
-                <button onClick={() => setAddTab("scripture")} className={btn}>Scripture…</button>
-                <button onClick={() => setAddTab("custom")} className={btn}>Slides…</button>
-                <button onClick={() => setAddTab("image")} className={btn}>Image…</button>
-                <button onClick={() => setAddTab("style")} className={btn}>Style…</button>
+                <button onClick={() => setAddTab("song")} className={btn}><Icon path={mdiMusicNotePlus} /> Add Item…</button>
+                <button onClick={() => setAddTab("scripture")} className={btn}><Icon path={mdiBookOpenPageVariant} /> Scripture…</button>
+                <button onClick={() => setAddTab("custom")} className={btn}><Icon path={mdiCardTextOutline} /> Slides…</button>
+                <button onClick={() => setAddTab("image")} className={btn}><Icon path={mdiImageOutline} /> Image…</button>
+                <button onClick={() => setAddTab("style")} className={btn}><Icon path={mdiPaletteOutline} /> Style…</button>
               </div>
             </div>
           </div>
@@ -553,24 +564,24 @@ function SetsMode({
           <aside className="flex w-44 shrink-0 flex-col gap-2">
             <div className={grp}>
               <span className={grpLabel}>Current set</span>
-              <button onClick={() => void presentSet()} className={btn}>Present</button>
-              <button onClick={renameSet} className={btn}>Rename</button>
-              <button onClick={() => void save()} className={btn} disabled={!dirty}>{dirty ? "Save*" : "Save"}</button>
-              <button onClick={() => void saveAs()} className={btn}>Save As…</button>
-              <button onClick={() => setPrintUrl(api.printUrl(`/api/v1/print/service/${encodeURIComponent(current.id)}/songs`))} className={btn}>Print Songs</button>
-              <button onClick={() => setPrintUrl(api.printUrl(`/api/v1/print/service/${encodeURIComponent(current.id)}`))} className={btn}>Print Order</button>
-              <button onClick={exportSet} className={btn}>Export</button>
-              <button onClick={() => void deleteSet()} className={`${btn} text-red-600`}>Delete</button>
+              <button onClick={() => void presentSet()} className={btn}><Icon path={mdiPresentationPlay} /> Present</button>
+              <button onClick={renameSet} className={btn}><Icon path={mdiRenameBox} /> Rename</button>
+              <button onClick={() => void save()} className={btn} disabled={!dirty}><Icon path={mdiContentSave} /> {dirty ? "Save*" : "Save"}</button>
+              <button onClick={() => void saveAs()} className={btn}><Icon path={mdiContentSaveEdit} /> Save As…</button>
+              <button onClick={() => setPrintUrl(api.printUrl(`/api/v1/print/service/${encodeURIComponent(current.id)}/songs`))} className={btn}><Icon path={mdiPrinter} /> Print Songs</button>
+              <button onClick={() => setPrintUrl(api.printUrl(`/api/v1/print/service/${encodeURIComponent(current.id)}`))} className={btn}><Icon path={mdiPrinter} /> Print Order</button>
+              <button onClick={exportSet} className={btn}><Icon path={mdiExport} /> Export</button>
+              <button onClick={() => void deleteSet()} className={`${btn} text-red-600`}><Icon path={mdiDelete} /> Delete</button>
             </div>
             <div className={grp}>
               <span className={grpLabel}>Current item</span>
-              <button disabled={sel === null} onClick={() => item && void presentSet(item.id)} className={btn}>Present Item</button>
-              <button disabled={sel === null} onClick={() => sel !== null && patchItems(moveItem(current.items, sel, -1))} className={btn}>Move Up</button>
-              <button disabled={sel === null} onClick={() => sel !== null && patchItems(moveItem(current.items, sel, 1))} className={btn}>Move Down</button>
-              <button disabled={sel === null} onClick={copyItem} className={btn}>Copy</button>
-              <button disabled={clipboard === null} onClick={pasteItem} className={btn}>Paste</button>
-              <button disabled={sel === null} onClick={storeItem} className={btn}>Store</button>
-              <button disabled={sel === null} onClick={() => setEditingItemStyle(true)} className={btn} title="Edit this item's slide style (OpenSong can_slide_style)">Style…</button>
+              <button disabled={sel === null} onClick={() => item && void presentSet(item.id)} className={btn}><Icon path={mdiPlay} /> Present Item</button>
+              <button disabled={sel === null} onClick={() => sel !== null && patchItems(moveItem(current.items, sel, -1))} className={btn}><Icon path={mdiArrowUp} /> Move Up</button>
+              <button disabled={sel === null} onClick={() => sel !== null && patchItems(moveItem(current.items, sel, 1))} className={btn}><Icon path={mdiArrowDown} /> Move Down</button>
+              <button disabled={sel === null} onClick={copyItem} className={btn}><Icon path={mdiContentCopy} /> Copy</button>
+              <button disabled={clipboard === null} onClick={pasteItem} className={btn}><Icon path={mdiContentPaste} /> Paste</button>
+              <button disabled={sel === null} onClick={storeItem} className={btn}><Icon path={mdiContentSave} /> Store</button>
+              <button disabled={sel === null} onClick={() => setEditingItemStyle(true)} className={btn} title="Edit this item's slide style (OpenSong can_slide_style)"><Icon path={mdiPaletteOutline} /> Style…</button>
               {item !== null && item !== undefined && item.config["style"] !== undefined && (
                 <button
                   onClick={() => {
@@ -582,10 +593,10 @@ function SetsMode({
                   className={`${btn} text-red-600`}
                   title="Remove this item's style override"
                 >
-                  Clear Style
+                  <Icon path={mdiFormatClear} /> Clear Style
                 </button>
               )}
-              <button disabled={sel === null} onClick={() => sel !== null && patchItems(current.items.filter((_, j) => j !== sel))} className={`${btn} text-red-600`}>Remove</button>
+              <button disabled={sel === null} onClick={() => sel !== null && patchItems(current.items.filter((_, j) => j !== sel))} className={`${btn} text-red-600`}><Icon path={mdiDelete} /> Remove</button>
             </div>
           </aside>
 

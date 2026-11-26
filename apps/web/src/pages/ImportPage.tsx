@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { expandZip } from "@praisesuite/core";
+import { mdiFileMultipleOutline, mdiFolderOpenOutline, mdiImport, mdiTextSearch } from "@mdi/js";
 import { api, readXmlFile, type ImportFilePayload, type ImportPreview, type ImportReport } from "../api.js";
+import { Icon } from "../components/Icon.js";
 
 const btn =
   "rounded border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800";
@@ -62,11 +64,11 @@ export function ImportPage({ seed }: { seed?: { name: string; text: string } | n
         <p className="mb-2 text-zinc-500">Pick song/set files, a folder, or a zip archive.</p>
         <div className="flex gap-3">
           <label className={btn}>
-            Files…
+            <Icon path={mdiFileMultipleOutline} /> Files…
             <input type="file" multiple className="hidden" onChange={(e) => void pick(e.target.files)} />
           </label>
           <label className={btn}>
-            Folder…
+            <Icon path={mdiFolderOpenOutline} /> Folder…
             <input
               type="file"
               // @ts-expect-error nonstandard but supported by Chromium/WebView
@@ -86,7 +88,7 @@ export function ImportPage({ seed }: { seed?: { name: string; text: string } | n
             className="rounded bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-500 disabled:opacity-50"
             onClick={() => void run(async () => setPreview(await api.importPreview(files)))}
           >
-            Analyze
+            <Icon path={mdiTextSearch} /> Analyze
           </button>
         </div>
       )}
@@ -127,7 +129,7 @@ export function ImportPage({ seed }: { seed?: { name: string; text: string } | n
               void run(async () => setReport(await api.importRun(files, dupAction)))
             }
           >
-            Import
+            <Icon path={mdiImport} /> Import
           </button>
         </div>
       )}

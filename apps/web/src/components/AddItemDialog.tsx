@@ -1,7 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { ServiceItem, ServiceItemId, SongSummary } from "@praisesuite/core";
 import { serializeOpenSongLyrics } from "@praisesuite/core";
+import { mdiBookOpenPageVariant, mdiCardTextOutline, mdiImageOutline, mdiMusicNote, mdiPaletteOutline, mdiPlaylistPlus } from "@mdi/js";
 import { api } from "../api.js";
+import { Icon } from "./Icon.js";
 import { SlideCanvas } from "./SlideCanvas.js";
 import { StyleEditor } from "./StyleEditor.js";
 import type { SlideStyle } from "../slide-types.js";
@@ -9,12 +11,12 @@ import type { SlideStyle } from "../slide-types.js";
 export type AddItemTab = "song" | "scripture" | "custom" | "image" | "style" | "external";
 
 // External stays in AddItemTab but is hidden until implemented (D15).
-const TABS: [AddItemTab, string][] = [
-  ["song", "Songs"],
-  ["scripture", "Scripture"],
-  ["custom", "Custom"],
-  ["image", "Image"],
-  ["style", "Style"],
+const TABS: [AddItemTab, string, string][] = [
+  ["song", "Songs", mdiMusicNote],
+  ["scripture", "Scripture", mdiBookOpenPageVariant],
+  ["custom", "Custom", mdiCardTextOutline],
+  ["image", "Image", mdiImageOutline],
+  ["style", "Style", mdiPaletteOutline],
 ];
 
 function makeItem(patch: Partial<ServiceItem>): ServiceItem {
@@ -216,7 +218,7 @@ export function AddItemDialog({
       >
         {/* Tab bar */}
         <div className="mb-3 flex gap-1 border-b border-zinc-200 dark:border-zinc-700">
-          {TABS.map(([t, label]) => (
+          {TABS.map(([t, label, icon]) => (
             <button
               key={t}
               onClick={() => onTabChange(t)}
@@ -224,7 +226,7 @@ export function AddItemDialog({
                 tab === t ? "bg-zinc-100 font-semibold dark:bg-zinc-800" : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
               }`}
             >
-              {label}
+              <Icon path={icon} /> {label}
             </button>
           ))}
         </div>
@@ -457,7 +459,7 @@ export function AddItemDialog({
                 onClick={() => void addScripture()}
                 className="rounded bg-indigo-600 px-6 py-1.5 text-sm text-white hover:bg-indigo-500 disabled:opacity-50"
               >
-                Insert
+                <Icon path={mdiPlaylistPlus} /> Insert
               </button>
               <button onClick={onClose} className={dlgBtn}>Done</button>
             </div>
@@ -484,7 +486,7 @@ export function AddItemDialog({
               />
             </label>
             <button onClick={() => void addCustom()} className="self-end rounded bg-indigo-600 px-6 py-1.5 text-sm text-white hover:bg-indigo-500">
-              Insert
+              <Icon path={mdiPlaylistPlus} /> Insert
             </button>
           </div>
         )}
@@ -552,7 +554,7 @@ export function AddItemDialog({
               }}
               className="self-start rounded bg-indigo-600 px-6 py-1.5 text-sm text-white hover:bg-indigo-500"
             >
-              Insert
+              <Icon path={mdiPlaylistPlus} /> Insert
             </button>
           </div>
         )}
@@ -582,7 +584,7 @@ export function AddItemDialog({
               }}
               className="self-end rounded bg-indigo-600 px-6 py-1.5 text-sm text-white hover:bg-indigo-500 disabled:opacity-50"
             >
-              Insert
+              <Icon path={mdiPlaylistPlus} /> Insert
             </button>
           </div>
         )}

@@ -14,7 +14,11 @@ import {
   type SongSectionId,
   type ArrangementSectionId,
 } from "@praisesuite/core";
-import { mdiArrowLeft } from "@mdi/js";
+import {
+  mdiArrowLeft, mdiContentCopy, mdiContentSave, mdiDelete, mdiExport, mdiFileDocumentOutline,
+  mdiFileMusicOutline, mdiFolderMoveOutline, mdiPaletteOutline, mdiPresentationPlay,
+  mdiRenameBox, mdiRestore,
+} from "@mdi/js";
 import { api } from "../api.js";
 import { useDialog } from "../components/Dialog.js";
 import { Icon } from "../components/Icon.js";
@@ -546,7 +550,7 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
           {song.styleXml !== null && song.styleXml !== undefined && (
             <>
               <button onClick={() => setEditingSongStyle(true)} className="rounded border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800">
-                Edit Style…
+                <Icon path={mdiPaletteOutline} size={0.6} /> Edit Style…
               </button>
               <span className="text-xs text-zinc-500">this song presents with its own slide style</span>
             </>
@@ -561,13 +565,13 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
           <legend className="px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Song</legend>
           <div className="flex flex-col gap-1">
             <button onClick={() => void save()} className="rounded bg-indigo-600 px-2 py-1 text-sm text-white hover:bg-indigo-500">
-              {dirty ? "Save" : "Saved"}
+              <Icon path={mdiContentSave} /> {dirty ? "Save" : "Saved"}
             </button>
             {dirty && (
-              <button onClick={() => void reload()} className={btn} title="Discard edits and reload">Revert</button>
+              <button onClick={() => void reload()} className={btn} title="Discard edits and reload"><Icon path={mdiRestore} /> Revert</button>
             )}
             {onPresent && (
-              <button onClick={() => void save().then(() => onPresent(song))} className={btn}>Present</button>
+              <button onClick={() => void save().then(() => onPresent(song))} className={btn}><Icon path={mdiPresentationPlay} /> Present</button>
             )}
           </div>
         </fieldset>
@@ -597,13 +601,13 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
               onClick={() => setPrintUrl(api.printUrl(`/api/v1/print/song/${encodeURIComponent(song.id)}?mode=chord`))}
               className={btn}
             >
-              Chord sheet
+              <Icon path={mdiFileMusicOutline} /> Chord sheet
             </button>
             <button
               onClick={() => setPrintUrl(api.printUrl(`/api/v1/print/song/${encodeURIComponent(song.id)}?mode=lyrics`))}
               className={btn}
             >
-              Lyrics sheet
+              <Icon path={mdiFileDocumentOutline} /> Lyrics sheet
             </button>
           </div>
         </fieldset>
@@ -623,11 +627,11 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
         <fieldset className="rounded border border-zinc-300 p-1.5 dark:border-zinc-700">
           <legend className="px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">File</legend>
           <div className="flex flex-col gap-1">
-            <button onClick={() => void rename()} className={btn} title="Rename song">Rename</button>
-            <button onClick={exportXml} className={btn} title="Export as OpenSong XML">Export</button>
-            <button onClick={() => void copy()} className={btn} title="Duplicate this song">Copy</button>
-            <button onClick={() => void move()} className={btn} title="Move to folder">Move</button>
-            <button onClick={() => void remove()} className={`${btn} text-red-600`}>Delete</button>
+            <button onClick={() => void rename()} className={btn} title="Rename song"><Icon path={mdiRenameBox} /> Rename</button>
+            <button onClick={exportXml} className={btn} title="Export as OpenSong XML"><Icon path={mdiExport} /> Export</button>
+            <button onClick={() => void copy()} className={btn} title="Duplicate this song"><Icon path={mdiContentCopy} /> Copy</button>
+            <button onClick={() => void move()} className={btn} title="Move to folder"><Icon path={mdiFolderMoveOutline} /> Move</button>
+            <button onClick={() => void remove()} className={`${btn} text-red-600`}><Icon path={mdiDelete} /> Delete</button>
           </div>
         </fieldset>
       </div>
