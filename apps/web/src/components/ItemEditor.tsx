@@ -208,7 +208,7 @@ export function ItemEditor({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
-        className="max-h-full w-full max-w-md overflow-y-auto rounded-lg border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+        className="max-h-full w-fit min-w-96 max-w-[92vw] overflow-y-auto rounded-lg border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="mb-3 text-sm font-semibold">
