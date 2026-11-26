@@ -44,6 +44,5 @@ portable:
 # "Open with" picks and files dropped on the exe.
 protocols:
   - name: praisesuite
-    description: PraiseSuite deep link
     schemes:
       - praisesuite
