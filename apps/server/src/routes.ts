@@ -551,6 +551,7 @@ export function buildRoutes(deps: AppDeps): Route[] {
           error: s.error ?? null,
         })),
         sets: analysis.sets.map((s) => ({ path: s.path, name: s.name, items: s.items?.length ?? 0, warnings: s.warnings })),
+        bibles: analysis.bibles.map((b) => ({ path: b.path, name: b.name })),
         skipped: analysis.skipped,
         duplicates: analysis.duplicates.length,
       };
@@ -581,7 +582,17 @@ export function buildRoutes(deps: AppDeps): Route[] {
           return { id: m.id as string, storageKey: m.storageKey };
         },
       });
-      return report;
+      // Bible XMLs (OpenSong Scripture folder / Zefania) go to the bibles store.
+      let importedBibles = 0;
+      for (const b of analysis.bibles) {
+        try {
+          await storeBibleXml(deps, b.xml);
+          importedBibles++;
+        } catch (e) {
+          report.warnings.push(`${b.path}: bible import failed — ${(e as Error).message}`);
+        }
+      }
+      return { ...report, importedBibles };
     }),
 
     r("GET", "/api/v1/style", "guest", "Global presentation slide style", async () => ({
@@ -725,27 +736,33 @@ export function buildRoutes(deps: AppDeps): Route[] {
           json: z.unknown().optional(),
         })
         .parse(await ctx.body());
-      const id = deps.ids.next() as BibleId;
-      let bible: BibleTranslation;
       if (body.format === "apibible-json") {
         // Provider-fetched canonical JSON (already normalized client-side or by fetch adapter).
-        bible = body.json as BibleTranslation;
-        bible.id = id;
-      } else {
-        if (body.xml === undefined) throw new ApiError(400, "missing_xml", "xml field required");
-        bible = parseOpenSongBible(body.xml, id);
+        const bible = body.json as BibleTranslation;
+        bible.id = deps.ids.next() as BibleId;
+        return await storeBible(deps, bible);
       }
-      await deps.repos.files.put(`bibles/${id}.json`, new TextEncoder().encode(JSON.stringify(bible)));
-      const index = biblesIndex(deps.storage);
-      index.push({
-        id,
-        name: bible.name,
-        abbreviation: bible.abbreviation,
-        books: bible.books.length,
-        copyright: bible.copyright,
-      });
-      deps.storage.setSetting("bibles.index", JSON.stringify(index));
-      return { id, name: bible.name, abbreviation: bible.abbreviation, books: bible.books.length };
+      if (body.xml === undefined) throw new ApiError(400, "missing_xml", "xml field required");
+      return await storeBibleXml(deps, body.xml);
+    }),
+
+    // Server-side download (avoids browser CORS): fetch an OpenSong/Zefania
+    // Bible XML from a URL the operator provides.
+    r("POST", "/api/v1/bibles/fetch", "admin", "Download a Bible XML from a URL", async (ctx) => {
+      const body = z.object({ url: z.string().url() }).parse(await ctx.body());
+      const res = await fetch(body.url);
+      if (!res.ok) throw new ApiError(502, "fetch_failed", `Download failed: HTTP ${res.status}`);
+      const buf = Buffer.from(await res.arrayBuffer());
+      // Bible XMLs are usually ISO-8859-1/latin1 — sniff the declaration,
+      // defaulting to UTF-8.
+      const head = buf.subarray(0, 300).toString("latin1");
+      const latin = /encoding=["'](?:iso-8859-1|windows-1252|latin1)["']/i.test(head);
+      const xml = buf.toString(latin ? "latin1" : "utf-8");
+      try {
+        return await storeBibleXml(deps, xml);
+      } catch (e) {
+        throw new ApiError(400, "bad_bible", `Not a Bible XML: ${(e as Error).message}`);
+      }
     }),
 
     r("GET", "/api/v1/bibles/:id", "admin", "Get a Bible translation", async (ctx) => {
@@ -857,8 +874,12 @@ export function buildRoutes(deps: AppDeps): Route[] {
       for (const item of svc.items.filter((i) => i.kind === "song" && i.songId !== null)) {
         const song = await deps.repos.songs.get(item.songId!);
         // Inline footer: per-song fixed footers would all overlay the same
-        // spot on every page of the combined document.
-        if (song) parts.push(chordSheetHtml(song, { print: cfg, ccliLicense, footer: "inline" }));
+        // spot on every page of the combined document. Per-item transpose
+        // (set editor's pencil dialog) applies to this set's sheets.
+        if (song) {
+          const tr = typeof item.config["transpose"] === "number" ? (item.config["transpose"] as number) : 0;
+          parts.push(chordSheetHtml(song, { print: cfg, ccliLicense, footer: "inline", transpose: tr }));
+        }
       }
       if (parts.length === 0) throw new ApiError(404, "not_found", "No songs in service");
       const html = parts
@@ -1287,6 +1308,32 @@ function imageDefaultsOf(storage: SqliteStorage): { fitToScreen: boolean; fitToB
   } catch {
     return { fitToScreen: true, fitToBody: false, keepAspect: false };
   }
+}
+
+/** Parse + store a Bible XML (OpenSong/Zefania) in the bibles store. */
+async function storeBibleXml(
+  deps: { ids: { next: () => string }; repos: { files: { put: (k: string, d: Uint8Array) => Promise<void> } }; storage: SqliteStorage },
+  xml: string,
+): Promise<{ id: string; name: string; abbreviation: string; books: number }> {
+  const bible = parseOpenSongBible(xml, deps.ids.next() as BibleId);
+  return await storeBible(deps, bible);
+}
+
+async function storeBible(
+  deps: { repos: { files: { put: (k: string, d: Uint8Array) => Promise<void> } }; storage: SqliteStorage },
+  bible: BibleTranslation,
+): Promise<{ id: string; name: string; abbreviation: string; books: number }> {
+  await deps.repos.files.put(`bibles/${bible.id}.json`, new TextEncoder().encode(JSON.stringify(bible)));
+  const index = biblesIndex(deps.storage);
+  index.push({
+    id: bible.id,
+    name: bible.name,
+    abbreviation: bible.abbreviation,
+    books: bible.books.length,
+    copyright: bible.copyright,
+  });
+  deps.storage.setSetting("bibles.index", JSON.stringify(index));
+  return { id: bible.id, name: bible.name, abbreviation: bible.abbreviation, books: bible.books.length };
 }
 
 /** Church CCLI license (main_settings ccli/@number → "general.ccli"). */

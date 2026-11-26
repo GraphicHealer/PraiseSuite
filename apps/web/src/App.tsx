@@ -3,7 +3,6 @@ import type { Service } from "@praisesuite/core";
 import { api, ApiError } from "./api.js";
 import { MainPage } from "./pages/MainPage.js";
 import { DialogProvider } from "./components/Dialog.js";
-import { ImportPage } from "./pages/ImportPage.js";
 import { PresentPage } from "./pages/PresentPage.js";
 import { SettingsPage } from "./pages/SettingsPage.js";
 import { PrintWindow } from "./PrintPreview.js";
@@ -11,10 +10,9 @@ import { PresentModeMenu, type ModeChoice } from "./components/PresentModeMenu.j
 
 type Page = "main" | "import" | "present" | "settings";
 
-const NAV: { id: Page; label: string }[] = [
-  { id: "import", label: "Import" },
-  { id: "settings", label: "Settings" },
-];
+// Import lives inside Settings now (OpenSong's settings-window model) —
+// only Settings remains a top-level nav entry.
+const NAV: { id: Page; label: string }[] = [{ id: "settings", label: "Settings" }];
 
 interface PsBridge {
   setDisplayMode?: (mode: string) => Promise<string>;
@@ -266,7 +264,12 @@ export function App(): ReactNode {
               onImport={() => setPage("import")}
             />
           )}
-          {page === "import" && <ImportPage seed={importSeed} />}
+          {(page === "import" || page === "settings") && (
+            <SettingsPage
+              initialSection={page === "import" ? "import" : "styles"}
+              importSeed={page === "import" ? importSeed : null}
+            />
+          )}
           {page === "present" && (
             <PresentPage
               key={presentReq?.service ? `${presentReq.service.id}:${presentReq.itemId ?? ""}` : "pick"}
@@ -275,7 +278,6 @@ export function App(): ReactNode {
               onExit={() => setPage("main")}
             />
           )}
-          {page === "settings" && <SettingsPage />}
           {presentPicker !== null && (
             <PresentModeMenu onPick={(c) => void pickMode(c)} onCancel={() => setPresentPicker(null)} />
           )}

@@ -1,8 +1,18 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { api } from "../api.js";
+import { api, readXmlFile } from "../api.js";
+import { ImportPage } from "./ImportPage.js";
 import { SlideCanvas } from "../components/SlideCanvas.js";
 import { StyleEditor } from "../components/StyleEditor.js";
 import type { SlideStyle } from "../slide-types.js";
+
+type SettingsSection = "styles" | "display" | "bibles" | "network" | "import";
+const SECTIONS: [SettingsSection, string][] = [
+  ["styles", "Styles"],
+  ["display", "Display"],
+  ["bibles", "Bibles"],
+  ["network", "Network"],
+  ["import", "Import"],
+];
 
 /** OpenSong SStyleCanvas: a rendered slide preview that opens StyleWindow on click. */
 function StyleCanvas({ label, style, onClick }: { label: string; style: SlideStyle; onClick: () => void }): ReactNode {
@@ -29,8 +39,17 @@ function StyleCanvas({ label, style, onClick }: { label: string; style: SlideSty
   );
 }
 
-/** Global presentation style editor + OpenSong settings import (M6). */
-export function SettingsPage(): ReactNode {
+/** Settings: sidebar-nav sections (OpenSong's settings window model) —
+ *  Styles, Display, Bibles, Network, and the Import flow lives inside. */
+export function SettingsPage({
+  initialSection = "styles",
+  importSeed = null,
+}: {
+  initialSection?: SettingsSection;
+  /** File-open seed forwarded to the embedded Import section. */
+  importSeed?: { name: string; text: string } | null | undefined;
+}): ReactNode {
+  const [section, setSection] = useState<SettingsSection>(initialSection);
   const [style, setStyle] = useState<SlideStyle | null>(null);
   const [scripture, setScripture] = useState<SlideStyle | null>(null);
   const [editing, setEditing] = useState<"present" | "scripture" | null>(null);
@@ -53,11 +72,25 @@ export function SettingsPage(): ReactNode {
   const importBible = async (files: FileList | null) => {
     if (!files?.length) return;
     for (const f of Array.from(files)) {
-      const text = await f.text();
+      const text = await readXmlFile(f);
       await api.importBibleXml(text);
     }
     setBibles(await api.bibles());
     setMsg("Bible imported.");
+  };
+
+  const [bibleUrl, setBibleUrl] = useState("");
+  const downloadBible = async () => {
+    const url = bibleUrl.trim();
+    if (!url) return;
+    try {
+      const r = await api.fetchBible(url);
+      setBibles(await api.bibles());
+      setBibleUrl("");
+      setMsg(`Downloaded "${r.name}".`);
+    } catch (e) {
+      setMsg(`Download failed: ${(e as Error).message}`);
+    }
   };
 
   const save = async () => {
@@ -81,45 +114,76 @@ export function SettingsPage(): ReactNode {
     if (!files) return;
     let present: string | undefined;
     let print: string | undefined;
+    let main: string | undefined;
     for (const f of Array.from(files)) {
-      const text = await f.text();
+      const text = await readXmlFile(f);
       if (/present_settings/i.test(text)) present = text;
       else if (/print_settings/i.test(text)) print = text;
+      else if (/main_settings/i.test(text)) main = text;
     }
-    if (!present && !print) {
-      setMsg("No PresentSettings/PrintSettings files found.");
+    if (!present && !print && !main) {
+      setMsg("No PresentSettings/PrintSettings/MainSettings files found.");
       return;
     }
-    const r = await api.importOpenSongSettings(present, print);
+    const r = await api.importOpenSongSettings(present, print, main);
     setMsg(`Imported settings (${r.media.length} media assets, ${r.printRoles.length} print roles).`);
     setStyle(await api.style());
   };
 
   if (!style) return <div className="p-6 text-sm text-zinc-500">Loading…</div>;
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-6">
+    <div className="flex h-full">
+      {/* OpenSong settings windows: section nav down the side. */}
+      <nav className="w-44 shrink-0 space-y-1 border-r border-zinc-200 p-3 dark:border-zinc-800">
+        {SECTIONS.map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => setSection(id)}
+            className={`block w-full rounded px-3 py-1.5 text-left text-sm ${
+              section === id
+                ? "bg-indigo-100 font-medium text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200"
+                : "hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+      <div className="min-w-0 flex-1 overflow-auto">
+        <div className="mx-auto max-w-3xl space-y-4 p-6">
+      {section === "import" && <ImportPage seed={importSeed} />}
+      {section !== "import" && (
+      <>
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Presentation style</h2>
+        <h2 className="text-lg font-semibold">
+          {{ styles: "Styles", display: "Display", bibles: "Bibles", network: "Network" }[section]}
+        </h2>
         <div className="flex items-center gap-3">
           {msg && <span className="text-xs text-emerald-600">{msg}</span>}
-          <button
-            onClick={() => void applyDefaults()}
-            className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-            title="Reset both styles and media to OpenSong's shipped defaults"
-          >
-            Load OpenSong defaults
-          </button>
-          <label className="cursor-pointer rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800">
-            Import OpenSong settings…
-            <input type="file" multiple className="hidden" onChange={(e) => void importSettings(e.target.files)} />
-          </label>
-          <button onClick={() => void save()} className="rounded bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-500">
-            Save
-          </button>
+          {section === "styles" && (
+            <>
+              <button
+                onClick={() => void applyDefaults()}
+                className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                title="Reset both styles and media to OpenSong's shipped defaults"
+              >
+                Load OpenSong defaults
+              </button>
+              <label className="cursor-pointer rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800">
+                Import OpenSong settings…
+                <input type="file" multiple className="hidden" onChange={(e) => void importSettings(e.target.files)} />
+              </label>
+              <button onClick={() => void save()} className="rounded bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-500">
+                Save
+              </button>
+            </>
+          )}
         </div>
       </div>
 
       {/* OpenSong's SStyleCanvas pair — click a style to open StyleWindow. */}
+      {section === "styles" && (
+      <>
       <fieldset className="rounded border border-zinc-200 p-3 dark:border-zinc-800">
         <legend className="px-1 text-sm font-medium">Styles</legend>
         <div className="grid grid-cols-2 gap-4">
@@ -165,7 +229,10 @@ export function SettingsPage(): ReactNode {
           {style.logoKey ? ` Logo: ${style.logoKey}` : " No logo set."}
         </div>
       </fieldset>
+      </>
+      )}
 
+      {section === "display" && (
       <fieldset className="rounded border border-zinc-200 p-3 dark:border-zinc-800">
         <legend className="px-1 text-sm font-medium">Monitors</legend>
         <div className="flex flex-wrap items-center gap-4 text-xs">
@@ -218,7 +285,9 @@ export function SettingsPage(): ReactNode {
           )}
         </div>
       </fieldset>
+      )}
 
+      {section === "network" && (
       <fieldset className="rounded border border-zinc-200 p-3 dark:border-zinc-800">
         <legend className="px-1 text-sm font-medium">Sync &amp; remote access</legend>
         <div className="space-y-2 text-xs">
@@ -254,7 +323,9 @@ export function SettingsPage(): ReactNode {
           </div>
         </div>
       </fieldset>
+      )}
 
+      {section === "bibles" && (
       <fieldset className="rounded border border-zinc-200 p-3 dark:border-zinc-800">
         <legend className="px-1 text-sm font-medium">Bible translations</legend>
         <ul className="mb-2 divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -277,7 +348,27 @@ export function SettingsPage(): ReactNode {
           Import OpenSong/Zefania Bible XML…
           <input type="file" multiple className="hidden" onChange={(e) => void importBible(e.target.files)} />
         </label>
+        <div className="mt-2 flex gap-2">
+          <input
+            value={bibleUrl}
+            onChange={(e) => setBibleUrl(e.target.value)}
+            placeholder="Bible XML URL (OpenSong/Zefania)…"
+            className="min-w-0 flex-1 rounded border border-zinc-300 bg-transparent px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          />
+          <button
+            onClick={() => void downloadBible()}
+            disabled={!bibleUrl.trim()}
+            className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          >
+            Download
+          </button>
+        </div>
       </fieldset>
+      )}
+      </>
+      )}
+        </div>
+      </div>
 
       {editing === "present" && style !== null && (
         <StyleEditor

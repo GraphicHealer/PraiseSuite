@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { Service, ServiceItem, ServiceItemId, SlideStyle, SlideStyleOverride, SongSummary } from "@praisesuite/core";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { Service, ServiceItem, ServiceItemId, SlideStyle, SlideStyleOverride, SongId, SongSummary } from "@praisesuite/core";
 import { api } from "../api.js";
 import { AddItemDialog, type AddItemTab } from "../components/AddItemDialog.js";
 import { useDialog } from "../components/Dialog.js";
+import { ItemEditor } from "../components/ItemEditor.js";
 import { StyleEditor } from "../components/StyleEditor.js";
 import { openPrintPreview } from "../PrintPreview.js";
 import { SongEditorPage } from "./SongEditorPage.js";
@@ -311,6 +312,28 @@ function SetsMode({
   const [addTab, setAddTab] = useState<AddItemTab | null>(null);
   /** Per-item <style> editing (OpenSong can_slide_style → StyleWindow). */
   const [editingItemStyle, setEditingItemStyle] = useState(false);
+  /** Per-item edit dialog (pencil) — name/notes/attrs + per-kind overrides. */
+  const [editingItem, setEditingItem] = useState<number | null>(null);
+  /** songId → key for the key column on song line items. */
+  const [songKeys, setSongKeys] = useState<Record<string, string>>({});
+  const dragFrom = useRef<number | null>(null);
+  useEffect(() => {
+    if (!current) { setSongKeys({}); return; }
+    const ids = [...new Set(current.items.map((i) => i.songId).filter((x): x is SongId => x !== null))];
+    for (const id of ids) {
+      if (songKeys[id] !== undefined) continue;
+      void api.song(id)
+        .then((s) => {
+          // Arrangement key wins (OpenSong <key> is per-arrangement), else
+          // the song's default key.
+          const it = current.items.find((x) => x.songId === id);
+          const arr = it?.arrangementId ? s.arrangements?.find((a) => a.id === it.arrangementId) : undefined;
+          setSongKeys((m) => ({ ...m, [id]: arr?.key ?? s.defaultKey ?? "" }));
+        })
+        .catch(() => {});
+    }
+    // songKeys[id] short-circuits refetches — safe to rerun on any set edit.
+  }, [current]);
   const [globalStyle, setGlobalStyle] = useState<SlideStyle | null>(null);
   useEffect(() => {
     void api.style().then((s) => setGlobalStyle(s as unknown as SlideStyle)).catch(() => {});
@@ -457,7 +480,23 @@ function SetsMode({
             </div>
             <ol className="min-h-0 flex-1 space-y-1 overflow-y-auto">
               {current.items.map((it, i) => (
-                <li key={it.id}>
+                <li
+                  key={it.id}
+                  draggable
+                  onDragStart={() => { dragFrom.current = i; }}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const from = dragFrom.current;
+                    dragFrom.current = null;
+                    if (from === null || from === i) return;
+                    const items = [...current.items];
+                    const [moved] = items.splice(from, 1);
+                    items.splice(i, 0, moved!);
+                    patchItems(items);
+                    pick(i);
+                  }}
+                >
                   <button
                     onClick={() => pick(i)}
                     className={`flex w-full items-center gap-2 rounded border px-3 py-1.5 text-left text-sm ${
@@ -467,6 +506,24 @@ function SetsMode({
                     <span className="w-5 text-xs text-zinc-400">{i + 1}</span>
                     <span className="rounded bg-zinc-100 px-1.5 text-xs dark:bg-zinc-800">{it.kind}</span>
                     <span className="truncate">{it.title || <span className="text-zinc-400">(untitled)</span>}</span>
+                    {it.kind === "song" && it.songId !== null && songKeys[it.songId] ? (
+                      <span className="ml-auto shrink-0 rounded bg-emerald-100 px-1.5 text-xs font-semibold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
+                        {songKeys[it.songId]}
+                        {typeof it.config["transpose"] === "number" && it.config["transpose"] !== 0
+                          ? ` ${(it.config["transpose"] as number) > 0 ? "+" : ""}${it.config["transpose"]}`
+                          : ""}
+                      </span>
+                    ) : null}
+                    <span
+                      role="button"
+                      tabIndex={-1}
+                      title="Edit item"
+                      onClick={(e) => { e.stopPropagation(); setEditingItem(i); }}
+                      className="ml-auto shrink-0 rounded px-1 text-xs text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                      style={it.kind === "song" && it.songId !== null && songKeys[it.songId] ? { marginLeft: 0 } : undefined}
+                    >
+                      ✏
+                    </span>
                   </button>
                 </li>
               ))}
@@ -529,6 +586,16 @@ function SetsMode({
               <button disabled={sel === null} onClick={() => sel !== null && patchItems(current.items.filter((_, j) => j !== sel))} className={`${btn} text-red-600`}>Remove</button>
             </div>
           </aside>
+
+          {/* Pencil edit: per-item overrides (transpose, resize, attrs…). */}
+          {editingItem !== null && current.items[editingItem] !== undefined && (
+            <ItemEditor
+              item={current.items[editingItem]!}
+              songKey={current.items[editingItem]!.songId !== null ? songKeys[current.items[editingItem]!.songId!] : undefined}
+              onSave={(it) => patchItems(current.items.map((x, i) => (i === editingItem ? it : x)))}
+              onClose={() => setEditingItem(null)}
+            />
+          )}
 
           {/* OpenSong can_slide_style → StyleWindow on the item's <style>. */}
           {editingItemStyle && item !== null && item !== undefined && globalStyle !== null && (

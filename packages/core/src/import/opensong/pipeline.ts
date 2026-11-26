@@ -36,6 +36,8 @@ export interface AnalyzedSet {
 export interface ImportAnalysis {
   songs: AnalyzedSong[];
   sets: AnalyzedSet[];
+  /** OpenSong/Zefania Bible XML files — imported via the bibles store. */
+  bibles: { path: string; name: string; xml: string }[];
   skipped: { path: string; reason: string }[];
   duplicates: DuplicateMatch[];
 }
@@ -63,7 +65,7 @@ export function expandZip(data: Uint8Array): ImportFile[] {
 
 function looksLikeXml(text: string): boolean {
   const head = text.slice(0, 300);
-  return head.includes("<") && (head.includes("<song") || head.includes("<set") || head.includes("<?xml"));
+  return head.includes("<") && (head.includes("<song") || head.includes("<set") || head.includes("<bible") || head.includes("<?xml"));
 }
 
 /**
@@ -78,6 +80,8 @@ export function analyzeImport(
   const sets: AnalyzedSet[] = [];
   const skipped: ImportAnalysis["skipped"] = [];
 
+  const bibles: ImportAnalysis["bibles"] = [];
+
   for (const file of files) {
     const name = file.path.split("/").pop() ?? file.path;
     if (file.text.includes("<present_settings")) {
@@ -86,6 +90,12 @@ export function analyzeImport(
     }
     if (!looksLikeXml(file.text)) {
       skipped.push({ path: file.path, reason: "not OpenSong XML" });
+      continue;
+    }
+    // Bible files (OpenSong Scripture folder / Zefania): <bible> or
+    // <XMLBIBLE> root — routed to the bibles store, not the song parser.
+    if (/<bible[\s>]|<XMLBIBLE[\s>]/i.test(file.text.slice(0, 400))) {
+      bibles.push({ path: file.path, name, xml: file.text });
       continue;
     }
     // Root-element test: <song_subtitle> inside style groups must not count
@@ -106,7 +116,7 @@ export function analyzeImport(
 
   const parsed = songs.filter((s) => s.song).map((s) => s.song!);
   const duplicates = detectDuplicates(parsed, existing);
-  return { songs, sets, skipped, duplicates };
+  return { songs, sets, bibles, skipped, duplicates };
 }
 
 export type DuplicateAction = "skip" | "replace" | "import";

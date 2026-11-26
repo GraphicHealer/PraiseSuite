@@ -57,6 +57,7 @@ export interface ImportPreview {
     error: string | null;
   }[];
   sets: { path: string; name: string; items: number; warnings: string[] }[];
+  bibles: { path: string; name: string }[];
   skipped: { path: string; reason: string }[];
   duplicates: number;
 }
@@ -64,6 +65,7 @@ export interface ImportPreview {
 export interface ImportReport {
   importedSongs: number;
   importedSets: number;
+  importedBibles?: number;
   skippedFiles: number;
   failed: { path: string; error: string }[];
   warnings: string[];
@@ -240,6 +242,8 @@ class Api {
 
   // plugins
   plugins = () => this.req<PluginManifest[]>("/api/v1/plugins");
+  fetchBible = (url: string) =>
+    this.req<{ id: string; name: string }>("/api/v1/bibles/fetch", { method: "POST", body: { url } });
   pluginCommand = (pluginId: string, command: string, payload?: unknown) =>
     this.req<unknown>(
       `/api/v1/plugins/${encodeURIComponent(pluginId)}/commands/${encodeURIComponent(command)}`,
@@ -269,10 +273,10 @@ class Api {
   /** Record a song activity (printed/copied) — fired by print/export actions. */
   logSongActivity = (id: string, action: number) =>
     this.req(`/api/v1/songs/${encodeURIComponent(id)}/log?action=${action}`, { method: "POST" }).catch(() => {});
-  importOpenSongSettings = (presentSettings?: string, printSettings?: string) =>
+  importOpenSongSettings = (presentSettings?: string, printSettings?: string, mainSettings?: string) =>
     this.req<{ warnings: string[]; media: string[]; printRoles: string[] }>(
       "/api/v1/import/opensong/settings",
-      { method: "POST", body: { presentSettings, printSettings } },
+      { method: "POST", body: { presentSettings, printSettings, mainSettings } },
     );
 
   // bibles / media
@@ -307,3 +311,14 @@ class Api {
 }
 
 export const api = new Api();
+
+/**
+ * Read a text file honoring its XML encoding declaration — OpenSong Bible
+ * and song files are often ISO-8859-1, which f.text() (UTF-8) mangles.
+ */
+export async function readXmlFile(f: File): Promise<string> {
+  const buf = await f.arrayBuffer();
+  const head = new TextDecoder("latin1").decode(buf.slice(0, 300));
+  const latin = /encoding=["'](?:iso-8859-1|windows-1252|latin1)["']/i.test(head);
+  return new TextDecoder(latin ? "windows-1252" : "utf-8").decode(buf);
+}
