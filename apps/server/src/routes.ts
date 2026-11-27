@@ -1324,6 +1324,22 @@ async function currentSlide(repos: Repositories, storage: SqliteStorage, session
             backgroundKey: await backgroundFor(next, nextSong, nextStyle),
             style: nextStyle,
             subtitle: next.blank ? null : subtitleFor(nextItem, nextSong, nextStyle),
+            imageResize:
+              next.kind === "media"
+                ? (() => {
+                    const r = nextItem?.config["resize"] as string | undefined;
+                    if (r !== undefined && r !== "" && r !== "default") return r;
+                    const d = imageDefaultsOf(storage);
+                    return d.fitToScreen ? "screen" : d.fitToBody ? "body" : "";
+                  })()
+                : null,
+            imageKeepAspect:
+              next.kind === "media"
+                ? (() => {
+                    const k = nextItem?.config["keepAspect"] as string | undefined;
+                    return k !== undefined && k !== "default" ? k === "true" : imageDefaultsOf(storage).keepAspect;
+                  })()
+                : true,
           }
         : null,
   };

@@ -43,6 +43,8 @@ export interface SlideResponse {
       backgroundKey: string | null;
       style: SlideStyle;
       subtitle: string | null;
+      imageResize?: string | null;
+      imageKeepAspect?: boolean;
     } | null;
   } | null;
 }

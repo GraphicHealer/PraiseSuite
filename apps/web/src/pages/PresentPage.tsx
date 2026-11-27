@@ -569,6 +569,8 @@ export function PresentPage({
                     subtitle={shownSlide.slide.subtitle}
                     emphasize={shownSlide.slide.emphasize}
                     verseMap={shownSlide.slide.verseMap}
+                    imageResize={shownSlide.slide.imageResize ?? ""}
+                    imageKeepAspect={shownSlide.slide.imageKeepAspect ?? true}
                   />
                 </div>
               ) : (
@@ -587,6 +589,8 @@ export function PresentPage({
                     backgroundKey={slide.slide.next.backgroundKey}
                     mediaKey={slide.slide.next.mediaKey}
                     subtitle={slide.slide.next.subtitle}
+                    imageResize={slide.slide.next.imageResize ?? ""}
+                    imageKeepAspect={slide.slide.next.imageKeepAspect ?? true}
                   />
                 </div>
               ) : (

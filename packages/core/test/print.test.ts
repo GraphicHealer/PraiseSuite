@@ -211,6 +211,16 @@ describe("chordSheetHtml (SongML slice model)", () => {
     expect(chordSheetHtml(song(), { footer: "inline" })).not.toContain("position:fixed");
   });
 
+  it("keeps every chord row when each lyric line has its own . row", () => {
+    // Victory In Jesus: every space-prefixed lyric has its own chord line —
+    // none may be swallowed into a neighbour's block.
+    const { sections } = parseOpenSongLyrics("[V]\n.G C\n line one\n.Em D\n line two\n.G C\n line three\n.Em D\n line four\n");
+    const s = song();
+    const h = chordSheetHtml({ ...s, sections: sections.map((x, i) => ({ ...x, id: `sec${i}` as Song["sections"][0]["id"] })) });
+    expect((h.match(/class="ch"/g) ?? []).length).toBe(4);
+    expect((h.match(/class="ly"/g) ?? []).length).toBe(4);
+  });
+
   it("renders numbered-verse prefixes in a margin column", () => {
     const { sections } = parseOpenSongLyrics("[V]\n.A B\n1 first verse line\n2 second verse line\n");
     const s = song();
@@ -311,6 +321,12 @@ describe("setListHtml", () => {
     expect(html.indexOf("Test Hymn")).toBeLessThan(html.indexOf("John 3:16"));
     expect(html).toContain("Sunday 10am");
     expect(html).toContain("scripture");
+  });
+  it("renders OpenSong's 'Order of Service' heading, printed date and kind captions", () => {
+    expect(html).toContain("SUNDAY 10AM ORDER OF SERVICE");
+    expect(html).toContain("Printed ");
+    expect(html).toContain("VTest Hymn (song)");
+    expect(html).toContain("VJohn 3:16 (scripture)");
   });
 });
 

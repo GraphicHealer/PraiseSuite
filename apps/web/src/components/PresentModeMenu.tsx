@@ -23,7 +23,7 @@ interface Option {
 
 /**
  * Presentation-mode popup (OpenSong "Monitor Mode" chooser, per-launch):
- * Single, Dual (2+ displays only), Dual-Screen Test (1 display only),
+ * Single, Dual (2+ displays only), Preview Dual Screen (1 display only),
  * Network — plus any plugin-contributed outputs (e.g. a future OBS mode).
  */
 export function PresentModeMenu({
@@ -76,8 +76,8 @@ export function PresentModeMenu({
   if (displays <= 1) {
     options.push({
       id: "preview",
-      label: "Dual-Screen Test",
-      desc: "A windowed output on this display acting as the second screen — demo dual-screen controls.",
+      label: "Preview Dual Screen",
+      desc: "A windowed output on this display acting as the second screen — preview dual-screen controls.",
       mode: "preview",
     });
   }

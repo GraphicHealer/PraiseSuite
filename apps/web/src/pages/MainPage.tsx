@@ -54,13 +54,13 @@ export function MainPage({
           onClick={() => onModeChange("songs")}
           className={`rounded px-4 py-1 text-sm font-medium ${mode === "songs" ? "bg-indigo-600 text-white" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
         >
-          <Icon path={mdiMusicNote} /> Songs
+          <Icon path={mdiMusicNote} /> Song Mode
         </button>
         <button
           onClick={() => onModeChange("sets")}
           className={`rounded px-4 py-1 text-sm font-medium ${mode === "sets" ? "bg-indigo-600 text-white" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
         >
-          <Icon path={mdiPlaylistMusic} /> Sets
+          <Icon path={mdiPlaylistMusic} /> Set Mode
         </button>
       </div>
       <div className="min-h-0 flex-1">

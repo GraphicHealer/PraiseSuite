@@ -41,9 +41,9 @@ describe("PresentSettings import", () => {
     expect(r.backgroundData).toBeTruthy();
     expect(r.logoData).toBeTruthy();
     expect(r.logoMaskData).toBeTruthy();
-    expect(r.options.transition).toBe(true);
-    expect(r.options.transitionTime).toBe(100);
-    expect(r.style.transitionMs).toBe(100);
+    expect(r.options.transition).toBe(false);
+    expect(r.options.transitionTime).toBe(50);
+    expect(r.style.transitionMs).toBe(50);
     expect(r.songStylePreferred).toBe(true);
   });
   it("rejects non-settings XML", () => {

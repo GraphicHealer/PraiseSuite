@@ -391,7 +391,11 @@ export function chordSheetHtml(song: Song, opts: SheetOptions = {}): string {
             j++;
           }
         } else if (firstLyric !== undefined && firstLyric.prefix === " ") {
-          if (chorded) {
+          // A ".chord" row covers exactly one space-prefixed lyric line (+1
+          // when bilingual). Only a chordless follower joins the block — a
+          // line carrying its own chords starts a new group, otherwise
+          // every second chord row is swallowed (Victory In Jesus).
+          if (chorded && firstLyric.chords.length === 0) {
             block.push(firstLyric);
             j++;
           }
@@ -448,23 +452,34 @@ function chorusCss(cfg: PrintConfig): string {
 /**
  * Lyrics-only sheet: headings + cleaned lyric text (no chord columns).
  */
-export function lyricsSheetHtml(song: Song, opts: SheetOptions = {}): string {
+/** Lyrics-sheet body shared by songs and set lists (OpenSong SetListReport
+ *  builds a synthetic song — "Name Order of Service" / "Printed <date>" —
+ *  and runs it through the same LeadSheet engine). `foot` is the stack of
+ *  copyright-role lines drawn above the footer rule. */
+export function lyricsSheetPartsHtml(
+  songTitle: string,
+  author: string,
+  sections: SongSection[],
+  foot: string[],
+  opts: SheetOptions = {},
+  pageTitle?: string,
+): string {
   const cfg = mergePrintConfig(opts.print ?? (opts.roles ? { roles: opts.roles } : {}));
   const roles = cfg.roles;
   const secSpace = cfg.spacing["sections"] ?? { before: 0, after: 0 };
   const parts: string[] = [];
-  const title = cfg.capsSongTitle ? song.title.toUpperCase() : song.title;
+  const title = cfg.capsSongTitle ? songTitle.toUpperCase() : songTitle;
   parts.push(
     `<div style="display:flex;align-items:baseline;justify-content:space-between;border-bottom:${cfg.borderThickness}px solid #888;padding-bottom:2pt">` +
       `<span style="${roleCss(roles["title"])}">${esc(title)}</span>` +
-      `<span style="${roleCss(roles["author"])}">${esc(song.authors.join("; "))}</span>` +
+      `<span style="${roleCss(roles["author"])}">${esc(author)}</span>` +
     `</div>`,
   );
-  const hasColumnBreak = song.sections.some((s) => s.lines.some((l) => l.kind === "directive" && l.text === "--"));
+  const hasColumnBreak = sections.some((s) => s.lines.some((l) => l.kind === "directive" && l.text === "--"));
   if (hasColumnBreak) parts.push(`<div class="ps-cols" style="columns:2;column-gap:2em">`);
 
   let firstSec = true;
-  for (const section of song.sections) {
+  for (const section of sections) {
     if (section.leadingBlank === true && !firstSec) {
       parts.push(`<div style="height:1em"></div>`);
     }
@@ -499,16 +514,21 @@ export function lyricsSheetHtml(song: Song, opts: SheetOptions = {}): string {
   if (hasColumnBreak) closeCols(parts);
   // Same Draw_Footer contract as the chord sheet: rule always, then
   // copyright / CCLI song # / CCLI license stacked above it.
-  const foot: string[] = [];
-  if (song.copyright) foot.push(`<div style="${roleCss(roles["copyright"])}">Copyright © ${esc(song.copyright)}</div>`);
-  if (song.ccliNumber && song.ccliNumber !== "0000") foot.push(`<div style="${roleCss(roles["copyright"])}">CCLI Song # ${esc(song.ccliNumber)}</div>`);
-  if (opts.ccliLicense) foot.push(`<div style="${roleCss(roles["copyright"])}">CCLI License # ${esc(opts.ccliLicense)}</div>`);
+  const footHtml = foot.map((f) => `<div style="${roleCss(roles["copyright"])}">${esc(f)}</div>`).join("");
   const footRule =
     opts.footer === "inline" ? "" : `.print-footer{position:fixed;bottom:0;left:0;right:0;background:#fff}`;
   parts.push(
-    `<div class="print-footer" style="text-align:center;border-top:1px solid #000;padding-top:2pt">${foot.join("")}</div>`,
+    `<div class="print-footer" style="text-align:center;border-top:1px solid #000;padding-top:2pt">${footHtml}</div>`,
   );
   const pageStyle = pageCss(cfg.page);
   const footPad = opts.footer === "inline" ? "" : `body{padding-bottom:${10 + foot.length * 13}pt}`;
-  return printPage(`${song.title} — lyrics`, `<style>${pageStyle}${footPad}${footRule}</style>` + parts.join("\n"));
+  return printPage(pageTitle ?? `${songTitle} — lyrics`, `<style>${pageStyle}${footPad}${footRule}</style>` + parts.join("\n"));
+}
+
+export function lyricsSheetHtml(song: Song, opts: SheetOptions = {}): string {
+  const foot: string[] = [];
+  if (song.copyright) foot.push(`Copyright © ${song.copyright}`);
+  if (song.ccliNumber && song.ccliNumber !== "0000") foot.push(`CCLI Song # ${song.ccliNumber}`);
+  if (opts.ccliLicense) foot.push(`CCLI License # ${opts.ccliLicense}`);
+  return lyricsSheetPartsHtml(song.title, song.authors.join("; "), song.sections, foot, opts);
 }

@@ -253,13 +253,13 @@ export function SettingsPage({
               <option value="dual" disabled={displayCount !== null && displayCount < 2}>
                 Dual Screen{displayCount !== null && displayCount < 2 ? " (no second display)" : ""}
               </option>
-              <option value="preview">Dual-Screen Test</option>
+              <option value="preview">Preview Dual Screen</option>
               <option value="network">Network</option>
             </select>
           </label>
           <p className="text-zinc-500">
             Single shows a fullscreen output on this screen controlled by keys or a remote; dual puts
-            the helper here and fullscreen output on a second display; dual-screen test previews both
+            the helper here and fullscreen output on a second display; preview dual screen shows both
             windows inline; network leaves the screen to a device on your LAN. Applies on next launch.
           </p>
           {displayMode === "network" && (
