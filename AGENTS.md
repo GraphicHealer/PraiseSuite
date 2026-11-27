@@ -18,6 +18,19 @@ redesign will build on. Implications:
 - Deliberate naming deviations (do NOT "fix" toward OpenSong): the mode tabs
   are "Songs"/"Sets" (not "Song Mode"/"Set Mode") and the main nav entry is
   "Editor" (not "Song Editor") — Garrett's chosen names.
+- Other deliberate differences (requested by Garrett — reviewers should not
+  flag these as OpenSong mismatches):
+  - Material Design icons on buttons/actions — OpenSong is text-only; ours
+    keeps OpenSong's key captions (`[A]`, `[Esc]`) and `-♭`/`+♯` as text.
+  - Dark/light theme toggle in the header — no OpenSong equivalent.
+  - Two-column (`---`) print scales oversized lines to fit the half-width
+    column; OpenSong clips at ColumnWidth instead.
+  - Named-style library: the style picker lists a "Saved styles" group and
+    StyleEditor has "Save As…" — OpenSong ships only default/scripture.
+  - Web chrome: persistent top nav, sign-out — inherent to the web UI, not
+    OpenSong's windowed model.
+  - The "PraiseSuite print preview" banner at the top of print pages
+    (`no-print` class) — a helper, not part of the printed sheet.
 - New capabilities (plugin system, network receivers, web UI) belong in the
   architecture/extension seams, not as deviations in OpenSong-facing behavior.
 
