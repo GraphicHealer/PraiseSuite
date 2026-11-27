@@ -6,6 +6,9 @@ import {
   parseSlideStyleXml,
   serializeOpenSongLyrics,
   serializeStyleXml,
+  splitThemes,
+  joinThemes,
+  OPENSONG_THEMES,
   transposeSourceText,
   type SlideStyle,
   type Song,
@@ -408,9 +411,33 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
               multiline user fields at the bottom). */}
           <div className="flex w-[45%] min-w-0 flex-col gap-0.5">
             <span className="text-xs text-zinc-500">Themes:</span>
-            <div className="flex min-h-28 flex-col gap-1.5 rounded border border-zinc-300 p-1.5 dark:border-zinc-700">
-              <Field label="Theme" value={song.theme ?? ""} onChange={(v) => update({ theme: v || null })} />
-              <Field label="Alternate Theme" value={song.secondaryTheme ?? ""} onChange={(v) => update({ secondaryTheme: v || null })} />
+            <div className="flex h-64 flex-col gap-0.5 overflow-y-auto rounded border border-zinc-300 p-1.5 dark:border-zinc-700">
+              {/* OpenSong's theme checkbox list: the shipped theme_list plus any
+                  of the song's own themes not in it (alttheme merges in; both
+                  write back as "; "-joined theme, alttheme cleared). */}
+              {(() => {
+                const checked = new Set([...splitThemes(song.theme), ...splitThemes(song.secondaryTheme)]);
+                const options = [...OPENSONG_THEMES, ...[...checked].filter((t) => !OPENSONG_THEMES.includes(t))];
+                return options.map((t) => (
+                  <label key={t} className="flex items-center gap-1.5 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={checked.has(t)}
+                      onChange={() => {
+                        const next = new Set(checked);
+                        if (next.has(t)) next.delete(t);
+                        else next.add(t);
+                        update({
+                          // OpenSong writes themes in list order (row scan).
+                          theme: joinThemes(options.filter((o) => next.has(o))) || null,
+                          secondaryTheme: null,
+                        });
+                      }}
+                    />
+                    {t}
+                  </label>
+                ));
+              })()}
             </div>
           </div>
           <div className="flex min-w-0 flex-1 flex-col gap-1.5">

@@ -5,6 +5,7 @@ export * from "./domain/chords/notes.js";
 export * from "./domain/chords/parse.js";
 export * from "./domain/chords/transpose.js";
 export * from "./domain/songs/types.js";
+export * from "./domain/songs/themes.js";
 export * from "./domain/services/types.js";
 export * from "./domain/sessions/types.js";
 export * from "./domain/styles/types.js";
