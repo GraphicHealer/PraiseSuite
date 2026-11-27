@@ -81,7 +81,7 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
 }): ReactNode {
   const dlg = useDialog();
   const [song, setSong] = useState<Song | null>(null);
-  const [tab, setTab] = useState<"general" | "advanced" | "backgrounds">("general");
+  const [tab, setTab] = useState<"general" | "advanced" | "style">("general");
   const [source, setSource] = useState("");
   const [presentation, setPresentation] = useState("");
   const [capo, setCapo] = useState("");
@@ -346,10 +346,10 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
             Advanced
           </button>
           <button
-            onClick={() => setTab("backgrounds")}
-            className={`${btn} ${tab === "backgrounds" ? "bg-indigo-100 dark:bg-indigo-950" : ""}`}
+            onClick={() => setTab("style")}
+            className={`${btn} ${tab === "style" ? "bg-indigo-100 dark:bg-indigo-950" : ""}`}
           >
-            Backgrounds
+            Style
           </button>
           {tab === "general" && <span className="ml-auto text-xs text-zinc-500">Chord/Lyrics</span>}
         </div>
@@ -406,40 +406,9 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
       )}
       {tab === "advanced" && (
         <div className="flex shrink-0 gap-3 overflow-y-auto">
-          {/* OpenSong's advanced page: themes box on the left, the music
-              fields stacked on the right (narrow popups on top, wide
-              multiline user fields at the bottom). */}
-          <div className="flex w-[45%] min-w-0 flex-col gap-0.5">
-            <span className="text-xs text-zinc-500">Themes:</span>
-            <div className="flex h-64 flex-col gap-0.5 overflow-y-auto rounded border border-zinc-300 p-1.5 dark:border-zinc-700">
-              {/* OpenSong's theme checkbox list: the shipped theme_list plus any
-                  of the song's own themes not in it (alttheme merges in; both
-                  write back as "; "-joined theme, alttheme cleared). */}
-              {(() => {
-                const checked = new Set([...splitThemes(song.theme), ...splitThemes(song.secondaryTheme)]);
-                const options = [...OPENSONG_THEMES, ...[...checked].filter((t) => !OPENSONG_THEMES.includes(t))];
-                return options.map((t) => (
-                  <label key={t} className="flex items-center gap-1.5 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={checked.has(t)}
-                      onChange={() => {
-                        const next = new Set(checked);
-                        if (next.has(t)) next.delete(t);
-                        else next.add(t);
-                        update({
-                          // OpenSong writes themes in list order (row scan).
-                          theme: joinThemes(options.filter((o) => next.has(o))) || null,
-                          secondaryTheme: null,
-                        });
-                      }}
-                    />
-                    {t}
-                  </label>
-                ));
-              })()}
-            </div>
-          </div>
+          {/* OpenSong's advanced page: the music fields stacked on the right
+              (narrow popups on top, wide multiline user fields at the
+              bottom); themes live on the Style tab. */}
           <div className="flex min-w-0 flex-1 flex-col gap-1.5">
             <div className="flex items-end gap-2">
               <label className="flex w-16 flex-col gap-0.5">
@@ -485,10 +454,69 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
           </div>
         </div>
       )}
-      {tab === "backgrounds" && (
-        <div className="flex shrink flex-col gap-2 overflow-y-auto">
-          <div>
-            <span className="text-xs text-zinc-500">Verse specific backgrounds:</span>
+      {tab === "style" && (
+        <div className="flex shrink gap-3 overflow-y-auto">
+          <div className="flex w-[45%] min-w-0 flex-col gap-0.5">
+            <span className="text-xs text-zinc-500">Themes:</span>
+            <div className="flex h-64 flex-col gap-0.5 overflow-y-auto rounded border border-zinc-300 p-1.5 dark:border-zinc-700">
+              {/* OpenSong's theme checkbox list: the shipped theme_list plus any
+                  of the song's own themes not in it (alttheme merges in; both
+                  write back as "; "-joined theme, alttheme cleared). */}
+              {(() => {
+                const checked = new Set([...splitThemes(song.theme), ...splitThemes(song.secondaryTheme)]);
+                const options = [...OPENSONG_THEMES, ...[...checked].filter((t) => !OPENSONG_THEMES.includes(t))];
+                return options.map((t) => (
+                  <label key={t} className="flex items-center gap-1.5 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={checked.has(t)}
+                      onChange={() => {
+                        const next = new Set(checked);
+                        if (next.has(t)) next.delete(t);
+                        else next.add(t);
+                        update({
+                          // OpenSong writes themes in list order (row scan).
+                          theme: joinThemes(options.filter((o) => next.has(o))) || null,
+                          secondaryTheme: null,
+                        });
+                      }}
+                    />
+                    {t}
+                  </label>
+                ));
+              })()}
+            </div>
+            {/* OpenSong chk_song_style + can_song_style: the <style>
+                element's existence IS the override flag. Enabling clones the
+                global style; disabling removes it. */}
+            <div className="mt-2 flex items-center gap-2">
+              <label className="flex items-center gap-1.5 text-sm">
+                <input
+                  type="checkbox"
+                  checked={song.styleXml !== null && song.styleXml !== undefined}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      update({ styleXml: globalStyle !== null ? serializeStyleXml(globalStyle) : "<style/>" });
+                    } else {
+                      update({ styleXml: null });
+                    }
+                  }}
+                />
+                Override Style
+              </label>
+              {song.styleXml !== null && song.styleXml !== undefined && (
+                <>
+                  <button onClick={() => setEditingSongStyle(true)} className="rounded border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800">
+                    <Icon path={mdiPaletteOutline} size={0.6} /> Edit Style…
+                  </button>
+                  <span className="text-xs text-zinc-500">this song presents with its own slide style</span>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="flex min-w-0 flex-1 flex-col gap-2">
+            <div>
+              <span className="text-xs text-zinc-500">Verse specific backgrounds:</span>
             <div className="mt-1 flex flex-col gap-1">
               {bgs().items.map((item, i) => (
                 <div key={i} className="flex items-center gap-2 rounded border border-zinc-300 p-1.5 dark:border-zinc-700">
@@ -537,6 +565,7 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
               Show the background instead of the verse text
             </label>
           </div>
+          </div>
         </div>
       )}
 
@@ -557,35 +586,6 @@ export function SongEditorPage({ id, onBack, onPresent, onCopied }: {
           }}
         />
       </div>
-      {/* OpenSong chk_song_style + can_song_style under the lyrics editor:
-          the <style> element's existence IS the override flag. Enabling
-          clones the global style; disabling removes it. */}
-      {tab === "general" && (
-        <div className="flex shrink-0 items-center gap-2 pt-1.5">
-          <label className="flex items-center gap-1.5 text-sm">
-            <input
-              type="checkbox"
-              checked={song.styleXml !== null && song.styleXml !== undefined}
-              onChange={(e) => {
-                if (e.target.checked) {
-                  update({ styleXml: globalStyle !== null ? serializeStyleXml(globalStyle) : "<style/>" });
-                } else {
-                  update({ styleXml: null });
-                }
-              }}
-            />
-            Override Style
-          </label>
-          {song.styleXml !== null && song.styleXml !== undefined && (
-            <>
-              <button onClick={() => setEditingSongStyle(true)} className="rounded border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800">
-                <Icon path={mdiPaletteOutline} size={0.6} /> Edit Style…
-              </button>
-              <span className="text-xs text-zinc-500">this song presents with its own slide style</span>
-            </>
-          )}
-        </div>
-      )}
       </div>
 
       {/* Right action column (OpenSong's vertical button stack) — scrolls on short screens */}
