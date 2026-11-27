@@ -15,6 +15,9 @@ redesign will build on. Implications:
 - Fidelity to OpenSong beats polish: match its layouts, labels, key captions,
   and quirks (e.g. Esc is labeled "End", blank separator slides, the title
   style's `include_verse` gate) even when ours could be nicer.
+- Deliberate naming deviations (do NOT "fix" toward OpenSong): the mode tabs
+  are "Songs"/"Sets" (not "Song Mode"/"Set Mode") and the main nav entry is
+  "Editor" (not "Song Editor") — Garrett's chosen names.
 - New capabilities (plugin system, network receivers, web UI) belong in the
   architecture/extension seams, not as deviations in OpenSong-facing behavior.
 
