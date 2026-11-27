@@ -222,7 +222,7 @@ export function App(): ReactNode {
               : "hover:bg-zinc-100 dark:hover:bg-zinc-800"
           }`}
         >
-          <Icon path={mdiMusicBoxMultipleOutline} /> Song Editor
+          <Icon path={mdiMusicBoxMultipleOutline} /> Editor
         </button>
         <nav className="flex gap-1">
           {NAV.map((n) => (
